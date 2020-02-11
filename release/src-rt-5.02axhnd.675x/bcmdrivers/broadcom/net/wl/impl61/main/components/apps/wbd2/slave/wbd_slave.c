@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_slave.c 776955 2019-07-15 05:31:14Z $
+ * $Id: wbd_slave.c 777559 2019-08-06 06:57:38Z $
  */
 
 #include <getopt.h>
@@ -63,6 +63,10 @@
 #include "wbd_slave_com_hdlr.h"
 #include "blanket.h"
 #include <common_utils.h>
+#ifdef BCM_APPEVENTD
+#include "wbd_appeventd.h"
+#include "appeventd_wbd.h"
+#endif /* BCM_APPEVENTD */
 
 wbd_info_t *g_wbdinfo = NULL;
 unsigned int wbd_msglevel = WBD_DEBUG_DEFAULT;
@@ -368,6 +372,7 @@ wbd_init_slave(wbd_info_t *info)
 
 	/* Read backhual NVRAM config */
 	wbd_retrieve_backhaul_nvram_config(&info->wbd_slave->metric_policy_bh);
+	blanket_nvram_prefix_set(NULL, NVRAM_MAP_AGENT_CONFIGURED, "0");
 
 	/* Read blanket slave NVRAM config */
 	wbd_read_blanket_slave_nvrams(info->wbd_slave);
@@ -794,12 +799,22 @@ wbd_ieee1905_ap_configured_cb(unsigned char *al_mac, unsigned char *radio_mac,
 {
 	WBD_DEBUG("Received callback: AP autoconfigured on Device ["MACDBG"] Radio["MACDBG"]"
 		"in band [%d]\n", MAC2STRDBG(al_mac), MAC2STRDBG(radio_mac), if_band);
-
 	/* Check if M2 is received for all Wireless Interfaces */
 	if (i5DmIsAllInterfacesConfigured()) {
 
 		WBD_INFO("Received callback: M2 is received for all Wireless Interfaces, "
 			"Create all_ap_configured timer\n");
+
+		if ((wbd_ds_is_fbt_possible_on_agent() == WBDE_DS_FBT_NT_POS) &&
+			(!(g_wbdinfo->flags & WBD_INFO_FLAGS_RC_RESTART))) {
+#ifdef BCM_APPEVENTD
+			/* Raise and send MAP init end event to appeventd. */
+			wbd_appeventd_map_init(APP_E_WBD_SLAVE_MAP_INIT_END,
+				(struct ether_addr*)ieee1905_get_al_mac(), MAP_INIT_END,
+				MAP_APPTYPE_SLAVE);
+#endif /* BCM_APPEVENTD */
+			blanket_nvram_prefix_set(NULL, NVRAM_MAP_AGENT_CONFIGURED, "1");
+		}
 		wbd_slave_create_all_ap_configured_timer();
 	}
 }
@@ -910,6 +925,24 @@ end:
 	WBD_EXIT();
 }
 
+/* Check if the STA is associated or not */
+static int
+wbd_blanket_is_sta_associated(char *ifname)
+{
+	struct ether_addr bssid;
+
+	/* If the BSSID is not NULL for a interface, then it is connected to upstrem AP */
+	if (blanket_get_bssid(ifname, (struct ether_addr*)&bssid) == WBDE_OK) {
+		if (!(ETHER_ISNULLADDR((struct ether_addr*)&bssid))) {
+			WBD_INFO("ifname[%s] is associated to BSSID["MACF"]\n", ifname,
+				ETHER_TO_MACF(bssid));
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static void
 wbd_ieee1905_set_bh_sta_params(t_i5_bh_sta_cmd cmd)
 {
@@ -933,16 +966,17 @@ wbd_ieee1905_set_bh_sta_params(t_i5_bh_sta_cmd cmd)
 					"APs even if the backhaul STA is not associated\n",
 					ETHERP_TO_MACF(i5_iter_ifr->InterfaceId));
 				blanket_set_keep_ap_up(i5_iter_ifr->ifname, 1); /* VAP UP */
-				if (nvram_match("hapd_enable", "1")) {
+				if (WBD_IS_HAPD_ENABLED(wbd_get_ginfo()->flags)) {
 					/* If hostapd is enabled, roaming in firmware is disabled
 					 * from wlconf. Actual raoming will be handled by
 					 * wpa_supplicant. So here raoming in wpa_supplicant
 					 * should be disabled
 					 */
-					snprintf(tmp, sizeof(tmp), "wpa_cli -p /var/run/"
-						"%s_wpa_supplicant -i %s ap_scan 0",
+					snprintf(tmp, sizeof(tmp), "wpa_cli -p %s/%s_wpa_supplicant"
+						" -i %s ap_scan 0", WBD_HAPD_SUPP_CTRL_DIR,
 						i5_iter_ifr->wlParentName, i5_iter_ifr->ifname);
 					system(tmp);
+					WBD_INFO("%s\n", tmp);
 
 				} else {
 					/* ROAM OFF IOVAR - disable roaming */
@@ -954,15 +988,22 @@ wbd_ieee1905_set_bh_sta_params(t_i5_bh_sta_cmd cmd)
 					"APs up only if the backhaul STA is associated\n",
 					ETHERP_TO_MACF(i5_iter_ifr->InterfaceId));
 				blanket_set_keep_ap_up(i5_iter_ifr->ifname, 0); /* VAP Follow */
-				if (nvram_match("hapd_enable", "1")) {
-					snprintf(tmp, sizeof(tmp), "wpa_cli -p /var/run/"
-						"%s_wpa_supplicant -i %s ap_scan 1",
+				if (WBD_IS_HAPD_ENABLED(wbd_get_ginfo()->flags)) {
+					snprintf(tmp, sizeof(tmp), "wpa_cli -p %s/%s_wpa_supplicant"
+						" -i %s ap_scan 1", WBD_HAPD_SUPP_CTRL_DIR,
 						i5_iter_ifr->wlParentName, i5_iter_ifr->ifname);
 					system(tmp);
-					snprintf(tmp, sizeof(tmp), "wpa_cli -p /var/run/"
-						"%s_wpa_supplicant -i %s scan",
-						i5_iter_ifr->wlParentName, i5_iter_ifr->ifname);
-					system(tmp);
+					WBD_INFO("%s\n", tmp);
+					/* Perform scan only if the STA is not associated */
+					if (!wbd_blanket_is_sta_associated(i5_iter_ifr->ifname)) {
+						snprintf(tmp, sizeof(tmp), "wpa_cli -p "
+							"%s/%s_wpa_supplicant -i %s scan",
+							WBD_HAPD_SUPP_CTRL_DIR,
+							i5_iter_ifr->wlParentName,
+							i5_iter_ifr->ifname);
+						system(tmp);
+						WBD_INFO("%s\n", tmp);
+					}
 				} else {
 					/* ROM OFF IOVAR - enable roaming */
 					blanket_set_roam_off(i5_iter_ifr->ifname, 0);

@@ -506,10 +506,6 @@ CFLAGS += -I$(TOP)/libletsencrypt
 LDFLAGS += -L$(TOP)/libletsencrypt -lletsencrypt
 endif
 
-ifeq ($(RTCONFIG_GAME_PROFILE),y)
-CFLAGS += -DSUPPORT_GAME_PROFILE
-endif
-
 CFLAGS += $(if $(RTCONFIG_BLINK_LED),-I$(TOP)/bled)
 
 export CFLAGS
@@ -664,6 +660,7 @@ endif
 
 ifeq ($(RTCONFIG_TUNNEL),y)
 OBJS += natnl_api.o
+CFLAGS += -I$(TOP)/aaews
 endif
 
 ifneq ($(RTCONFIG_RALINK)$(RTCONFIG_QCA)$(RTCONFIG_REALTEK),y)

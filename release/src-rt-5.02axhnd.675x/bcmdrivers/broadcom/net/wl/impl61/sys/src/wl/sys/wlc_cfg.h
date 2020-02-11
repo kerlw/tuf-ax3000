@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_cfg.h 775549 2019-06-04 04:40:02Z $
+ * $Id: wlc_cfg.h 777286 2019-07-25 19:43:30Z $
  */
 
 #ifndef _wlc_cfg_h_
@@ -1007,7 +1007,7 @@ static const int acphy_hecap_rev[] = {
 #endif /* DEFMAXSCB */
 
 #ifndef MAXSCBCUBBIES
-#define MAXSCBCUBBIES		46	/* max number of cubbies in scb container */
+#define MAXSCBCUBBIES		47	/* max number of cubbies in scb container */
 #endif // endif
 
 #ifndef MAXBSSCFGCUBBIES

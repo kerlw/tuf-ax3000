@@ -33,11 +33,25 @@
 
 #define RESP_BUFSIZE			32	/* Resp buffer size. */
 
+/* MAP init status */
+typedef enum {
+	MAP_INIT_START = 1,
+	MAP_INIT_END = 2,
+} map_init_status_t;
+
+/* MAP APP type */
+typedef enum {
+	MAP_APPTYPE_MASTER = 1,
+	MAP_APPTYPE_SLAVE = 2,
+} map_apptype_t;
+
 /* MAP init Start/End data. */
 typedef struct app_event_wbd_map_init {
 	struct ether_addr device_id;	/* Device AL MAC */
-	int status;			/* Start = 1, end = 2 */
+	map_init_status_t status;	/* Start = 1, end = 2 */
+	map_apptype_t app_id;		/* Master = 1, slave = 2 */
 } app_event_wbd_map_init_t;
+
 /* Weak sta event data. */
 typedef struct app_event_wbd_weak_sta {
 	char ifname[IFNAMSIZ];		/* Interface name. */

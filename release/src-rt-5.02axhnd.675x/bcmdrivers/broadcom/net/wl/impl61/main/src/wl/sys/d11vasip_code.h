@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: d11vasip_code.h 775509 2019-06-03 08:51:42Z $
+ * $Id: d11vasip_code.h 777548 2019-08-06 00:14:29Z $
  */
 
 /* vasip code and inits */
@@ -57,9 +57,9 @@
 #include <typedefs.h>
 #include <bcmdefs.h>
 
-/* VASIP FW Version 6.7 */
+/* VASIP FW Version 6.1203 */
 #define VASIP_FW_VER_MAJOR 6
-#define VASIP_FW_VER_MINOR 7
+#define VASIP_FW_VER_MINOR 1203
 
 extern CONST uint32 d11vasipcode_major;
 extern CONST uint32 d11vasipcode_minor;
@@ -67,59 +67,61 @@ enum {
 	__vasip_map_bfd_log_buffer                       = 0,
 	__vasip_map_bfds_mlbf_angle_buffer               = 1,
 	__vasip_map_cmd_buffer                           = 2,
-	__vasip_map_delay_grouping_us                    = 3,
-	__vasip_map_delay_precoding_us                   = 4,
-	__vasip_map_err_code                             = 5,
-	__vasip_map_err_code_group                       = 6,
-	__vasip_map_err_code_precoder                    = 7,
-	__vasip_map_err_count                            = 8,
-	__vasip_map_fading_det_buf0                      = 9,
-	__vasip_map_fading_det_buf1                      = 10,
-	__vasip_map_grouping_forced                      = 11,
-	__vasip_map_grouping_forced_mcs                  = 12,
-	__vasip_map_grouping_mcs_check                   = 13,
-	__vasip_map_grouping_mcs_delta                   = 14,
-	__vasip_map_grouping_mcs_min                     = 15,
-	__vasip_map_grouping_method                      = 16,
-	__vasip_map_grouping_nss_comb_round_robin_ena    = 17,
-	__vasip_map_grouping_number                      = 18,
-	__vasip_map_grp_forced_buf                       = 19,
-	__vasip_map_grp_mcs_tbl                          = 20,
-	__vasip_map_grp_on_the_fly_buf                   = 21,
-	__vasip_map_grp_sel_buf                          = 22,
-	__vasip_map_interrupt                            = 23,
-	__vasip_map_m2v_buf0                             = 24,
-	__vasip_map_m2v_buf1                             = 25,
-	__vasip_map_mcs_capping_enable                   = 26,
-	__vasip_map_mcs_capping_threshold2               = 27,
-	__vasip_map_mcs_capping_threshold3               = 28,
-	__vasip_map_mcs_capping_threshold4               = 29,
-	__vasip_map_mcs_map                              = 30,
-	__vasip_map_mcs_overwrite_flag                   = 31,
-	__vasip_map_mcs_rate                             = 32,
-	__vasip_map_mi_maxmcs_in_const                   = 33,
-	__vasip_map_mi_mcsnum_per_const                  = 34,
-	__vasip_map_mi_mcs_recommend_enable              = 35,
-	__vasip_map_mi_mcs_to_const                      = 36,
-	__vasip_map_mu_mcs_max                           = 37,
-	__vasip_map_overwrite_mcs                        = 38,
-	__vasip_map_plugfest_en                          = 39,
-	__vasip_map_precoder_buf                         = 40,
-	__vasip_map_recommend_mcs                        = 41,
-	__vasip_map_sgi_method                           = 42,
-	__vasip_map_sgi_status                           = 43,
-	__vasip_map_sgi_threshold_20M                    = 44,
-	__vasip_map_sgi_threshold_40M                    = 45,
-	__vasip_map_sgi_threshold_80M                    = 46,
-	__vasip_map_sounding_update_buf                  = 47,
-	__vasip_map_steering_mcs                         = 48,
-	__vasip_map_txbf_ppr_tbl                         = 49,
-	__vasip_map_v2m_buf_grp                          = 50,
-	__vasip_map_v2m_buf_mvp                          = 51,
-	__vasip_map_v2m_buf_on_the_fly                   = 52,
-	__vasip_map_v2m_buf_snd                          = 53,
-	__vasip_map_v2m_transfer_done                    = 54,
-	vasipfw_symbol_count                             = 55
+	__vasip_map_csi_rpt                              = 3,
+	__vasip_map_delay_grouping_us                    = 4,
+	__vasip_map_delay_precoding_us                   = 5,
+	__vasip_map_err_code                             = 6,
+	__vasip_map_err_code_group                       = 7,
+	__vasip_map_err_code_precoder                    = 8,
+	__vasip_map_err_count                            = 9,
+	__vasip_map_fading_det_buf0                      = 10,
+	__vasip_map_fading_det_buf1                      = 11,
+	__vasip_map_grouping_forced                      = 12,
+	__vasip_map_grouping_forced_mcs                  = 13,
+	__vasip_map_grouping_mcs_check                   = 14,
+	__vasip_map_grouping_mcs_delta                   = 15,
+	__vasip_map_grouping_mcs_min                     = 16,
+	__vasip_map_grouping_method                      = 17,
+	__vasip_map_grouping_nss_comb_round_robin_ena    = 18,
+	__vasip_map_grouping_number                      = 19,
+	__vasip_map_grp_forced_buf                       = 20,
+	__vasip_map_grp_mcs_tbl                          = 21,
+	__vasip_map_grp_on_the_fly_buf                   = 22,
+	__vasip_map_grp_sel_buf                          = 23,
+	__vasip_map_imbf_rpt                             = 24,
+	__vasip_map_interrupt                            = 25,
+	__vasip_map_m2v_buf0                             = 26,
+	__vasip_map_m2v_buf1                             = 27,
+	__vasip_map_mcs_capping_enable                   = 28,
+	__vasip_map_mcs_capping_threshold2               = 29,
+	__vasip_map_mcs_capping_threshold3               = 30,
+	__vasip_map_mcs_capping_threshold4               = 31,
+	__vasip_map_mcs_map                              = 32,
+	__vasip_map_mcs_overwrite_flag                   = 33,
+	__vasip_map_mcs_rate                             = 34,
+	__vasip_map_mi_maxmcs_in_const                   = 35,
+	__vasip_map_mi_mcsnum_per_const                  = 36,
+	__vasip_map_mi_mcs_recommend_enable              = 37,
+	__vasip_map_mi_mcs_to_const                      = 38,
+	__vasip_map_mu_mcs_max                           = 39,
+	__vasip_map_overwrite_mcs                        = 40,
+	__vasip_map_plugfest_en                          = 41,
+	__vasip_map_precoder_buf                         = 42,
+	__vasip_map_recommend_mcs                        = 43,
+	__vasip_map_sgi_method                           = 44,
+	__vasip_map_sgi_status                           = 45,
+	__vasip_map_sgi_threshold_20M                    = 46,
+	__vasip_map_sgi_threshold_40M                    = 47,
+	__vasip_map_sgi_threshold_80M                    = 48,
+	__vasip_map_sounding_update_buf                  = 49,
+	__vasip_map_steering_mcs                         = 50,
+	__vasip_map_txbf_ppr_tbl                         = 51,
+	__vasip_map_v2m_buf_grp                          = 52,
+	__vasip_map_v2m_buf_mvp                          = 53,
+	__vasip_map_v2m_buf_on_the_fly                   = 54,
+	__vasip_map_v2m_buf_snd                          = 55,
+	__vasip_map_v2m_transfer_done                    = 56,
+	vasipfw_symbol_count                             = 57
 };
 
 typedef struct {

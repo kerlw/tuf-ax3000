@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_bmac.h 776968 2019-07-15 10:47:02Z $
+ * $Id: wlc_bmac.h 777264 2019-07-25 05:42:17Z $
  */
 
 /* XXXXX this interface is under wlc.c by design
@@ -461,13 +461,6 @@ extern int  wlc_bmac_srvsdb_force_set(wlc_hw_info_t *wlc_hw, uint8 force);
 
 extern void wlc_bmac_tx_fifo_sync_all(wlc_hw_info_t *wlc_hw, uint8 flag);
 extern void wlc_bmac_tx_fifo_sync(wlc_hw_info_t *wlc_hw, void *fifo_bitmap, uint8 flag);
-
-#ifdef STA
-#if defined(WLRM)
-extern bool wlc_bmac_rm_cca_measure(wlc_hw_info_t *wlc_hw, uint32 us);
-extern void wlc_bmac_rm_cca_int(wlc_hw_info_t *wlc_hw);
-#endif /* WLRM */
-#endif /* STA */
 
 extern void wlc_ucode_wake_override_set(wlc_hw_info_t *wlc_hw, uint32 override_bit);
 extern void wlc_ucode_wake_override_clear(wlc_hw_info_t *wlc_hw, uint32 override_bit);

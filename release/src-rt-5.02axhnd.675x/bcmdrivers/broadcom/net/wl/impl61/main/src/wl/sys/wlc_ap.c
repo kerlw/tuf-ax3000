@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ap.c 776954 2019-07-15 05:10:52Z $
+ * $Id: wlc_ap.c 778114 2019-08-22 19:38:37Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -1515,10 +1515,8 @@ BCMATTACHFN(wlc_ap_attach)(wlc_info_t *wlc)
 	}
 
 	appvt->dynamic_ed_thresh_enable = getintvar(pub->vars, "dy_ed_thresh_wdg");
-
-	printf("wl%d: %s dynamic_ed_thresh_enable = %d \n",
+	printf("wl%d: %s dynamic_ed_thresh_enable = %d\n",
 		wlc->pub->unit, __FUNCTION__, appvt->dynamic_ed_thresh_enable);
-
 	return (wlc_ap_info_t*)appvt;
 
 fail:
@@ -2514,7 +2512,7 @@ parse_ies:
 send_result:
 
 #ifdef AP
-	if ((status == DOT11_SC_SUCCESS) && (ftpparm.auth.alg == DOT11_FAST_BSS) &&
+	if (scb && (status == DOT11_SC_SUCCESS) && (ftpparm.auth.alg == DOT11_FAST_BSS) &&
 		SCB_AUTHENTICATING(scb)) {
 #ifdef RXCHAIN_PWRSAVE
 		wlc_reset_rxchain_pwrsave_mode(ap);
@@ -3255,6 +3253,8 @@ wlc_ap_process_assocreq(wlc_ap_info_t *ap, wlc_bsscfg_t *bsscfg,
 
 	param->status = status;
 	bcopy(&req_rates, &param->req_rates, sizeof(wlc_rateset_t));
+	/* Copy supported mcs index bit map */
+	bcopy(req_rates.mcs, scb->rateset.mcs, MCSSET_LEN);
 
 #ifdef SPLIT_ASSOC
 	if (SPLIT_ASSOC_REQ(bsscfg)) {
@@ -3531,7 +3531,24 @@ defkey_done:
 		}
 	}
 done:
-	wlc_ap_process_assocreq_done(ap, bsscfg, dc, hdr, body, body_len, scb, param);
+#ifndef WL_SAE_ASSOC_OFFLOAD
+#ifdef WL_SAE
+	/* STA has chosen SAE AKM */
+	if ((scb->WPA_auth == WPA3_AUTH_SAE_PSK) &&
+		scb->pmkid_included) {
+		/* set scb state to PENDING_ASSOC */
+		wlc_scb_setstatebit(wlc, scb, PENDING_ASSOC);
+		/* Send WLC_E_ASSOC event to cfg80211 layer */
+		wlc_bss_mac_event(wlc, bsscfg, WLC_E_ASSOC, &hdr->sa, 0, 0, scb->auth_alg,
+				param->e_data, param->e_datalen);
+		return;
+	}
+	else
+#endif /* WL_SAE */
+#endif /* WL_SAE_ASSOC_OFFLOAD */
+	{
+		wlc_ap_process_assocreq_done(ap, bsscfg, dc, hdr, body, body_len, scb, param);
+	}
 #ifdef SPLIT_ASSOC
 	if (SPLIT_ASSOC_REQ(bsscfg)) {
 		MFREE(wlc->osh, param->body, param->buf_len);
@@ -4256,7 +4273,6 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 #ifdef RADAR
 	wlc_bsscfg_t *bsscfg_ap = NULL;
 	uint bss_radar_flags = 0;
-	bool radar_ap = FALSE;
 #endif /* RADAR */
 
 	WL_TRACE(("wl%d: %s:\n", wlc->pub->unit, __FUNCTION__));
@@ -4316,7 +4332,6 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 #endif /* RADAR */
 
 	appvt->pre_tbtt_us = (MBSS_ENAB(wlc->pub)) ? MBSS_PRE_TBTT_DEFAULT_us : PRE_TBTT_DEFAULT_us;
-
 	/* Reset to re-configure TSF registers for beaconing */
 	wlc->aps_associated = 0;
 
@@ -4324,10 +4339,6 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 	FOREACH_AP(wlc, i, bsscfg) {
 		if (bsscfg->enable) {
 			uint wasup = bsscfg->up;
-#ifdef RADAR
-			wlc_bss_info_t *current_bss = bsscfg->current_bss;
-#endif /* RADAR */
-
 			WL_APSTA_UPDN(("wl%d: wlc_restart_ap -> wlc_bsscfg_up on bsscfg %d%s\n",
 			               appvt->pub->unit, i, (bsscfg->up ? "(already up)" : "")));
 			/* Clearing association state to let the beacon phyctl0
@@ -4348,29 +4359,8 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 				wlc_set_ap_up_pending(wlc, bsscfg, FALSE);
 			}
 #endif /* WLRSDB && WL_MODESW */
-#ifdef RADAR
-			if (RADAR_ENAB(wlc->pub) && bsscfg->up &&
-				(wlc_radar_chanspec(wlc->cmi, current_bss->chanspec) == TRUE)) {
-				radar_ap = TRUE;
-			}
-#endif /* RADAR */
 		}
 	}
-
-#ifdef RADAR
-	if (RADAR_ENAB(wlc->pub) && WL11H_AP_ENAB(wlc) && AP_ACTIVE(wlc)) {
-		/* Check If radar_detect explicitly disabled
-		 * OR
-		 * non of the AP's on radar chanspec
-		 */
-		bool dfs_on = ((bss_radar_flags
-				& (WLC_BSSCFG_SRADAR_ENAB | WLC_BSSCFG_AP_NORADAR_CHAN)) ||
-				!radar_ap) ? OFF:ON;
-
-		wlc_set_dfs_cacstate(wlc->dfs, dfs_on, bsscfg_ap);
-	}
-#endif /* RADAR */
-
 #ifdef RXCHAIN_PWRSAVE
 	wlc_reset_rxchain_pwrsave_mode(ap);
 #endif // endif
@@ -5114,6 +5104,7 @@ wlc_ap_dynamic_ed_thresh(wlc_ap_info_t *ap)
 	WL_TMP(("wl%d: %s: stored_ed_thresh %d current_ed_thresh %d \n",
 		wlc->pub->unit, __FUNCTION__, appvt->stored_ed_thresh,
 		current_ed_thresh));
+
 	stats = wlc_lq_chanspec_to_chanim_stats(wlc->chanim_info, wlc->home_chanspec);
 
 	if (stats) {
@@ -5136,7 +5127,7 @@ wlc_ap_dynamic_ed_thresh(wlc_ap_info_t *ap)
 			if (((avg_tx + avg_rx) < TXRX_BOUND) && (avg_txop < TXOP_LOW)) {
 				appvt->ed_thresh_dec_count = 0;
 				/* raise ed_thresh */
-				if (current_ed_thresh < ED_THRESH_HIGH) {
+				if (current_ed_thresh <= ED_THRESH_HIGH) {
 					appvt->adjusted_ed_thresh = MIN(ED_THRESH_HIGH,
 						current_ed_thresh + ED_INC_STEP);
 					if (wlc_phy_update_ed_thres((phy_info_t *)WLC_PI(wlc),
@@ -5158,7 +5149,7 @@ wlc_ap_dynamic_ed_thresh(wlc_ap_info_t *ap)
 				if (appvt->ed_thresh_dec_count == ED_DEC_COUNT)
 				{
 					/* lower ed_thresh */
-					if (current_ed_thresh > *ed_thresh_ptr) {
+					if (current_ed_thresh >= *ed_thresh_ptr) {
 						appvt->adjusted_ed_thresh = MAX(*ed_thresh_ptr,
 							current_ed_thresh - ED_DEC_STEP);
 					if (wlc_phy_update_ed_thres((phy_info_t *)WLC_PI(wlc),
@@ -6761,7 +6752,6 @@ wlc_ap_doiovar(void *hdl, uint32 actionid,
 	case IOV_SVAL(IOV_DY_ED_THRESH_WDG):
 		appvt->dynamic_ed_thresh_enable = int_val;
 		break;
-
 	case IOV_GVAL(IOV_DY_ED_THRESH_WDG):
 		*ret_int_ptr = appvt->dynamic_ed_thresh_enable;
 		break;

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_slave_com_hdlr.c 776955 2019-07-15 05:31:14Z $
+ * $Id: wbd_slave_com_hdlr.c 777559 2019-08-06 06:57:38Z $
  */
 
 #include "wbd.h"
@@ -1082,13 +1082,12 @@ wbd_slave_is_backhaul_sta_associated(char *ifname, struct ether_addr *out_bssid)
 	err = blanket_try_get_bssid(ifname, WBD_MAX_GET_BSSID_TRY,
 		WBD_GET_BSSID_USECOND_GAP, &cur_bssid);
 	if (err == WBDE_OK) {
+		memset(&sta_info, 0, sizeof(sta_info));
 		err = blanket_get_sta_info(ifname, &cur_bssid, &sta_info);
 	}
 
-	/* the STA association is complete either if authorized flag is set in sta_info or
-	 * if the security is disabled with sta having valid bssid
-	 */
-	if (err == WBDE_OK && ((sta_info.flags & WL_STA_AUTHO) || sta_info.wpauth == 0)) {
+	/* The STA association is complete if authorized flag is set in sta_info */
+	if (err == WBDE_OK && (sta_info.flags & WL_STA_AUTHO)) {
 		WBD_INFO("Backhaul STA interface %s assoicated on ["MACF"]\n",
 			ifname, ETHER_TO_MACF(cur_bssid));
 		if (out_bssid) {
@@ -2580,6 +2579,23 @@ end:
 		WBD_INFO("Creating rc restart timer\n");
 		wbd_slave_create_rc_restart_timer(info);
 		info->flags |= WBD_INFO_FLAGS_RC_RESTART;
+	}
+
+	/* Check if Restart is done if no more restart required.
+	 * Whenever new device is connected with controller
+	 * this is raise the event and set the NVRAM.
+	 * So to avoid setting each time, check and if NVRAM is not set
+	 * then only set the NVRAM and rasie the event.
+	 */
+	if (!(info->flags & WBD_INFO_FLAGS_RC_RESTART) &&
+		(atoi(blanket_nvram_safe_get(NVRAM_MAP_AGENT_CONFIGURED)) == 0)) {
+#ifdef BCM_APPEVENTD
+		/* Raise and send MAP init end event to appeventd. */
+		wbd_appeventd_map_init(APP_E_WBD_SLAVE_MAP_INIT_END,
+			(struct ether_addr*)ieee1905_get_al_mac(), MAP_INIT_END,
+			MAP_APPTYPE_SLAVE);
+#endif /* BCM_APPEVENTD */
+		blanket_nvram_prefix_set(NULL, NVRAM_MAP_AGENT_CONFIGURED, "1");
 	}
 
 	WBD_EXIT();

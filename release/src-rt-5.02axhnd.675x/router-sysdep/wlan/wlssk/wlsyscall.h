@@ -65,7 +65,7 @@ void bcmTogglePowerSave(void);
 
 int isAdapterEnabled(const char* ifname);
 int isInterfaceEnabled(const char* ifname);
-
+int dpsta_ioctl(char *name, void *buf, int len);
 #endif
  
 void crash_log_backup_init(void);

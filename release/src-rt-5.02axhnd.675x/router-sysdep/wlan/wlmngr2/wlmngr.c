@@ -1365,6 +1365,24 @@ static void wlmngr_stopAirIQ(void) {
 }
 #endif
 
+#if defined(WL_BSTREAM_IQOS)
+static int
+start_broadstream_iqos(void)
+{
+    if (!nvram_match("broadstream_iqos_enable", "1")) {
+        return 0;
+    }
+
+    bcmSystem("bcmiqosd start");
+    return 0;
+}
+
+static void
+stop_broadstream_iqos(void)
+{
+    bcmSystem("bcmiqosd stop > /dev/null");
+}
+#endif /* WL_BSTREAM_IQOS */
 void wlmngr_postStart_Service(void)
 {
 #if defined(HSPOT_SUPPORT)
@@ -1379,6 +1397,9 @@ void wlmngr_postStart_Service(void)
 #endif
 #if defined(BCM_APPEVENTD)
     wlmngr_start_appeventd();
+#endif
+#if defined(WL_BSTREAM_IQOS)
+    start_broadstream_iqos();
 #endif
 #ifdef WL_AIR_IQ
     wlmngr_startAirIQ();
@@ -1473,7 +1494,7 @@ void wlmngr_setup(unsigned int idx )
 #endif
     wlmngr_setupMbssMacAddr(idx);
     wlmngr_enum_ifnames(idx);
-    if (!wlmngr_detectApp("acsd"))
+    if (!wlmngr_detectApp("acsd") && !wlmngr_detectApp("acsd2"))
         wlmngr_autoChannel(idx);
     while(!g_wlmngr_ready_for_event)
         sleep(1);
@@ -1881,7 +1902,9 @@ void wlmngr_stopServices(void)
 #ifdef  __CONFIG_RPCAPD__
     stop_rpcapd();
 #endif /* __CONFIG_RPCAPD__ */
-
+#if defined(WL_BSTREAM_IQOS)
+    stop_broadstream_iqos();
+#endif
 
 #ifdef WL_AIR_IQ
     wlmngr_stopAirIQ();

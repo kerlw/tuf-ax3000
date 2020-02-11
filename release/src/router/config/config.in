@@ -399,6 +399,10 @@ config RTCONFIG_SYSSTATE
 	bool "Support additional debug logs"
 	default n
 
+config RTCONFIG_AHS
+	bool "Auto Healing System"
+	default n
+
 config RTCONFIG_DUALWAN
 	bool "Dual WAN Support"
 	default n
@@ -1769,6 +1773,10 @@ config RTCONFIG_BCM_CLED
 	bool "BCM CLED LED control"
 	default n
 
+config RTCONFIG_SINGLE_LED
+	bool "model which has only one LED"
+	default n
+
 config RTCONFIG_AURASYNC
 	bool "AURASYNC support"
 	default n
@@ -1873,10 +1881,6 @@ config RTCONFIG_CONNDIAG
 	bool "enable conn_diag in AiMesh"
 	default n
 
-config RTCONFIG_GAME_PROFILE
-	bool "enable Game Profile"
-	default n
-
 config RTCONFIG_BRCM_HOSTAPD
 	bool "BRCM HOSTAPD support"
 	default n
@@ -1899,4 +1903,8 @@ config RTCONFIG_ASUSCTRL
 
 config RTCONFIG_GEFORCENOW
 	bool "GeForceNow QoS feature (includes UPnP QoS)"
+	default n
+
+config RTCONFIG_OPEN_NAT
+	bool "OPEN NAT support"
 	default n

@@ -1088,6 +1088,11 @@ static int rsn_selector_to_bitfield(const u8 *s)
 		return WPA_CIPHER_BIP_CMAC_256;
 	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_NO_GROUP_ADDRESSED)
 		return WPA_CIPHER_GTK_NOT_USED;
+#ifdef CONFIG_DRIVER_BRCM
+	if (RSN_SELECTOR_GET(s) == BRCM_CIPHER_SUITE_NO_GROUP_ADDRESSED)
+		return WPA_CIPHER_CCMP;
+#endif /* CONFIG_DRIVER_BRCM */
+
 	return 0;
 }
 

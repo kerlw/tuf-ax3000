@@ -19,7 +19,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wl_linux.c 776775 2019-07-09 10:59:34Z $
+ * $Id: wl_linux.c 777908 2019-08-14 17:49:27Z $
  */
 
 /**
@@ -176,9 +176,10 @@ struct iw_statistics *wl_get_wireless_stats(struct net_device *dev);
 
 #include <wl_linux.h>
 
-#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE)
+#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE) || \
+	defined(WLBIN_COMPAT)
 #include <bcm_spdsvc.h>
-#endif // endif
+#endif /* CONFIG_BCM_SPDSVC || CONFIG_BCM_SPDSVC_MODULE || WLBIN_COMPAT */
 
 #ifdef STB_SOC_WIFI
 #include <wl_stbsoc.h>
@@ -256,6 +257,12 @@ struct iw_statistics *wl_get_wireless_stats(struct net_device *dev);
 #if defined(BCM_EAPFWD)
 #include <bcm_eapfwd.h>
 #endif /* BCM_EAPFWD */
+
+#if defined(CONFIG_BCM_WLAN_DGASP)
+/* For dying gasp */
+#include <board.h>
+void wl_shutdown_handler(wl_info_t *wl);
+#endif /* CONFIG_BCM_WLAN_DGASP */
 
 #ifdef IS_BCA_2x2AX_BUILD
 #if defined(CONFIG_BCM963178)
@@ -774,9 +781,10 @@ wl_if_setup(struct net_device *dev)
 	dev->ethtool_ops = &wl_ethtool_ops;
 #endif // endif
 
-#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE)
+#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE) || \
+	defined(WLBIN_COMPAT)
 	wl_spdsvc_init();
-#endif // endif
+#endif /* CONFIG_BCM_SPDSVC || CONFIG_BCM_SPDSVC_MODULE || WLBIN_COMPAT */
 
 } /* wl_if_setup */
 
@@ -1888,6 +1896,10 @@ wl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	pci_set_drvdata(pdev, wl);
 
+#if defined(CONFIG_BCM_WLAN_DGASP)
+	kerSysRegisterDyingGaspHandler(wl_netdev_get(wl)->name, &wl_shutdown_handler, wl);
+#endif /* CONFIG_BCM_WLAN_DGASP */
+
 	return 0;
 } /* wl_pci_probe */
 
@@ -2005,9 +2017,10 @@ wl_remove(struct pci_dev *pdev)
 	WL_APSTA_UPDN(("wl%d (%s): wl_remove() -> wl_down()\n", wl->pub->unit, wl->dev->name));
 	wl_down(wl);
 	WL_UNLOCK(wl);
-#ifdef DSLCPE_DGASP
+
+#if defined(CONFIG_BCM_WLAN_DGASP)
 	kerSysDeregisterDyingGaspHandler(wl_netdev_get(wl)->name);
-#endif /* DSLCPE_DGASP */
+#endif /* CONFIG_BCM_WLAN_DGASP */
 
 	wl_free(wl);
 	pci_disable_device(pdev);
@@ -2375,6 +2388,10 @@ wl_free(wl_info_t *wl)
 	if (wl->pktc_tbl)
 		wl_pktc_detach(wl);
 #endif /* PKTC_TBL && !BCM_PKTFWD */
+
+#if defined(DPSTA) && ((defined(STA) && defined(DWDS)) || defined(PSTA))
+	dpsta_unregister(wl->pub->unit);
+#endif
 
 #ifndef NAPI_POLL
 	/* kill dpc */
@@ -4878,10 +4895,11 @@ wl_sendup_ex(wl_info_t *wl, void *pkt)
 	brcm_specialpkt = (ntoh16_ua(skb->data + ETHER_TYPE_OFFSET) == ETHER_TYPE_BRCM);
 	BCM_REFERENCE(brcm_specialpkt);
 
-#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE)
+#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE) || \
+	defined(WLBIN_COMPAT)
 	if (wl_spdsvc_rx(skb) == BCME_OK)
 		return;
-#endif // endif
+#endif /* CONFIG_BCM_SPDSVC || CONFIG_BCM_SPDSVC_MODULE || WLBIN_COMPAT */
 
 	PKTSETFCDONE(skb);
 #ifdef BCM_BLOG
@@ -5661,10 +5679,11 @@ wl_start(struct sk_buff *skb, struct net_device *dev)
 	wl_handle_blog_emit(wl, wlif, skb, dev);
 #endif /* BCM_BLOG */
 
-#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE)
+#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE) || \
+	defined(WLBIN_COMPAT)
 	if (wl_spdsvc_tx(skb, dev) == 0)
 		return 0;
-#endif // endif
+#endif /* CONFIG_BCM_SPDSVC || CONFIG_BCM_SPDSVC_MODULE || WLBIN_COMPAT */
 
 	/* Call in the same context when we are UP and non-passive is enabled */
 	if (WL_ALL_PASSIVE_ENAB(wl) || (WL_RTR() && WL_CONFIG_SMP())) {
@@ -6684,6 +6703,13 @@ wl_tkip_printstats(wl_info_t *wl, bool group_key)
 }
 
 #endif /* LINUX_CRYPTO */
+
+#if defined(CONFIG_BCM_WLAN_DGASP)
+void wl_shutdown_handler(wl_info_t *wl)
+{
+	wlc_shutdown_handler(wl->wlc);
+}
+#endif /* CONFIG_BCM_WLAN_DGASP */
 
 #if defined(WL_CONFIG_RFKILL)   /* Rfkill support */
 

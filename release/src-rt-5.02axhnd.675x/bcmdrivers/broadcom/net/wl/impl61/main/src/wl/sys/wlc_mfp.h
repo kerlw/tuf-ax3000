@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_mfp.h 773995 2019-04-05 00:44:21Z $
+ * $Id: wlc_mfp.h 777286 2019-07-25 19:43:30Z $
  *
  * This file provides the software interface to MFP functionality - first
  * defined as 802.11w and incorporated into IEEE 802.11/2012. The
@@ -163,5 +163,7 @@ uint32 wlc_mfp_get_assoc_comeback_time(wlc_mfp_info_t *mfp, scb_t *scb);
 void mfp_set_bip(wlc_bsscfg_t *bsscfg, uint8 *bip);
 bool mfp_get_bip(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, wpa_suite_t *bip);
 bool mfp_has_bip(wlc_bsscfg_t *bsscfg);
+uint wlc_mfp_frame_get_sec_len(wlc_mfp_info_t *mfp, uint16 fc, uint8 cat,
+	const struct ether_addr *da, wlc_bsscfg_t *bsscfg);
 #endif /* MFP */
 #endif	/* !_wlc_mfp_h_ */

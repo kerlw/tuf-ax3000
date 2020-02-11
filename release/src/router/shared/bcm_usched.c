@@ -794,7 +794,8 @@ bcm_usched_remove_fd_schedule(bcm_usched_handle *handle, int fd)
 		item_p = dll_next_p(item_p)) {
 		usched_fds_t *tmp = (usched_fds_t*)item_p;
 
-		if (tmp->fd == fd) {
+		/* check if the FD is same and also check only if the remove_flag is not set */
+		if ((tmp->fd == fd) && !(tmp->remove_flag)) {
 			tmp->remove_flag = 1;
 			USCHED_DEBUG("Setting remove flag for FD[%d]\n", tmp->fd);
 			return BCM_USCHEDE_OK;

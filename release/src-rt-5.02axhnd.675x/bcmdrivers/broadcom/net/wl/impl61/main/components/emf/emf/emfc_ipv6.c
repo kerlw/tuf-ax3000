@@ -245,15 +245,10 @@ uint32 emfc_ipv6_input(emfc_info_t *emfc, void *sdu, void *ifp, uint8 *iph, bool
 	{
 		EMF_DEBUG("Received MLD frame type %d\n", *(iph + IPV4_HLEN(iph)));
 		EMFC_STATS_INCR_IPV6(emfc, igmp_frames);
-		//for now, all IPV6 control packets, we send over to stack for MCPD handling.
-		//	if (debugcontrol) {
-		if (!rt_port)
-		{
-			ASSERT(emfc->wrapper.sendup_fn);
-			emfc->wrapper.sendup_fn(emfc->emfi, sdu);
-			return EMF_TAKEN;
-		}
-		else return EMF_NOP;
+		//All IPV6 control message will go through regular handling flow.
+		//get ignored in EMF module. IPv6 EMF module has no interests on
+		//control message as it depends on MCPD.
+		return EMF_NOP;
 
 	}
 	else
@@ -312,11 +307,6 @@ uint32 emfc_ipv6_input(emfc_info_t *emfc, void *sdu, void *ifp, uint8 *iph, bool
 				}
 			} else if (rt_port)
 				return EMF_DROP;
-		}
-
-		if (!rt_port) {
-			emfc->wrapper.sendup_fn(emfc->emfi, sdu);
-			return (EMF_TAKEN);
 		}
 	}
 	return EMF_NOP;

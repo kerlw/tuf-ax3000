@@ -20,7 +20,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: bcmwifi_channels.c 774680 2019-05-02 12:46:25Z $
+ * $Id: bcmwifi_channels.c 777905 2019-08-14 16:33:53Z $
  */
 
 #include <bcm_cfg.h>
@@ -151,7 +151,7 @@ static const uint8 wf_chspec_bw_mhz[] =
 
 /* 40MHz channels in 5GHz band */
 static const uint8 wf_5g_40m_chans[] =
-{38, 46, 54, 62, 102, 110, 118, 126, 134, 142, 151, 159};
+{38, 46, 54, 62, 102, 110, 118, 126, 134, 142, 151, 159, 167};
 #define WF_NUM_5G_40M_CHANS \
 	(sizeof(wf_5g_40m_chans)/sizeof(uint8))
 
@@ -779,10 +779,10 @@ wf_chspec_valid(chanspec_t chanspec)
 				}
 
 				if (i == num_ch) {
-					/* check for channel 165 which is not the side band
+					/* check for channel 173 which is not the side band
 					 * of 40MHz 5G channel
 					 */
-					if (chspec_ch == 165)
+					if (chspec_ch == 173)
 						i = 0;
 
 					/* check for legacy JP channels on failure */

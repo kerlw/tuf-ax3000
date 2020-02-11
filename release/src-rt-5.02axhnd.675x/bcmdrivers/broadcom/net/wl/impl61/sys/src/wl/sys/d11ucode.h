@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: d11ucode.h 774964 2019-05-14 03:22:47Z $
+ * $Id: d11ucode.h 777286 2019-07-25 19:43:30Z $
  */
 
 #ifndef _D11UCODE_H_
@@ -120,6 +120,11 @@ extern CONST uint d11ucode_mu129sz;
 extern CONST uint32 d11ucodex_mu129[];
 extern CONST uint d11ucodex_mu129sz;
 
+extern CONST uint32 d11ucode_mu_ftm129[];
+extern CONST uint d11ucode_mu_ftm129sz;
+extern CONST uint32 d11ucodex_mu_ftm129[];
+extern CONST uint d11ucodex_mu_ftm129sz;
+
 extern CONST uint32 d11ucode_btcx129_1[]; /* rev129.1 = 43684b1 */
 extern CONST uint d11ucode_btcx129_1sz;
 extern CONST uint32 d11ucodex_btcx129_1[];
@@ -138,6 +143,11 @@ extern CONST uint d11ucode_mu129_1sz;
 extern CONST uint32 d11ucodex_mu129_1[];
 extern CONST uint d11ucodex_mu129_1sz;
 
+extern CONST uint32 d11ucode_mu_ftm129_1[];
+extern CONST uint d11ucode_mu_ftm129_1sz;
+extern CONST uint32 d11ucodex_mu_ftm129_1[];
+extern CONST uint d11ucodex_mu_ftm129_1sz;
+
 extern CONST uint32 d11ucode130[]; /* rev130 = 63178a0 */
 extern CONST uint d11ucode130sz;
 extern CONST uint32 d11ucodex130[];
@@ -147,6 +157,11 @@ extern CONST uint d11ucode_mu130sz;
 extern CONST uint32 d11ucodex_mu130[];
 extern CONST uint d11ucodex_mu130sz;
 
+extern CONST uint32 d11ucode_mu_ftm130[];
+extern CONST uint d11ucode_mu_ftm130sz;
+extern CONST uint32 d11ucodex_mu_ftm130[];
+extern CONST uint d11ucodex_mu_ftm130sz;
+
 extern CONST uint32 d11ucode130_1[]; /* rev130.1 = 63178a2 */
 extern CONST uint d11ucode130_1sz;
 extern CONST uint32 d11ucodex130_1[];
@@ -155,6 +170,11 @@ extern CONST uint32 d11ucode_mu130_1[];
 extern CONST uint d11ucode_mu130_1sz;
 extern CONST uint32 d11ucodex_mu130_1[];
 extern CONST uint d11ucodex_mu130_1sz;
+
+extern CONST uint32 d11ucode_mu_ftm130_1[];
+extern CONST uint d11ucode_mu_ftm130_1sz;
+extern CONST uint32 d11ucodex_mu_ftm130_1[];
+extern CONST uint d11ucodex_mu_ftm130_1sz;
 
 extern CONST uint32 d11ucode131[]; /* rev131 = 6710a0 */
 extern CONST uint d11ucode131sz;

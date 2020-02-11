@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_airtime.c 776998 2019-07-16 03:17:39Z $
+ * $Id: wlc_airtime.c 777399 2019-07-31 19:48:24Z $
  *
  */
 
@@ -268,7 +268,7 @@ wlc_airtime_packet_time_us(uint32 flg, uint32 rspec, uint size_in_bytes)
 BCMFASTPATH uint
 wlc_airtime_payload_time_us(uint32 flg, uint32 rspec, uint size_in_bytes)
 {
-	return ((8 * 1000 * size_in_bytes)/wf_rspec_to_rate(rspec));
+	return airtime_payload_time_us(flg,  wf_rspec_to_rate(rspec), size_in_bytes);
 }
 
 /*

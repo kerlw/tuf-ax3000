@@ -1428,18 +1428,15 @@ void rutLan_addInterfaceToBridge(const char *origIfName, UBOOL8 isWanIntf, const
    if (strcmp(ifName, "eth0") != 0)
 #endif
    {
-      snprintf(cmdStr, sizeof(cmdStr), "ifconfig %s down 2>/dev/null", ifName);
-      rut_doSystemAction("rutLan_addInterfaceToBridge", cmdStr);
-
       snprintf(cmdStr, sizeof(cmdStr), "brctl delif %s %s 2>/dev/null", bridgeIfName, ifName);
       rut_doSystemAction("rutLan_addInterfaceToBridge", cmdStr);
    }
 
-   snprintf(cmdStr, sizeof(cmdStr), "brctl addif %s %s", bridgeIfName, ifName);
-   rut_doSystemAction("rutLan_addInterfaceToBridge", cmdStr);
+   if (!qdmWifi_isDpstaIntf_dev2(ifName)) {
+      snprintf(cmdStr, sizeof(cmdStr), "brctl addif %s %s", bridgeIfName, ifName);
+      rut_doSystemAction("rutLan_addInterfaceToBridge", cmdStr);
+   }
 
-   snprintf(cmdStr, sizeof(cmdStr), "ifconfig %s up", ifName);
-   rut_doSystemAction("rutLan_addInterfaceToBridge", cmdStr);
 
 #if defined(DMP_X_BROADCOM_COM_IPV6_1)
    rut_restartRadvdForBridge(bridgeIfName);
@@ -1614,9 +1611,6 @@ void rutLan_removeInterfaceFromBridge(const char *origLanIfName, const char *bri
     * brctl delif br0 eth0;
     * sendarp -s br0 -d br0;
     */
-   snprintf(cmdStr, sizeof(cmdStr), "ifconfig %s down", lanIfName);
-   rut_doSystemAction("rclLan_removeInterfaceFromBridge", cmdStr);
-   
    snprintf(cmdStr, sizeof(cmdStr), "brctl delif %s %s", bridgeIfName, lanIfName);
    rut_doSystemAction("rclLan_removeInterfaceFromBridge", cmdStr);
 

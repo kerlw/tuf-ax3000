@@ -35,9 +35,6 @@
 
 #define NORMAL_PERIOD 600 /* second */
 
-static int diag_dbg = 0;
-static int diag_syslog = 0;
-
 #define DIAG_FILE_LOCK		"conn_diag"
 
 enum {
@@ -79,56 +76,6 @@ enum {
 #ifdef RTCONFIG_BCMBSD
 #define DIAG_EVENT_TG_BSD "TG_BSD" // DIAG_EVENT_TG_BSD>node type>IP>MAC>STA's MAC>timestamp>from_chanspec>to_chanspec>reason
 #endif
-
-#if 0
-#define	LOG_EMERG	0	/* system is unusable */
-#define	LOG_ALERT	1	/* action must be taken immediately */
-#define	LOG_CRIT	2	/* critical conditions */
-#define	LOG_ERR		3	/* error conditions */
-#define	LOG_WARNING	4	/* warning conditions */
-#define	LOG_NOTICE	5	/* normal but significant condition */
-#define	LOG_INFO	6	/* informational */
-#define	LOG_DEBUG	7	/* debug-level messages */
-#endif
-
-#define LOG_TITLE_CHK "CHKSTA"
-#define LOG_TITLE_DIAG "CONNDIAG"
-
-extern char GID[64];
-extern char title_chksta[128];
-extern char title_diag[128];
-
-#define CHK_LOG(LV, fmt, arg...) \
-	do { \
-		if(diag_dbg >= LV) \
-			_dprintf("%lu: "fmt"\n", time(NULL), ##arg); \
-		if(diag_syslog >= LV) \
-			logmessage_lv(LV, title_chksta, fmt, ##arg); \
-	} while (0)
-
-#define DIAG_LOG(LV, fmt, arg...) \
-	do { \
-		if(diag_dbg >= LV) \
-			_dprintf("%lu: "fmt"\n", time(NULL), ##arg); \
-		if(diag_syslog >= LV) \
-			logmessage_lv(LV, title_diag, fmt, ##arg); \
-	} while (0)
-
-#ifdef RTCONFIG_LIBASUSLOG
-#define DBG_CHK_DATA "chksta_data.log"
-
-#define CHK_DATA(fmt, arg...) \
-	do { \
-		asusdebuglog(0, DBG_CHK_DATA, LOG_CUSTOM, LOG_SHOWTIME, 0, fmt, ##arg); \
-	} while (0)
-#else
-#define CHK_DATA(fmt, arg...) \
-	do { \
-		logmessage("CHKSTA", fmt, ##arg); \
-	} while (0)
-#endif
-
-extern void logmessage_lv(int lv, char *logheader, char *fmt, ...);
 
 extern int get_hw_acceleration(char *output, int size);
 extern int get_sys_clk(char *output, int size);

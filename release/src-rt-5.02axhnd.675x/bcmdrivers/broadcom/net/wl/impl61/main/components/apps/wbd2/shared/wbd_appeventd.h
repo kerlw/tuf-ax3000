@@ -45,13 +45,14 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_appeventd.h 764064 2018-05-23 13:09:46Z $
+ * $Id: wbd_appeventd.h 777334 2019-07-29 08:58:01Z $
  */
 
 #ifndef _WBD_APPEVENTD_H_
 #define _WBD_APPEVENTD_H_
 
 #include "appeventd.h"
+#include "appeventd_wbd.h"
 
 /*
  * Routine to send  MAP init Start/End event from wbd to appeventd.
@@ -59,8 +60,10 @@
  * @evt: Event id
  * @device_id: AL MAC address of Controller device.
  * @status: Start = 1, end = 2.
+ * @app_id: Master =1, Slave = 2.
  */
-extern void wbd_appeventd_map_init(int evt, struct ether_addr *device_id, int status);
+extern void wbd_appeventd_map_init(int evt, struct ether_addr *device_id, map_init_status_t status,
+	map_apptype_t app_id);
 
 /*
  * Routine to send  weak sta event from wbd to appeventd.

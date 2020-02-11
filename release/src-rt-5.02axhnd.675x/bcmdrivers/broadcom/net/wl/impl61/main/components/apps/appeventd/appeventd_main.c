@@ -193,9 +193,10 @@ appeventd_parse_wbd_map_init_data(char *pkt, int len)
 
 	while (len >= ulen) {
 		map_init = (app_event_wbd_map_init_t *)pkt;
-		APPEVENTD_INFO("WBD-Map Init: Device MAC = "MACF""
-			" Map Init:[%s]\n", ETHER_TO_MACF(map_init->device_id),
-			(map_init->status == 1) ? "Start" : "End");
+		APPEVENTD_INFO("WBD-Map Init: APP_type: %s  Device MAC = "MACF""
+			" Map Init:[%s]\n",(map_init->app_id == MAP_APPTYPE_MASTER) ? "MASTER" :
+			"SLAVE", ETHER_TO_MACF(map_init->device_id),
+			(map_init->status == MAP_INIT_START) ? "Start" : "End");
 		pkt += ulen;
 		len -= ulen;
 	}
@@ -314,6 +315,13 @@ appeventd_main_loop(int sock)
 						"APP_E_WBD_MASTER_MAP_INIT_END", len);
 					appeventd_parse_wbd_map_init_data(pkt, len);
 					break;
+
+				case APP_E_WBD_SLAVE_MAP_INIT_END:
+                                        APPEVENTD_DEBUG("Received event %s len = %d\n",
+                                                 "APP_E_WBD_SLAVE_MAP_INIT_END",len);
+					appeventd_parse_wbd_map_init_data(pkt, len);
+                                        break;
+
 #endif /* BCM_WBD */
 
 				default:

@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_txbf.c 775549 2019-06-04 04:40:02Z $
+ * $Id: wlc_txbf.c 778014 2019-08-20 09:42:00Z $
  */
 
 /**
@@ -179,10 +179,11 @@ typedef struct txbf_scb_cubby {
 	txbf_scb_info_t *txbf_scb_info;
 } txbf_scb_cubby_t;
 
-#define  TXBFCFG_MAX_ENTRIES		18
+#define  TXBFCFG_MAX_ENTRIES		19
 #define  TXBFCFG_AUTOTXV_ADD		0
 #define  TXBFCFG_AUTOTXV_DEL		1
 #define  TXBFCFG_MUSND_PER		2
+#define  TXBFCFG_STXV_MAXCNT		18
 
 #define  TXBFCFG_HOSTFLAG_ENTRIES	3
 #define  TXBFCFG_MAX_STRLEN		20
@@ -207,6 +208,7 @@ static char txbfcfg_str_array[TXBFCFG_MAX_ENTRIES][TXBFCFG_MAX_STRLEN] = {
 	"hesttmout_thresh",	/* 12  */
 	"hesutmout_thresh",	/* 13  */
 	"cqitmout_thresh",	/* 14  */
+	"sutxvcnt_max",
 };
 #endif // endif
 
@@ -218,6 +220,7 @@ static uint16 txbfcfg_def_vals[TXBFCFG_MAX_ENTRIES] = {
 	0,				/* musnd2grp_disable */
 	20, 2,				/* thresholds for mtxv mtxvidle, musnd_sw */
 	0, 0, 0, 0, 0,			/* timeout thresholds for vht, hemm, hests, hesus, cqi */
+	16,				/* ntxv allocated for SU */
 };
 
 typedef struct txbf_cfg_tuple {
@@ -346,7 +349,7 @@ static const bcm_iovar_t txbf_iovars[] = {
 	(IOVF_SET_UP), 0, IOVT_INT32, 0
 	},
 	{"txbfcfg", IOV_TXBF_CFG,
-	(0), 0, IOVT_BUFFER, 0
+	(IOVF_SET_DOWN), 0, IOVT_BUFFER, 0
 	},
 	{NULL, 0, 0, 0, 0, 0}
 };
@@ -1082,9 +1085,14 @@ BCMATTACHFN(wlc_txbf_attach)(wlc_info_t *wlc)
 			/* Initilize txbf_cfg_blk */
 			for (i = 0; i < TXBFCFG_MAX_ENTRIES; i++) {
 				txbf_cfg = &txbf->txbfcfg_blk_ptr->txbf_cfg[i];
-				if (i >= TXBFCFG_HOSTFLAG_ENTRIES) {
+				if (i == TXBFCFG_STXV_MAXCNT) {
+					txbf_cfg->offset = S_TXVFREE_BMP;
+					txbf_cfg->val = txbfcfg_def_vals[i];
+				} else {
+					if (i >= TXBFCFG_HOSTFLAG_ENTRIES) {
 					txbf_cfg->offset = MX_MUSND_PER(wlc) +
 						(i - TXBFCFG_HOSTFLAG_ENTRIES) * 2;
+					}
 				}
 				txbf_cfg->val = txbfcfg_def_vals[i];
 			}
@@ -1120,8 +1128,10 @@ BCMATTACHFN(wlc_txbf_detach)(wlc_txbf_info_t *txbf)
 		txbf->txbfcfg_blk_ptr = NULL;
 	}
 
-	txbf->pub->_txbf = FALSE;
-	wlc_scb_state_upd_unregister(wlc, wlc_txbf_scb_state_upd_cb, txbf);
+	if (txbf->pub->_txbf == TRUE) {
+		txbf->pub->_txbf = FALSE;
+		wlc_scb_state_upd_unregister(wlc, wlc_txbf_scb_state_upd_cb, txbf);
+	}
 	wlc_module_unregister(txbf->pub, "txbf", txbf);
 	MFREE(txbf->osh, (void *)txbf, sizeof(wlc_txbf_info_t));
 	return;
@@ -1928,6 +1938,11 @@ wlc_txbf_init_imp(wlc_txbf_info_t *txbf, scb_t *scb, txbf_scb_info_t *bfi)
 		bfi->imp_en = TRUE;
 	else
 		bfi->imp_en = FALSE;
+
+	if (D11REV_IS(wlc->pub->corerev, 130)) {
+		/* implicit beamforming not ready yet, disable actual use */
+		bfi->imp_en = FALSE;
+	}
 
 	/* as iovar also calls this func, reset counters here */
 	bfi->imp_used = 0;
@@ -2907,8 +2922,8 @@ wlc_txbf_bfr_init_ge128(wlc_txbf_info_t *txbf, txbf_scb_info_t *bfi)
 		bfrcfg0 |= (1 << C_LNK_BFIVLD_NBIT);
 
 		WL_TXBF(("wl%d %s link bw %d my: bfr_sts %d peer: bfe_nrx %d bfe_sts %d result: "
-			"nc_idx %d ndps %d flags:0x%x\n", pub->unit, __FUNCTION__,
-			bw, bfr_sts, bfe_nrx, bfe_sts, nc_idx, ndps, bfi->flags));
+			"nc_idx %d ndps %d flags:0x%x %x\n", pub->unit, __FUNCTION__,
+			bw, bfr_sts, bfe_nrx, bfe_sts, nc_idx, ndps, bfi->flags, bfi->vht_cap));
 
 		wlc_bmac_enable_macx(wlc->hw);
 	}
@@ -3788,6 +3803,11 @@ bool wlc_txbf_bfen(wlc_txbf_info_t *txbf, scb_t *scb,
 	/* fill TXEXP bits to indicate TXBF0,1 or 2 */
 	txbf_rspec |= ((ntx_txbf - wlc_ratespec_nss(txbf_rspec)) << WL_RSPEC_TXEXP_SHIFT);
 	nss_txbf = (uint8) wlc_ratespec_nss(txbf_rspec);
+
+	/* bfe_sts_cap advertised incorrectly, turn off txbf */
+	if (nss_txbf > ntx_txbf) {
+		return FALSE;
+	}
 
 	/* bfe number of rx antenna override set? */
 	if (txbf->bfe_nrx_ov) {
@@ -5133,6 +5153,11 @@ wlc_txbf_txbfcfg_write_shmx(wlc_txbf_info_t *txbf, int index)
 		wlc_bmac_mhf(wlc->hw, MXHF0, MXHF0_DYNSND,
 			txbf_cfg->val ? MXHF0_DYNSND : 0, WLC_BAND_ALL);
 		break;
+	case TXBFCFG_STXV_MAXCNT: {
+		uint16 bmsk = ((1 << txbf_cfg->val) - 1);
+		wlc_bmac_write_scr(wlc->hw, txbf_cfg->offset, bmsk);
+		break;
+	}
 	default:
 		wlc_write_shmx(wlc, txbf_cfg->offset, txbf_cfg->val);
 		break;
@@ -5495,15 +5520,20 @@ wlc_txbf_doiovar(void *hdl, uint32 actionid,
 	case IOV_SVAL(IOV_TXBF_MUTIMER):
 		uint16_val = (uint16)int_val;
 		ASSERT(PSMX_ENAB(pub));
-		if (uint16_val == 0xffff || uint16_val == 0) {
-			/* do it once or stop */
-			wlc_write_shmx(wlc, MX_MUSND_PER(wlc), uint16_val);
-		} else if (txbf->mu_sounding_period != uint16_val) {
-			/* Need to stop sounding first for ucode to load the new value */
-			wlc_write_shmx(wlc, MX_MUSND_PER(wlc), 0);
-			OSL_DELAY(10);
-			wlc_write_shmx(wlc, MX_MUSND_PER(wlc), uint16_val << 2);
+		if (D11REV_GE(wlc->pub->corerev, 128)) {
+			wlc_macreq_txbf_mutimer(wlc, uint16_val);
+		} else {
+			if (uint16_val == 0xffff || uint16_val == 0) {
+				/* do it once or stop */
+				wlc_write_shmx(wlc, MX_MUSND_PER(wlc), uint16_val);
+			} else if (txbf->mu_sounding_period != uint16_val) {
+				/* Need to stop sounding first for ucode to load the new value */
+				wlc_write_shmx(wlc, MX_MUSND_PER(wlc), 0);
+				OSL_DELAY(10);
+				wlc_write_shmx(wlc, MX_MUSND_PER(wlc), uint16_val << 2);
+			}
 		}
+
 		txbf->mu_sounding_period = uint16_val;
 		break;
 #endif /* WL_PSMX */
@@ -5918,13 +5948,29 @@ wlc_txbf_tbcap_update(wlc_txbf_info_t *txbf, scb_t *scb)
 {
 	txbf_scb_info_t *bfi;
 	wlc_info_t *wlc = txbf->wlc;
+	bool trig_su_fb;
 
 	bfi = (txbf_scb_info_t *)TXBF_SCB_INFO(txbf, scb);
-	if (bfi && (HE_DLMU_ENAB(txbf->pub) &&
-		(SCB_DLOFDMA(scb) || SCB_HEMMU(scb)))) {
-		bfi->BFIConfig0 |= (1 << C_LNK_TBCAP_NBIT);
+	if (bfi && (HE_DLMU_ENAB(txbf->pub)) && SCB_HE_CAP(scb)) {
+
+		bfi->BFIConfig0 &= ~(1 << C_LNK_TBCAP_NBIT);
+		bfi->BFIConfig0 &= ~(1 << C_LNK_MUCAP_NBIT);
+
 		if (SCB_DLOFDMA(scb)) {
 			bfi->BFIConfig0 &= ~(1 << C_LNK_MUCAP_NBIT);
+
+			trig_su_fb = getbits((uint8 *)&bfi->he_cap, sizeof(bfi->he_cap),
+				HE_PHY_TRG_SU_BFM_FEEDBACK_IDX,
+				HE_PHY_TRG_SU_BFM_FEEDBACK_FSZ);
+
+			if (trig_su_fb) {
+				bfi->BFIConfig0 |= (1 << C_LNK_TBCAP_NBIT);
+			} else {
+				bfi->BFIConfig0 &= ~(1 << C_LNK_TBCAP_NBIT);
+			}
+		} else if (SCB_HEMMU(scb)) {
+			bfi->BFIConfig0 |= (1 << C_LNK_TBCAP_NBIT);
+			bfi->BFIConfig0 |= (1 << C_LNK_MUCAP_NBIT);
 		}
 	}
 

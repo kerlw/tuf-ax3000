@@ -1891,6 +1891,9 @@ void start_lan(void)
 
 	update_lan_state(LAN_STATE_INITIALIZING, 0);
 
+	/* set hostname on lan (re)start */
+	set_hostname();
+
 	if (sw_mode() == SW_MODE_REPEATER
 #if defined(RTCONFIG_BCMWL6) && defined(RTCONFIG_PROXYSTA)
 		|| psr_mode() || mediabridge_mode()

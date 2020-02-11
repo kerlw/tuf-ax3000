@@ -20,7 +20,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: blanket.c 776955 2019-07-15 05:31:14Z $
+ * $Id: blanket.c 777559 2019-08-06 06:57:38Z $
  *
  *  @author
  *  @bug No known bugs.
@@ -693,6 +693,7 @@ blanket_get_sta_info(char* ifname, struct ether_addr* addr, sta_info_t *out_sta_
 		goto end;
 	}
 
+	out_sta_info->flags = dtoh32(out_sta_info->flags);
 	out_sta_info->rateset.count = dtoh32(out_sta_info->rateset.count);
 	out_sta_info->listen_interval_inms = dtoh32(out_sta_info->listen_interval_inms);
 	out_sta_info->len = dtoh16(out_sta_info->len);

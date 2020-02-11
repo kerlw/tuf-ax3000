@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc.c 776884 2019-07-12 05:10:27Z $
+ * $Id: wlc.c 778114 2019-08-22 19:38:37Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -777,11 +777,11 @@ enum wlc_iov {
 	IOV_STA_SUPP_CHAN = 134,
 	IOV_CHANNEL_UTIL_INTERVAL = 135,
 	IOV_CHANNEL_UTIL_DURATION = 136,
-	IOV_GET_CHANNEL_UTIL = 137,
-	IOV_RX_UTIL_UCODE = 138, /* Utilization based on times in the ucode */
-	IOV_TX_UTIL_UCODE = 139,
-	IOV_RXTX_UCODE_STATS_RAW = 140, /* RAW stats from ucode CCA */
-	IOV_RXTX_UCODE_STATS_DELTA = 141, /* Delta stats from ucode CCA (RAW - previous RAW) */
+	IOV_CCA_CHAN_UTIL = 137,
+	IOV_CCA_RX_UTIL = 138, /* Utilization based on times in the ucode */
+	IOV_CCA_TX_UTIL = 139,
+	IOV_CCA_STATS_RAW = 140, /* RAW stats from ucode CCA */
+	IOV_CCA_STATS_DELTA = 141, /* Delta stats from ucode CCA (RAW - previous RAW) */
 	IOV_WET_DONGLE = 143,	/* wet enable/disable for dongle mode */
 	IOV_EXTERN_EVENT_MSGS_TEST = 146,
 	IOV_WL_EAP_STATS = 147,
@@ -806,8 +806,9 @@ enum wlc_iov {
 	IOV_ALLOW_SOUND_FB = 164,
 	IOV_ACTIVE_BIDIR_THRESH = 165, /* rx active threshold */
 	IOV_SEND_BAR_TO_IDLE_SCBS = 166,
-	IOV_CLM_DATA_VER = 167,
-	IOV_BLOCK_AS_RETRY = 168,
+	IOV_FIPS_LOOPBACK_TEST = 167,
+	IOV_CLM_DATA_VER = 168,
+	IOV_BLOCK_AS_RETRY,
 	IOV_LAST		/* In case of a need to check max ID number */
 };
 
@@ -1491,6 +1492,8 @@ static int wlc_send_action_brcm_dcs(wlc_info_t *wlc, wl_bcmdcs_data_t *data, str
 #endif // endif
 
 static int wlc_send_mgmt_auth(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
+		dot11_management_header_t *mgmt, uint32 len);
+static int wlc_send_mgmt_assoc(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
 		dot11_management_header_t *mgmt, uint32 len);
 #ifdef WL_CLIENT_SAE
 static int wlc_sae_assoc_change_state(wlc_bsscfg_t *cfg, struct dot11_auth *auth_frm);
@@ -3417,8 +3420,13 @@ wlc_set_home_chanspec(wlc_info_t *wlc, chanspec_t chanspec)
 		           "0x%04x to 0x%04x\n", wlc->pub->unit, wlc->home_chanspec, chanspec));
 
 		wlc->home_chanspec = chanspec;
+		if (BSSCFG_STA(wlc->cfg)) {
+			wlc->cfg->target_bss->chanspec = chanspec;
+			wlc_bsscfg_set_current_bss_chan(wlc->cfg, chanspec);
+		}
 
-		FOREACH_AS_BSS(wlc, idx, cfg) {
+		FOREACH_UP_AP(wlc, idx, cfg) {
+
 #ifdef WLMCHAN
 			if (!MCHAN_ENAB(wlc->pub) ||
 				(wlc_get_chanspec(wlc, cfg) == chanspec))
@@ -6831,7 +6839,8 @@ BCMATTACHFN(wlc_attach)(void *wl, uint16 vendor, uint16 device, uint unit, uint 
 			if (CHIP_SUPPORTS_11AC(pub->sih)) {
 				/* Setup default VHT feature set for device */
 				WLC_VHT_FEATURES_DEFAULT(pub, wlc->bandstate, wlc->nbands);
-#ifdef WL11AC
+#if defined(WL11AC)
+/* for EAP builds do not add additional default VHT features beyond the defaults */
 				if (wlc->phy_cap & PHY_PREATTACH_CAP_SUP_2G) {
 					WLC_VHT_FEATURES_SET(pub, WL_VHT_FEATURES_2G);
 				}
@@ -6849,7 +6858,7 @@ BCMATTACHFN(wlc_attach)(void *wl, uint16 vendor, uint16 device, uint unit, uint 
 					WLC_VHT_FEATURES_SET(pub, WL_VHT_FEATURES_1024QAM);
 					WLC_VHT_FEATURES_PROP_MCS_SET(pub, VHT_PROP_MCS_MAP_10_11);
 				}
-#endif /* WL11AC */
+#endif // endif
 				if (wlc->pub->_n_enab == OFF) {
 					/* If _n_enab is off, _vht_enab should also be off */
 					wlc->pub->_vht_enab = 0;
@@ -8957,11 +8966,10 @@ wlc_watchdog(void *arg)
 					 */
 					;
 				} else {
-					if (!wlc->cfg->block_as_retry) {
+					if (!wlc->cfg->block_as_retry)
 						wlc_try_join_start(wlc->cfg,
 							wlc_bsscfg_scan_params(wlc->cfg),
 							wlc_bsscfg_assoc_params(wlc->cfg));
-					}
 				}
 			}
 		} else {
@@ -11472,6 +11480,12 @@ wlc_doioctl(void *ctx, uint cmd, void *arg, uint len, struct wlc_if *wlcif)
 		break;
 	}
 
+	/* ioctl to handle and transmit association frame */
+	case WLC_SCB_ASSOCIATE: {
+		dot11_management_header_t *mgmt = (dot11_management_header_t *)arg;
+		bcmerror = wlc_send_mgmt_assoc(wlc, bsscfg, mgmt, len);
+		break;
+	}
 	case WLC_SCB_DEAUTHENTICATE:
 		/* Supply a reason in val */
 		val = DOT11_RC_INACTIVITY;
@@ -14782,7 +14796,6 @@ wlc_doiovar(void *hdl, uint32 actionid,
 		break;
 	case IOV_SVAL(IOV_BLOCK_AS_RETRY):
 		bsscfg->block_as_retry = (uint8)int_val;
-		WL_ERROR(("%s block_as_retry = %d\n", __func__, bsscfg->block_as_retry));
 		break;
 
 	default:
@@ -19435,6 +19448,150 @@ static int wlc_auth_get_bssid(wlc_bsscfg_t *cfg, struct ether_addr *bssid,
 	return BCME_OK;
 }
 
+static int wlc_send_mgmt_assoc(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
+	dot11_management_header_t *mgmt, uint32 len)
+{
+	void *pkt;
+	int ret = 0;
+	struct ether_addr target_mac, bssid;
+	struct scb *scb = NULL;
+	uint8 *assoc_frm = NULL;
+	struct dot11_assoc_resp *assoc_resp;
+#if defined(WLMSG_ASSOC)
+	char eabuf[ETHER_ADDR_STR_LEN];
+#endif /* WLMSG_ASSOC */
+	wlc_iem_ft_cbparm_t ftcbparm;
+	wlc_iem_cbparm_t cbparm;
+	wlc_bss_info_t *current_bss;
+	wlc_rateset_t sup_rates, ext_rates;
+	uint rsp_len = 0;
+	uint16 type;
+
+	if (!mgmt)
+		return BCME_ERROR;
+
+	type = (ltoh16(mgmt->fc) & FC_KIND_MASK);
+	current_bss = bsscfg->current_bss;
+	memcpy(&target_mac, &mgmt->da, ETHER_ADDR_LEN);
+
+#if defined(WLMSG_ASSOC)
+	WL_ASSOC(("wl%d: %s: assoc resp(%d) frame for MAC %s\n",
+			wlc->pub->unit, __FUNCTION__, type,
+			bcm_ether_ntoa((struct ether_addr *)&mgmt->da,
+			eabuf)));
+#endif /* WLMSG_ASSOC */
+
+	if (!BSSCFG_AP(bsscfg)) {
+		WL_ERROR(("wl%d: %s: Not AP, Drop assoc resp frame\n",
+				wlc->pub->unit, __FUNCTION__));
+		return BCME_NOTAP;
+	}
+
+	if (wlc_auth_get_bssid(bsscfg, &bssid, &target_mac) != BCME_OK) {
+		WL_ERROR(("wl%d: %s: NULL bssid, Drop assoc resp frame\n",
+				wlc->pub->unit, __FUNCTION__));
+		return BCME_BADADDR;
+	}
+
+	if (len < (DOT11_MGMT_HDR_LEN + DOT11_ASSOC_RESP_FIXED_LEN)) {
+		WL_ERROR(("wl%d: %s: assoc resp frame is too small\n",
+				wlc->pub->unit, __FUNCTION__));
+		return BCME_BUFTOOSHORT;
+	}
+
+	scb = wlc_scbfind(wlc, bsscfg, &target_mac);
+	if (scb == NULL) {
+#if defined(WLMSG_ASSOC)
+		WL_ASSOC(("wl%d: %s: assoc resp frame for unknown MAC %s\n",
+				wlc->pub->unit, __FUNCTION__,
+				bcm_ether_ntoa((struct ether_addr *)&mgmt->da,
+				eabuf)));
+#endif /* WLMSG_ASSOC */
+		return BCME_BADADDR;
+	}
+
+	/* create the supported rates and extended supported rates elts */
+	bzero(&sup_rates, sizeof(wlc_rateset_t));
+	bzero(&ext_rates, sizeof(wlc_rateset_t));
+	/* check for a supported rates override */
+	if (wlc->sup_rates_override.count > 0)
+		bcopy(&wlc->sup_rates_override, &sup_rates, sizeof(wlc_rateset_t));
+	wlc_rateset_elts(wlc, bsscfg, &current_bss->rateset, &sup_rates, &ext_rates);
+
+	rsp_len = DOT11_ASSOC_RESP_FIXED_LEN;
+	/* prepare IE mgmt calls */
+	bzero(&ftcbparm, sizeof(ftcbparm));
+	ftcbparm.assocresp.mcs = scb->rateset.mcs;
+	ftcbparm.assocresp.scb = scb;
+	ftcbparm.assocresp.sup = &sup_rates;
+	ftcbparm.assocresp.ext = &ext_rates;
+	bzero(&cbparm, sizeof(cbparm));
+	cbparm.ft = &ftcbparm;
+	cbparm.bandunit = CHSPEC_WLCBANDUNIT(current_bss->chanspec);
+	cbparm.ht = SCB_HT_CAP(scb);
+#ifdef WL11AC
+	cbparm.vht = SCB_VHT_CAP(scb);
+#endif // endif
+#ifdef WL11AX
+	cbparm.he = SCB_HE_CAP(scb);
+#endif // endif
+
+	/* calculate IEs' length */
+	rsp_len += wlc_iem_calc_len(wlc->iemi, bsscfg, type, NULL, &cbparm);
+	/* alloc a packet */
+	if ((pkt = wlc_frame_get_mgmt(wlc, type, &target_mac, &bsscfg->cur_etheraddr,
+			&bssid, rsp_len,
+			&assoc_frm)) == NULL) {
+		WL_ERROR(("wl%d: %s:  Sending assoc resp frame failed \n",
+				wlc->pub->unit, __FUNCTION__));
+		return BCME_ERROR;
+	}
+	memcpy(assoc_frm, (uint8 *)mgmt + DOT11_MGMT_HDR_LEN, len - DOT11_MGMT_HDR_LEN);
+	assoc_resp = (struct dot11_assoc_resp *) assoc_frm;
+	assoc_frm += DOT11_ASSOC_RESP_FIXED_LEN;
+	rsp_len -= DOT11_ASSOC_RESP_FIXED_LEN;
+
+	/* write IEs in the frame */
+	if (wlc_iem_build_frame(wlc->iemi, bsscfg, type, NULL, &cbparm,
+		assoc_frm, rsp_len) != BCME_OK) {
+		WL_ERROR(("wl%d: %s: wlc_iem_build_frame failed\n",
+				wlc->pub->unit, __FUNCTION__));
+		return BCME_ERROR;
+	}
+
+	ret = wlc_sendmgmt(wlc, pkt, scb->bsscfg->wlcif->qi, scb);
+
+	if (assoc_resp->status == DOT11_SC_SUCCESS) {
+		if (bsscfg->WPA_auth & WPA3_AUTH_SAE_PSK) {
+			/* Set SCB to associated */
+			WL_ASSOC(("wl%d: %s: Set scb to ASSOCIATED\n", wlc->pub->unit,
+				__FUNCTION__));
+			wlc_scb_clearstatebit(wlc, scb, PENDING_ASSOC);
+			scb->aid = assoc_resp->aid;
+			scb->assoctime = wlc->pub->now;
+			wlc_scb_setstatebit(wlc, scb, ASSOCIATED);
+
+			/* send WLC_E_REASSOC_IND/WLC_E_ASSOC_IND to add STA in DHD.
+			 * Cfg80211 layer should ignore this event
+			 */
+			wlc_bss_mac_event(wlc, bsscfg, type == FC_REASSOC_REQ ? WLC_E_REASSOC_IND :
+					WLC_E_ASSOC_IND, &target_mac, 0, 0, scb->auth_alg,
+					NULL, 0);
+		}
+	}
+	else {
+		/* Reset security parameters for scb */
+		scb->WPA_auth = WPA_AUTH_DISABLED;
+		scb->wsec = 0;
+#ifdef MFP
+		if (WLC_MFP_ENAB(wlc->pub) && SCB_MFP(scb)) {
+			SCB_MFP_DISABLE(scb);
+		}
+#endif /* MFP */
+	}
+	return ret;
+}
+
 static int wlc_send_mgmt_auth(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
 	dot11_management_header_t *mgmt, uint32 len)
 {
@@ -19583,11 +19740,9 @@ wlc_send_action_brcm_dcs(wlc_info_t *wlc, wl_bcmdcs_data_t *data, struct scb *sc
 } /* wlc_send_action_brcm_dcs */
 #endif /* BCM_DCS && STA */
 
-/* FIXME: PR81518: need a wlc_bsscfg_t param to correctly determine addresses and
- * queue for wlc_sendmgmt()
- */
 int
-wlc_send_action_err(wlc_info_t *wlc, struct dot11_management_header *hdr, uint8 *body, int body_len)
+wlc_send_action_err(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
+	struct dot11_management_header *hdr, uint8 *body, int body_len)
 {
 	void *p;
 	uint8* pbody;
@@ -19595,7 +19750,12 @@ wlc_send_action_err(wlc_info_t *wlc, struct dot11_management_header *hdr, uint8 
 #if defined(BCMDBG) || defined(WLMSG_INFORM)
 	char eabuf[ETHER_ADDR_STR_LEN];
 #endif /* BCMDBG || WLMSG_INFORM */
-	wlc_bsscfg_t *bsscfg = wlc->cfg;
+
+	if (!bsscfg) {
+		WL_ERROR(("wl%d: %s: suppressing error reply due to missing bsscfg\n",
+			wlc->pub->unit, __FUNCTION__));
+		return BCME_ERROR;
+	}
 
 	if (ETHER_ISMULTI(&hdr->da)) {
 		WL_INFORM(("wl%d: %s: suppressing error reply to %s",
@@ -21323,6 +21483,9 @@ wlc_queue_80211_frag(wlc_info_t *wlc, void *p, wlc_txq_info_t *qi, struct scb *s
 	}
 	if (SCB_DEL_IN_PROGRESS(scb)|| SCB_MARKED_DEL(scb)) {
 		WL_TX_STS_UPDATE(toss_reason, WLC_TX_STS_TOSS_SCB_DELETED)
+
+		WLPKTTAGSCBSET(p, scb);
+		WLPKTTAGBSSCFGSET(p, WLC_BSSCFG_IDX(bsscfg));
 		goto toss;
 	}
 
@@ -24532,6 +24695,17 @@ void
 wlc_reset_bmac_done(wlc_info_t *wlc)
 {
 	BCM_REFERENCE(wlc);
+}
+
+/* Only for dying-gasp use to quickly turn off wl core */
+void
+wlc_shutdown_handler(wlc_info_t* wlc)
+{
+	wl_intrsoff(wlc->wl);
+	wlc_led_radioset(wlc->ledh, OFF);
+
+	wlc->hw->up = FALSE; /* WAR: to avoid ASSERT calling wlc_coredisable() */
+	wlc_bmac_set_clk(wlc->hw, FALSE);
 }
 
 /**

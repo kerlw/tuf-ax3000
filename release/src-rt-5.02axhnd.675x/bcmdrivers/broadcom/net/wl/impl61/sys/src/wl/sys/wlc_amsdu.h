@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_amsdu.h 776274 2019-06-24 10:52:42Z $
+ * $Id: wlc_amsdu.h 777412 2019-08-01 00:36:17Z $
 */
 
 #ifndef _wlc_amsdu_h_

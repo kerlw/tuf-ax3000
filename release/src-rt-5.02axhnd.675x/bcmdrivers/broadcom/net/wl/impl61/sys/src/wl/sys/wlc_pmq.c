@@ -64,7 +64,7 @@
 /* ======== structures and definitions ======== */
 
 /* bitmap of auxpmq index */
-typedef uint8 auxpmq_idx_bitmap_t[CEIL(AUXPMQ_ENTRIES, NBBY)];
+typedef uint8 auxpmq_idx_bitmap_t;
 
 typedef struct auxpmq_entry {
 	struct ether_addr ea;		/* station address */
@@ -79,7 +79,8 @@ struct wlc_pmq_info {
 
 	/* The following is used for aux pmq */
 	auxpmq_entry_t *auxpmq_array;
-	auxpmq_idx_bitmap_t auxpmq_used;
+	auxpmq_idx_bitmap_t *auxpmq_used;
+	uint16 auxpmq_entries; /* how many entries hw has */
 	uint32 auxpmq_full_cnt;
 	uint16 auxpmq_entry_cnt;
 	bool auxpmq_full;
@@ -116,6 +117,8 @@ wlc_pmq_info_t *
 BCMATTACHFN(wlc_pmq_attach)(wlc_info_t *wlc)
 {
 	wlc_pmq_info_t *pmq;
+	uint corerev = wlc->pub->corerev;
+
 	/* allocate private module info */
 	if ((pmq = MALLOCZ(wlc->osh, sizeof(*pmq))) == NULL) {
 		WL_ERROR(("wl%d: %s: out of memory, malloced %d bytes\n", wlc->pub->unit,
@@ -134,6 +137,7 @@ BCMATTACHFN(wlc_pmq_attach)(wlc_info_t *wlc)
 	wlc_dump_register(wlc->pub, "pmq", (dump_fn_t)wlc_dump_pmq, (void *)pmq);
 #endif // endif
 
+	BCM_REFERENCE(corerev);
 #ifdef WL_AUXPMQ
 	/* reserve scb cubby */
 	pmq->scb_handle = wlc_scb_cubby_reserve(wlc, sizeof(struct pmq_scb_cubby),
@@ -144,16 +148,27 @@ BCMATTACHFN(wlc_pmq_attach)(wlc_info_t *wlc)
 		goto fail;
 	}
 
-	/* Preallocate all entries of AuxPMQ. */
-	pmq->auxpmq_array = (auxpmq_entry_t *)MALLOCZ(wlc->osh,
-		AUXPMQ_ENTRIES * sizeof(auxpmq_entry_t));
-	if (pmq->auxpmq_array == NULL) {
-		WL_ERROR(("wl%d: Init AuxPMQ error. Out of memory !!\n", wlc->pub->unit));
-		goto fail;
-	}
-
 	/* Check if hardware supports WL_AUXPMQ. */
-	wlc->pub->_auxpmq = (D11REV_IS(wlc->pub->corerev, 65) || D11REV_GE(wlc->pub->corerev, 128));
+	wlc->pub->_auxpmq = (D11REV_IS(corerev, 65) || D11REV_GE(corerev, 128));
+	if (wlc->pub->_auxpmq) {
+		if (D11REV_GE(corerev, 132)) {
+			pmq->auxpmq_entries = AUXPMQ_ENTRIES_GE132;
+		} else if (D11REV_GE(corerev, 129)) {
+			pmq->auxpmq_entries = AUXPMQ_ENTRIES_GE129;
+		} else {
+			pmq->auxpmq_entries = AUXPMQ_ENTRIES;
+		}
+
+		/* Preallocate all entries of AuxPMQ. */
+		pmq->auxpmq_array = (auxpmq_entry_t *)MALLOCZ(wlc->osh,
+				pmq->auxpmq_entries * sizeof(auxpmq_entry_t));
+		pmq->auxpmq_used = (auxpmq_idx_bitmap_t *)MALLOCZ(wlc->osh,
+			CEIL(pmq->auxpmq_entries, NBBY) * sizeof(auxpmq_idx_bitmap_t));
+		if (pmq->auxpmq_array == NULL || pmq->auxpmq_used == NULL) {
+			WL_ERROR(("wl%d: Init AuxPMQ error. Out of memory !!\n", wlc->pub->unit));
+			goto fail;
+		}
+	}
 
 #endif /* WL_AUXPMQ */
 
@@ -176,7 +191,11 @@ BCMATTACHFN(wlc_pmq_detach)(wlc_pmq_info_t *pmq)
 
 #ifdef WL_AUXPMQ
 	if (pmq->auxpmq_array) {
-		MFREE(wlc->osh, pmq->auxpmq_array, AUXPMQ_ENTRIES * sizeof(auxpmq_entry_t));
+		MFREE(wlc->osh, pmq->auxpmq_array, pmq->auxpmq_entries * sizeof(auxpmq_entry_t));
+	}
+	if (pmq->auxpmq_used) {
+		MFREE(wlc->osh, pmq->auxpmq_used,
+		      CEIL(pmq->auxpmq_entries, NBBY) * sizeof(auxpmq_idx_bitmap_t));
 	}
 #endif /* WL_AUXPMQ */
 
@@ -265,12 +284,12 @@ wlc_pmq_auxpmq_add(wlc_pmq_info_t *pmq, struct ether_addr *ea)
 	auxpmq_entry_t *add;
 	uint16 idx;
 
-	for (idx = 0; idx < AUXPMQ_ENTRIES; ++idx) {
+	for (idx = 0; idx < pmq->auxpmq_entries; ++idx) {
 		if (!isset(pmq->auxpmq_used, idx))
 			break;
 	}
 
-	if (idx == AUXPMQ_ENTRIES) {
+	if (idx == pmq->auxpmq_entries) {
 		WL_NONE(("wl%d: Add AuxPMQ is full !!\n", pmq->wlc->hw->unit));
 		idx = AUXPMQ_INVALID_IDX;
 		pmq->auxpmq_full_cnt++;
@@ -330,7 +349,7 @@ wlc_pmq_clear_auxpmq(wlc_pmq_info_t *pmq)
 	FOREACHSCB(wlc->scbstate, &scbiter, scb) {
 		scb_pmq = PMQ_SCB_CUBBY(wlc->pmq, scb);
 		if (scb_pmq) {
-			if (scb_pmq->auxpmq_idx < AUXPMQ_ENTRIES) {
+			if (scb_pmq->auxpmq_idx < pmq->auxpmq_entries) {
 				wlc_pmq_auxpmq_remove(pmq, scb_pmq->auxpmq_idx);
 				scb_pmq->auxpmq_idx = AUXPMQ_INVALID_IDX;
 			}
@@ -349,8 +368,9 @@ wlc_pmq_clear_auxpmq(wlc_pmq_info_t *pmq)
 void
 wlc_pmq_reset_auxpmq(wlc_info_t *wlc)
 {
-	int auxpmq_len = AUXPMQ_ENTRIES * AUXPMQ_ENTRY_SIZE;
+	int auxpmq_len;
 
+	auxpmq_len = wlc->pmq->auxpmq_entries * AUXPMQ_ENTRY_SIZE;
 	wlc_pmq_clear_auxpmq(wlc->pmq);
 	wlc_bmac_set_objmem32(wlc->hw, 0, 0, auxpmq_len, OBJADDR_AUXPMQ_SEL);
 }
@@ -431,7 +451,7 @@ wlc_pmq_process_ps_switch(wlc_info_t *wlc, struct scb *scb, uint8 ps_flags)
 			if (scb_pmq) {
 				if (ps_flags & PS_SWITCH_STA_REMOVED) {
 					/* Remove AuxPMQ entry if SCB finished transitioning. */
-					if (scb_pmq->auxpmq_idx < AUXPMQ_ENTRIES) {
+					if (scb_pmq->auxpmq_idx < pmq->auxpmq_entries) {
 						wlc_pmq_auxpmq_remove(pmq, scb_pmq->auxpmq_idx);
 						scb_pmq->auxpmq_idx = AUXPMQ_INVALID_IDX;
 					} else {

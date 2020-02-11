@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ampdu.c 777001 2019-07-16 03:44:02Z $
+ * $Id: wlc_ampdu.c 777641 2019-08-07 02:27:22Z $
  */
 
 /**
@@ -297,7 +297,7 @@ static void wlc_cfp_ampdu_agg_complete(wlc_info_t *wlc, ampdu_tx_info_t *ampdu_t
 
 #ifdef WLATF
 /* Default AMPDU txq time allowance */
-#define AMPDU_TXQ_TIME_ALLOWANCE_US	5400
+#define AMPDU_TXQ_TIME_ALLOWANCE_US	4000
 #define AMPDU_TXQ_TIME_MIN_ALLOWANCE_US	1000
 
 /* Time elapse without any packet */
@@ -2611,17 +2611,16 @@ static void wlc_ampdu_atf_update_release_duration(wlc_info_t *wlc)
 	scb_ampdu_tx_t *scb_ampdu;
 	uint8 tid;
 	uint32 txq_time_allowance_us;
-	ampdu_tx_config_t *ampdu_tx_cfg = wlc->ampdu_tx->config;
 	FOREACHSCB(wlc->scbstate, &scbiter, scb) {
 
 		if (wlc->perc_max && (scb->sched_staperc <= wlc->perc_max)) {
-			txq_time_allowance_us = (ampdu_tx_cfg->txq_time_allowance_us *
+			txq_time_allowance_us = (AMPDU_TXQ_TIME_ALLOWANCE_US *
 				scb->sched_staperc)/wlc->perc_max;
 
 			if (txq_time_allowance_us < AMPDU_TXQ_TIME_MIN_ALLOWANCE_US) {
 				WL_ERROR(("AMPDU release time allowance %d less than %d us"
 					" TCP may underperform re-adjust ATF percentage\n",
-					txq_time_allowance_us, AMPDU_TXQ_TIME_MIN_ALLOWANCE_US));
+					txq_time_allowance_us, AMPDU_TXQ_TIME_ALLOWANCE_US));
 			}
 			scb_ampdu = SCB_AMPDU_TX_CUBBY(wlc->ampdu_tx, scb);
 			/* Update atf state release bytes */
@@ -4832,7 +4831,8 @@ wlc_ampdu_atf_calc_rbytes(atf_state_t *atf_state, ratespec_t rspec)
 	* PLCP overhead not included.
 	*/
 #if defined(WLATF) && defined(WLATF_PERC)
-	pkt_size = ETHER_MAX_DATA;
+	pkt_size = (WLC_AMSDU_IN_AMPDU(wlc, scb, ini->tid)) ?
+		2 * ETHER_MAX_DATA : ETHER_MAX_DATA;
 	subframe_time_us = wlc_airtime_payload_time_us(flags, rspec,
 		(pkt_size + wlc_airtime_dot11hdrsize(scb->wsec)));
 
@@ -4902,15 +4902,8 @@ wlc_ampdu_atf_holdrelease(atf_state_t *atf_state)
 }
 
 static INLINE bool
-wlc_ampdu_atf_lowat_release(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu,
-	scb_ampdu_tid_ini_t *ini)
+wlc_ampdu_atf_lowat_release(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tid_ini_t *ini)
 {
-	struct pktq *pktq;		/**< Multi-priority packet queue */
-	pktq = &scb_ampdu->txq;
-
-	ASSERT(pktq);
-	ASSERT(ini);
-
 	if (AMPDU_AQM_ENAB(ampdu_tx->wlc->pub)) {
 		/* ATF adaptive watermark tested only with AQM devices only */
 		return (AMPDU_ATF_ENABLED(ini) &&
@@ -4919,8 +4912,7 @@ wlc_ampdu_atf_lowat_release(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu
 			(AMPDU_ATF_STATE(ini)->released_packets_inflight <=
 			ampdu_tx->config->ampdu_atf_lowat_rel_cnt) &&
 			(ampdu_tx->tx_intransit <=
-			AMPDU_ATF_AGG_LOWAT_REL_CNT) &&
-			(pktq->q[ini->tid].v2r_pkts == 0));
+			AMPDU_ATF_AGG_LOWAT_REL_CNT));
 	} else {
 		return FALSE;
 	}
@@ -5009,7 +5001,7 @@ wlc_ampdu_atf_dec_bytes_inflight(scb_ampdu_tid_ini_t *ini, void *p)
 #else
 
 #define wlc_ampdu_dec_bytes_inflight(ini, p) do {} while (0)
-#define wlc_ampdu_atf_lowat_release(ampdu_tx, scb_ampdu, ini) (FALSE)
+#define wlc_ampdu_atf_lowat_release(ampdu_tx, ini) (FALSE)
 #define wlc_ampdu_atf_holdrelease(atf_state) (FALSE)
 #endif /* WLATF */
 
@@ -5496,7 +5488,7 @@ wlc_ampdu_txeval_action(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu,
 
 	/* release mpdus if any one of the following conditions are met */
 	if ((taf || in_transit < ampdu_tx_cfg->tx_rel_lowat) ||
-		wlc_ampdu_atf_lowat_release(ampdu_tx, scb_ampdu, ini) ||
+		wlc_ampdu_atf_lowat_release(ampdu_tx, ini) ||
 	    (n_mpdus_to_release == MIN(scb_ampdu->release, ini->ba_wsize)) ||
 	    force /* || AMPDU_AQM_ENAB(wlc->pub) */ )
 	{
@@ -16424,9 +16416,9 @@ wlc_cfp_ampdu_release(scb_cfp_t *scb_cfp, scb_ampdu_tx_t *scb_ampdu,
 	uint32 chunk_bytes = 0U;
 	const bool use_atf = !taf && AMPDU_ATF_ENABLED(ini);
 	atf_state_t *atf_state = !taf ? AMPDU_ATF_STATE(ini) : NULL;
-	uint32 max_rbytes = 0, pktbytes = 0;
-	uint32 atf_rbytes_min = 0;
-	const atf_rbytes_t *atf_rbytes = NULL;
+	uint32 max_rbytes, pktbytes;
+	uint32 atf_rbytes_min;
+	const atf_rbytes_t *atf_rbytes;
 #ifdef RAVG_HISTORY
 	pkt2oct_t *pkt2oct;
 #endif // endif
@@ -16540,9 +16532,6 @@ wlc_cfp_ampdu_release(scb_cfp_t *scb_cfp, scb_ampdu_tx_t *scb_ampdu,
 		max_rbytes = (atf_rbytes->max > atf_state->released_bytes_inflight) ?
 			(atf_rbytes->max - atf_state->released_bytes_inflight) : 0;
 		atf_rbytes_min = atf_rbytes->min;
-
-		if (max_rbytes == 0)
-			goto release_done;
 #ifdef WLCNT
 		pkt = NULL;
 		npkts = uflow = oflow = minrel = reloverride = 0U;
@@ -16577,7 +16566,9 @@ wlc_cfp_ampdu_release(scb_cfp_t *scb_cfp, scb_ampdu_tx_t *scb_ampdu,
 			 * legacy txeval function after releaseing
 			 * in order packets through CFP path
 			 */
+#if defined(DONGLEBUILD)
 			ASSERT(PKTNEXT(PKT_OSH_NA, pkt) == NULL);
+#endif // endif
 			pktq_penq_head(&scb_ampdu->txq, tid, pkt);
 
 			if (!is_amsdu_sf0) {
@@ -16776,7 +16767,10 @@ wlc_cfp_ampdu_release(scb_cfp_t *scb_cfp, scb_ampdu_tx_t *scb_ampdu,
 		 * been freed is to be avoided
 		 */
 		if (use_atf) {
-			pktbytes = pkttotlen(PKT_OSH_NA, pkt);
+			pktbytes = PKTLEN(PKT_OSH_NA, pkt);
+			if (PKTISFRAG(PKT_OSH_NA, pkt))
+				pktbytes += PKTFRAGLEN(PKT_OSH_NA, pkt, 0);
+
 			pkttag->pktinfo.atf.pkt_len = (uint16)pktbytes;
 			atf_state->released_bytes_inflight += pktbytes;
 
@@ -16823,12 +16817,8 @@ wlc_cfp_ampdu_release(scb_cfp_t *scb_cfp, scb_ampdu_tx_t *scb_ampdu,
 		if (use_atf) { /* Apply ATF release overrides */
 			bool can_release_bytes = (chunk_bytes <= max_rbytes);
 
-			continue_release = (((can_release_frames & can_release_bytes) |
-#if defined(WLATF) && defined(WLATF_PERC)
-				(can_release_bytes & (chunk_bytes <= atf_rbytes_min)) |
-#else
-				(chunk_bytes <= atf_rbytes_min) |
-#endif // endif
+			continue_release = (((chunk_bytes <= atf_rbytes_min) |
+				(can_release_frames & can_release_bytes) |
 				(can_release_bytes & (atf_state->atf == WLC_AIRTIME_PMODE))) &&
 #if defined(BCM_DHDHDR) && defined(DONGLEBUILD)
 				(d11buf_avail > 0) &&
@@ -17113,10 +17103,11 @@ wlc_cfp_ampdu_evaluate(scb_cfp_t *scb_cfp, scb_ampdu_tx_t *scb_ampdu,
 		release_cnt = 0;
 	}
 
-	/* Always transmit in groups of 64. Defer the release if resource not available */
+	/* Enqueue as much as we can if there is no space for all */
 	if (low_txq_space < release_cnt) {
-		release_cnt = 0;
-		AMPDUSCBCNTINCR(scb_ampdu->cnt.txnoroom);
+		release_cnt = low_txq_space;
+		if (!low_txq_space)
+			AMPDUSCBCNTINCR(scb_ampdu->cnt.txnoroom);
 	}
 
 	if (release_cnt == 0)
@@ -17125,7 +17116,7 @@ wlc_cfp_ampdu_evaluate(scb_cfp_t *scb_cfp, scb_ampdu_tx_t *scb_ampdu,
 	/* release mpdus if any one of the following conditions are met */
 	if ((in_transit < release_lowat) ||
 #ifdef WLATF
-		wlc_ampdu_atf_lowat_release(ampdu_tx, scb_ampdu, ini) ||
+		wlc_ampdu_atf_lowat_release(ampdu_tx, ini) ||
 #endif // endif
 		(release_cnt == MIN(scb_ampdu->release, ini->ba_wsize)) ||
 		(force_release))
@@ -17691,7 +17682,8 @@ wlc_sqs_get_atf_max_limit(scb_ampdu_tx_t *scb_ampdu, uint8 prio, uint8 aggsf)
 	min_rel_cnt = aggsf;
 	max_rel_cnt = max_rbytes / pkt_avg_octet;
 	max_rel_cnt = MAX(min_rel_cnt, (MAX((atf_rbytes_min / pkt_avg_octet), max_rel_cnt)));
-	return max_rel_cnt;
+
+	return PKTS_TO_MPDUS(aggsf, max_rel_cnt);
 }
 #endif /* WLATF */
 
@@ -17710,12 +17702,11 @@ wlc_sqs_ampdu_evaluate(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu,
 	wlc_bsscfg_t *cfg;
 	struct scb *scb;
 	uint16 qlen;
+	uint16 tbr_pkts;
 	bool amsdu_in_ampdu = FALSE;
 	uint8 aggsf = 1;
 	uint16 ampdu_pktq_n_pkts = 0;
 	uint16 ampdu_pktq_total_pkts = 0;
-	struct pktq *pktq;		/**< Multi-priority packet queue */
-	pktq = &scb_ampdu->txq;
 
 	ASSERT(scb_ampdu);
 	ASSERT(scb_ampdu->scb);
@@ -17741,6 +17732,13 @@ wlc_sqs_ampdu_evaluate(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu,
 	if (!wlc_scb_restrict_can_txeval(wlc)) {
 		WL_ERROR(("%s: wlc_scb_restrict_can_txeval returns FALSE\n", __FUNCTION__));
 		goto eval_done; /* channel switch / data block related */
+	}
+
+	/* Use the number of to-be-released packets in last evaluation */
+	tbr_pkts = scb_ampdu->txq.q[prio].tbr_pkts;
+	if (!force && (tbr_pkts > 0)) {
+		n_mpdus_to_release = tbr_pkts;
+		goto eval_done;
 	}
 
 	scb = scb_ampdu->scb;
@@ -17883,9 +17881,9 @@ wlc_sqs_ampdu_evaluate(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu,
 	}
 
 	/* release mpdus if any one of the following conditions are met */
-	if (taf || ((in_transit < ampdu_tx_cfg->tx_rel_lowat) && (pktq->q[prio].v2r_pkts == 0)) ||
+	if (taf || (in_transit < ampdu_tx_cfg->tx_rel_lowat) ||
 #ifdef WLATF
-	    (wlc_ampdu_atf_lowat_release(ampdu_tx, scb_ampdu, ini)) ||
+	    (wlc_ampdu_atf_lowat_release(ampdu_tx, ini)) ||
 #endif // endif
 	    (n_mpdus_to_release == MIN(scb_ampdu->release, ini->ba_wsize)) ||
 	    force /* || AMPDU_AQM_ENAB(wlc->pub) */ )
@@ -17971,13 +17969,15 @@ wlc_sqs_ampdu_evaluate(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu,
 
 eval_done:
 #ifdef WLATF
-	if (!taf && !force && ini && AMPDU_ATF_ENABLED(ini) && n_mpdus_to_release) {
+	if (!taf && !force && ini && AMPDU_ATF_ENABLED(ini)) {
 		/* Adjust based on atf rbytes */
 		n_mpdus_to_release = MIN(n_mpdus_to_release,
 			wlc_sqs_get_atf_max_limit(scb_ampdu, ini->tid, aggsf));
 	}
 #endif /* WLATF */
-
+	if (!taf) {
+		scb_ampdu->txq.q[prio].tbr_pkts = n_mpdus_to_release;
+	}
 	return n_mpdus_to_release;
 }
 
@@ -18037,6 +18037,7 @@ wlc_sqs_ampdu_admit(wlc_info_t *wlc, scb_cfp_t *scb_cfp, uint8 prio, uint16 v_pk
 				 */
 	struct scb *scb;
 	scb_ampdu_tx_t *scb_ampdu;
+	uint16 tbr_pkts;
 	bool amsdu_in_ampdu = FALSE;
 	scb_cfp_t *scb_cfp_out;
 	uint8 aggsf;
@@ -18073,9 +18074,22 @@ wlc_sqs_ampdu_admit(wlc_info_t *wlc, scb_cfp_t *scb_cfp, uint8 prio, uint16 v_pk
 
 	aggsf = amsdu_in_ampdu ? wlc_amsdu_scb_max_sframes(wlc->ami, scb_ampdu->scb, ini->tid) : 1;
 
-	/* Re-evaluation is needed, so invalidate the to-be-released pkt count */
-	/* proceed immediately to trigger #1 */
-	release = wlc_sqs_ampdu_evaluate(wlc->ampdu_tx, scb_ampdu, prio, FALSE, NULL);
+	tbr_pkts = scb_ampdu->txq.q[prio].tbr_pkts;
+
+	if (tbr_pkts && (tbr_pkts >= scb_ampdu->release)) {
+		/* Already have an estimated to-be-released count.
+		 * Attempt the release now.
+		 */
+		release = tbr_pkts;
+
+		/* reset to-be-released pkt count */
+		scb_ampdu->txq.q[prio].tbr_pkts = 0;
+	} else {
+		/* Re-evaluation is needed, so invalidate the to-be-released pkt count */
+		scb_ampdu->txq.q[prio].tbr_pkts = 0;
+		/* proceed immediately to trigger #1 */
+		release = wlc_sqs_ampdu_evaluate(wlc->ampdu_tx, scb_ampdu, prio, FALSE, NULL);
+	}
 
 	if (release == 0) {
 		goto admit_done;

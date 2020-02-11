@@ -25,6 +25,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <net/ethernet.h>
 #ifdef LINUX26
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -1741,20 +1742,8 @@ restore_defaults(void)
 		}
 #endif
 
-		if (restore_defaults || !nvram_get(t->name)) {
-#if 0
-			// add special default value handle here
-			if (!strcmp(t->name, "computer_name") ||
-				!strcmp(t->name, "dms_friendly_name") ||
-				!strcmp(t->name, "daapd_friendly_name"))
-				nvram_set(t->name, get_productid());
-			else if (strcmp(t->name, "ct_max")==0) {
-				// handled in init_nvram already
-			}
-			else
-#endif
+		if (restore_defaults || !nvram_get(t->name))
 			nvram_set(t->name, t->value);
-		}
 	}
 
 	wl_defaults();
@@ -7139,6 +7128,9 @@ int init_nvram(void)
 
 #if defined(GTAX11000)
 	case MODEL_GTAX11000:
+		nvram_set("dhd0_rnr_flowring_physize", "0");
+		nvram_set("dhd1_rnr_flowring_physize", "0");
+		nvram_set("dhd2_rnr_flowring_physize", "0");
 		update_43684_tempthresh();
 #ifdef RTCONFIG_EXTPHY_BCM84880
 		get_ext_phy_id();
@@ -7326,6 +7318,9 @@ int init_nvram(void)
 
 #if defined(RTAX88U)
 	case MODEL_RTAX88U:
+		nvram_set("dhd0_rnr_flowring_physize", "0");
+		nvram_set("dhd1_rnr_flowring_physize", "0");
+		nvram_set("dhd2_rnr_flowring_physize", "0");
 		update_rf_para();
 		update_43684_tempthresh();
 		nvram_set("lan_ifname", "br0");
@@ -7494,6 +7489,9 @@ int init_nvram(void)
 
 #if defined(RTAX92U)
 	case MODEL_RTAX92U:
+		nvram_set("dhd0_rnr_flowring_physize", "0");
+		nvram_set("dhd1_rnr_flowring_physize", "0");
+		nvram_set("dhd2_rnr_flowring_physize", "0");
 		update_rf_para();
 		update_43684_tempthresh();
 		nvram_set("lan_ifname", "br0");
@@ -8040,6 +8038,7 @@ int init_nvram(void)
 		nvram_unset("sb/1/ledbh7");
 
 		nvram_set_int("led_pwr_gpio", 16|GPIO_ACTIVE_LOW);
+		nvram_set_int("led_wps_gpio", 16|GPIO_ACTIVE_LOW);
 		nvram_set_int("led_wan_gpio", 27|GPIO_ACTIVE_LOW);
 		nvram_set_int("led_wan_normal_gpio", 28|GPIO_ACTIVE_LOW);
 		nvram_set_int("btn_wps_gpio", 8|GPIO_ACTIVE_LOW);
@@ -10140,12 +10139,30 @@ NO_USB_CAP:
 
 int init_nvram2(void)
 {
-	char *macp = NULL;
-	unsigned char mac_binary[6];
-	char friendly_name[32];
+	unsigned char ea[ETHER_ADDR_LEN];
+	char hostname[32];
+	char ver[64];
 
-	macp = get_2g_hwaddr();
-	ether_atoe(macp, mac_binary);
+	if (nvram_match("x_Setting", "0")) {
+		snprintf(ver, sizeof(ver), "%s.%s_%s", nvram_safe_get("firmver"), nvram_safe_get("buildno"), nvram_safe_get("extendno"));
+		nvram_set("innerver", ver);
+	}
+
+	/* set default lan_hostname */
+	if (restore_defaults_g || !nvram_invmatch("lan_hostname", "")) {
+		ether_atoe(get_2g_hwaddr(), ea);
+#ifdef RTAC1200GP
+		snprintf(hostname, sizeof(hostname), "%s-%02X%02X", "RT-AC1200G", ea[4], ea[5]);
+#else
+		snprintf(hostname, sizeof(hostname), "%s-%02X%02X", get_productid(), ea[4], ea[5]);
+#endif
+		if (!restore_defaults_g && !nvram_invmatch("computer_name", "")) {
+			/* migrate from computer_name on fw upgrade */
+			strlcpy(hostname, nvram_safe_get("computer_name"), sizeof(hostname));
+		}
+		nvram_set("lan_hostname", hostname);
+		nvram_commit();
+	}
 
 #if defined(RTAC85U) || defined(RTAC85P)
 	int model = get_model();
@@ -10167,19 +10184,6 @@ int init_nvram2(void)
 	}
 #endif
 
-#ifdef RTAC1200GP
-	sprintf(friendly_name, "%s-%02X%02X", "RT-AC1200G", mac_binary[4], mac_binary[5]);
-#else
-	sprintf(friendly_name, "%s-%02X%02X", get_productid(), mac_binary[4], mac_binary[5]);
-#endif
-	if (restore_defaults_g)
-	{
-		nvram_set("computer_name", friendly_name);
-		nvram_set("dms_friendly_name", friendly_name);
-		nvram_set("daapd_friendly_name", friendly_name);
-
-		nvram_commit();
-	}
 #if defined(RTCONFIG_CONCURRENTREPEATER)
 	if (sw_mode() == SW_MODE_REPEATER) {
 		if (nvram_get_int("wlc_express") == 0) {
@@ -11041,8 +11045,6 @@ static void sysinit(void)
 
 	init_syspara();// for system dependent part (befor first get_model())
 
-	set_hostname();
-
 #ifdef RTCONFIG_RALINK
 	model = get_model();
 	// avoid the process like fsck to devour the memory.
@@ -11238,6 +11240,10 @@ static void sysinit(void)
 	init_nvram();  // for system indepent part after getting model
 	restore_defaults(); // restore default if necessary
 	init_nvram2();
+
+	/* set hostname after nvram init */
+	set_hostname();
+
 #ifdef RTCONFIG_AVBLCHAN
 	avblchan_defaults();
 #endif
@@ -11740,6 +11746,10 @@ dbg("boot/continue fail= %d/%d\n", nvram_get_int("Ate_boot_fail"),nvram_get_int(
 #ifdef RTCONFIG_DSL
 			start_dsl();
 #endif
+#if defined(RTAX88U) || defined(RTAX92U) || defined(GTAX11000)
+			update_11ax_config();
+#endif
+
 			start_lan();
 #ifdef CONFIG_BCMWL5
 			if (!restore_defaults_g) {

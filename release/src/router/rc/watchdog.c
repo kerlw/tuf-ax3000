@@ -3560,8 +3560,9 @@ void btn_check(void)
 #endif // RTCONFIG_LP5523
 
 				alarmtimer(NORMAL_PERIOD, 0);
-#if defined(RTCONFIG_BCM_CLED)
-			bcm_cled_steady(3);
+#if defined(RTCONFIG_BCM_CLED) && defined(RTCONFIG_SINGLE_LED)
+			bcm_cled_ctrl(BCM_CLED_WHITE, BCM_CLED_STEADY_NOBLINK);
+			nvram_unset("bcm_cled_in_wps");
 #endif
 #if defined(RTCONFIG_CONCURRENTREPEATER)
 				nvram_set_int("led_status", LED_WPS_FAIL);
@@ -3669,7 +3670,13 @@ void btn_check(void)
 		}
 #else
 		if ((btn_count_setup % 2) == 0 && (btn_count_setup > 10))
+		{
 			wps_led_control(LED_ON);
+#if defined(RTCONFIG_BCM_CLED) && defined(RTCONFIG_SINGLE_LED)
+			nvram_set("bcm_cled_in_wps", "1");
+			bcm_cled_ctrl(BCM_CLED_GREEN, BCM_CLED_PULSATING);
+#endif
+		}
 		else
 			wps_led_control(LED_OFF);
 #endif
@@ -3679,6 +3686,11 @@ void btn_check(void)
 #endif
 	}
 #endif	/* BTN_SETUP */
+#if defined(RTCONFIG_BCM_CLED) && defined(RTCONFIG_SINGLE_LED)
+	if(nvram_get_int("bcm_cled_in_reset") == 1){
+		nvram_unset("bcm_cled_in_reset");
+	}
+#endif
 }
 
 #define DAYSTART (0)
@@ -4363,9 +4375,6 @@ void fake_etlan_led(void)
 			aggled_control(AGGLED_ACT_ALLOFF);
 #else
 			led_control(LED_LAN, LED_OFF);
-#endif
-#if defined(RTCONFIG_BCM_CLED)
-			bcm_cled_pulsating(1);
 #endif
 		}
 
@@ -6316,6 +6325,59 @@ static void link_pap_status()
 }
 #endif
 
+#if defined(RTCONFIG_BCM_CLED) && defined(RTCONFIG_SINGLE_LED)
+int single_led_status(void)
+{
+	int link_internet = nvram_get_int("link_internet");
+	int wan_state_t;
+	int is_re_mode = nvram_get_int("re_mode");
+	int is_cfg_alive = nvram_get_int("cfg_alive");
+
+	wan_state_t = nvram_get_int("wan0_state_t");
+
+	if(nvram_get_int("cfg_obstatus") == 4 /* OB_LOCKED */ ){
+		bcm_cled_ctrl(BCM_CLED_GREEN, BCM_CLED_PULSATING);
+		return 1;
+	}
+
+	if(nvram_get_int("re_mode") == 1 &&
+		nvram_match("cfg_group", "")){
+		bcm_cled_ctrl(BCM_CLED_GREEN, BCM_CLED_PULSATING);
+		return 1;
+	}
+
+	if(nvram_get_int("bcm_cled_in_wps") == 1) return 0;
+	if(nvram_get_int("bcm_cled_in_reset") == 1) return 0;
+
+	if(nvram_get_int("ble_dut_con") == 1){
+		bcm_cled_ctrl(BCM_CLED_BLUE, BCM_CLED_STEADY_BLINK);
+		return 1;
+	}
+
+	if(nvram_get_int("x_Setting") == 0){
+		bcm_cled_ctrl(BCM_CLED_BLUE, BCM_CLED_STEADY_NOBLINK);
+		return 1;
+	}
+
+	if(is_re_mode == 1){
+		if(is_cfg_alive == 1){
+			bcm_cled_ctrl(BCM_CLED_WHITE, BCM_CLED_STEADY_NOBLINK);
+		}else{
+			bcm_cled_ctrl(BCM_CLED_RED, BCM_CLED_STEADY_NOBLINK);
+		}
+		return 1;
+	}
+	if(link_internet == 2){
+		if(wan_state_t == WAN_STATE_CONNECTED){
+			bcm_cled_ctrl(BCM_CLED_WHITE, BCM_CLED_STEADY_NOBLINK);
+		}else{
+			bcm_cled_ctrl(BCM_CLED_RED, BCM_CLED_STEADY_NOBLINK);
+		}
+	}else{
+		bcm_cled_ctrl(BCM_CLED_RED, BCM_CLED_STEADY_NOBLINK);
+	}
+}
+#endif
 #ifdef RTCONFIG_BT_CONN
 static void bt_turn_off_service()
 {
@@ -6691,7 +6753,13 @@ void wlcnt_chk()
 	if(watch_prd++ % wlshoot_period) {
 		if(val - pre_val > wlshoot) {
 			printf("\nWL go insanity! calm down it\n");
+#ifndef RTCONFIG_AHS
 			reboot(RB_AUTOBOOT);
+#else
+			/* export specific string to syslog for ahsd recover action*/
+			logmessage("watchdog", "wl reinit count %d", val - pre_val);
+			pre_val = val;
+#endif
 		}
 	} else
 		pre_val = val;
@@ -7654,6 +7722,11 @@ watchdog_main(int argc, char *argv[])
 #ifdef RTCONFIG_BCMWL6
 	if (mediabridge_mode())
 		wlonunit = nvram_get_int("wlc_band");
+#endif
+
+#if defined(RTCONFIG_BCM_CLED) && defined(RTCONFIG_SINGLE_LED)
+	nvram_unset("bcm_cled_in_wps");
+	nvram_unset("bcm_cled_in_reset");
 #endif
 
 #ifdef RTCONFIG_RALINK

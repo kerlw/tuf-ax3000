@@ -361,16 +361,26 @@ unsigned short i5GlueInterfaceGetMediaInfoFromName( char const *ifname, unsigned
    * check in the lan_ifnames
    */
   if (!find_in_list(ifnames, ifname)) {
-    /* If the ifname is virtual VLAN ifname, then start using the real ifname */
-    if (I5_IS_GUEST_ENABLED(i5_config.flags) &&
-      i5GlueIsIfnameVLAN(ifname, real_ifname, &isSecondary)) {
-      found = 1;
-      I5STRNCPY(tmpifname, real_ifname, sizeof(tmpifname));
-      if (isSecondary) {
-        i5Trace("ifname[%s] tmpifname[%s] is Secondary, no need to use it\n", ifname, tmpifname);
-        return I5_MEDIA_TYPE_UNKNOWN;
+    /* The primary interface can be in secondary LAN. Still we need to create interface for it */
+    if (!i5WlCfgIsVirtualInterface(ifname)) {
+      if (find_in_list(nvram_safe_get("lan1_ifnames"), ifname)) {
+        i5Trace("ifname[%s] found in lan1_ifnames\n", ifname);
+        found = 1;
       }
-      i5Trace("ifname[%s] is VLAN tmpifname[%s]\n", ifname, tmpifname);
+    } else {
+      /* If the ifname is virtual VLAN ifname, then start using the real ifname */
+      if (I5_IS_GUEST_ENABLED(i5_config.flags) &&
+        i5GlueIsIfnameVLAN(ifname, tmpifname, &isSecondary)) {
+        found = 1;
+	if (real_ifname) {
+          I5STRNCPY(real_ifname, tmpifname, IFNAMSIZ);
+	}
+        if (isSecondary) {
+          i5Trace("ifname[%s] tmpifname[%s] is Secondary, no need to use it\n", ifname, tmpifname);
+          return I5_MEDIA_TYPE_UNKNOWN;
+        }
+        i5Trace("ifname[%s] is VLAN tmpifname[%s]\n", ifname, tmpifname);
+      }
     }
   } else {
     found = 1;
@@ -612,6 +622,11 @@ void i5GlueDeleteAllVlanInterfaces()
 {
   dll_t *item_p, *next_p;
   i5_vlan_ifr_node *ifr_node;
+
+  /* Unset guest enabled flag, or else after deleting the VLAN interface, the socket creation
+   * might again create the VLAN interfaces
+   */
+  i5_config.flags &= ~I5_CONFIG_FLAG_GUEST_ENABLED;
 
   /* Travese List */
   for (item_p = dll_head_p(&i5_config.vlan_ifr_list.head);
@@ -914,9 +929,9 @@ int i5GlueAssignFriendlyName(unsigned char *deviceId, char *pFriendlyName, int m
 void i5GlueMainDeinit()
 {
 #if defined(MULTIAP)
-   i5DmConfigListFree(&i5_config.policyConfig);
-   i5DmGlistCleanup(&i5_config.client_bssinfo_list);
-   i5GlueDeleteAllVlanInterfaces();
+  i5GlueDeleteAllVlanInterfaces();
+  i5DmConfigListFree(&i5_config.policyConfig);
+  i5DmGlistCleanup(&i5_config.client_bssinfo_list);
 #endif	/* MULTIAP */
 }
 

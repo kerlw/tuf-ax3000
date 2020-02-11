@@ -45,6 +45,15 @@ else
 var wl_bw_160 = '<% nvram_get("wl_bw_160"); %>';
 var enable_bw_160 = (wl_bw_160 == 1) ? true : false;
 var wl_reg_mode = '<% nvram_get("wl_reg_mode"); %>';
+var mbo_support = (function(){
+	if(based_modelid == 'RT-AX92U' && (wl_unit == '0' || wl_unit == '1')){
+		return false;
+	}	
+	else{
+		return ('<% nvram_get("wl_mbo_enable"); %>' != "") ? true : false;
+	}
+})();
+
 function initial(){
 	show_menu();
 	if(band5g_11ac_support){
@@ -61,10 +70,6 @@ function initial(){
             .attr('style', 'color:#FC0;text-decoration:underline;')
             .attr('href', 'https://www.asus.com/support/FAQ/1037422/');
 
-		if(bw_160_support){
-			$("#enable_160mhz").attr("checked", enable_bw_160);
-		}
-
 		if(wl_unit == '1'){
 			var _he_mode = document.form.wl1_11ax.value;
 		}
@@ -76,6 +81,14 @@ function initial(){
 		}
 
 		document.form.he_mode.value = _he_mode;
+	}
+
+	if(bw_160_support){
+		$("#enable_160mhz").attr("checked", enable_bw_160);
+	}
+
+	if(mbo_support){
+		$('#mbo_field').show();
 	}
 
 	genBWTable(wl_unit);
@@ -509,6 +522,7 @@ function detect_qtn_ready(){
 
 function applyRule(){
 	var auth_mode = document.form.wl_auth_mode_x.value;
+	var auth_mode_ori = '<% nvram_get("wl_auth_mode_x"); %>';
 	
 	if(document.form.wl_wpa_psk.value == "<#wireless_psk_fillin#>"){
 		document.form.wl_wpa_psk.value = "";
@@ -579,7 +593,7 @@ function applyRule(){
 			}
 		}
 
-		if(band5g_11ax_support && bw_160_support){
+		if(bw_160_support){
 			document.form.wl_bw_160.value = $("#enable_160mhz").prop("checked") ? 1 : 0;
 		}
 
@@ -599,11 +613,17 @@ function applyRule(){
 			document.form.next_page.value = "/Advanced_WSecurity_Content.asp";
 		}
 
+		var mbo = document.form.wl_mbo_enable.value;
 		if(auth_mode == 'sae'){
 			document.form.wl_mfp.value = '2';
 		}
-		else if(auth_mode == 'psk' || auth_mode == 'psk2' || auth_mode == 'pskpsk2' || auth_mode == 'psk2sae' || auth_mode == 'wpa' || auth_mode == 'wpa2' || auth_mode == 'wpawpa2'){
+		else if(auth_mode == 'psk2sae'){
 			document.form.wl_mfp.value = '1';
+		}
+		else if(auth_mode == 'psk2' || auth_mode == 'pskpsk2' || auth_mode == 'wpa2' || auth_mode == 'wpawpa2'){
+			if(mbo_support && mbo == '1' && document.form.wl_mfp.value == '0'){
+				document.form.wl_mfp.value = '1';
+			}
 		}
 
 		if(Bcmwifi_support) {
@@ -1110,9 +1130,12 @@ function enableSmartCon(val){
 	}
 
 	add_options_x2(document.form.smart_connect_t, desc, value, val);
+	$("#he_mode_field").hide();
+	
 	if(val == 0){
 		document.getElementById("smart_connect_field").style.display = "none";
 		document.getElementById("smartcon_rule_link").style.display = "none";
+
 		if(wl_unit != 0){
 			if(wl_info[wl_unit].bw_160_support){
 				$("#enable_160_field").show();
@@ -1138,6 +1161,12 @@ function enableSmartCon(val){
 			}
 
 			$("#dfs_checkbox").hide();
+		}
+
+		if(he_frame_support){
+			if(based_modelid != 'RT-AX92U' || (wl_unit != '0' && wl_unit != '1')){
+				$("#he_mode_field").show();
+			}
 		}
 
 		$("#band_separate").hide();
@@ -1190,6 +1219,15 @@ function enableSmartCon(val){
 				$('#band1_160_field').show();
 			}
 
+			if(he_frame_support){
+				if(based_modelid != 'RT-AX92U' || (wl_unit != '0' && wl_unit != '1')){
+					$("#he_mode_field").show();
+				}
+				else if(based_modelid == 'RT-AX92U' && !dwb_info.mode){
+					$("#he_mode_field").show();
+				}
+			}
+
 			if (band0_channel == '0') {
 				$('#band0_autoChannel').show();
 				$('#band0_autoChannel').html('Current Control Channel: ' + cur_control_channel[0]);
@@ -1212,6 +1250,7 @@ function enableSmartCon(val){
 					$('#band2_autoChannel').html('Current Control Channel: ' + cur_control_channel[2]);
 				}
 			}
+
 
 			$('#band0_title_field').show();
 			$('#band0_bandwidth_field').show();
@@ -1272,6 +1311,11 @@ function enableSmartCon(val){
 				document.form.wl1_bw_160.disabled = true;
 				document.form.wl2_bw_160.disabled = true;
 				$("#band_separate").hide();
+				if(he_frame_support){
+					if(based_modelid != 'RT-AX92U' || (wl_unit != '0' && wl_unit != '1')){
+						$("#he_mode_field").show();
+					}
+				}
 			}
 			else{
 				separateGenBWTable('1');
@@ -1297,6 +1341,11 @@ function enableSmartCon(val){
 						$('#band2_autoChannel').html('Current Control Channel: ' + cur_control_channel[2]);
 					}
 				}
+
+				if(he_frame_support){
+					$("#he_mode_field").show();
+				}
+
 				inputCtrl(document.form.wl_bw, 0);
 				inputCtrl(document.form.wl_channel, 0);
 				inputCtrl(document.form.wl_nctrlsb, 0);
@@ -1923,6 +1972,15 @@ function ajax_wl_channel(){
 		}
 	});
 }
+
+function handleMFP(){
+	if(mbo_support && document.form.wl_mbo_enable.value == '1' && document.form.wl_mfp.value == '0'){
+		$('#mbo_notice').show();
+	}
+	else{
+		$('#mbo_notice').hide();
+	}
+}
 </script>
 </head>
 
@@ -2162,6 +2220,19 @@ function ajax_wl_channel(){
 					</div>
 				</td>
 			</tr>
+			<tr id="mbo_field" style="display:none">
+				<th>
+					<a class="hintstyle" href="javascript:void(0);" onClick="">Wi-Fi Agile Multiband</a>
+				</th>
+				<td>
+					<div style="width:465px;display:flex;align-items: center;">
+						<select name="wl_mbo_enable" class="input_option" onChange="handleMFP();">
+							<option value="1" <% nvram_match("wl_mbo_enable", "1","selected"); %>><#WLANConfig11b_WirelessCtrl_button1name#></option>
+							<option value="0" <% nvram_match("wl_mbo_enable", "0","selected"); %>><#WLANConfig11b_WirelessCtrl_buttonname#></option>
+						</select>
+					</div>
+				</td>
+			</tr>
 			 	<tr id="wl_bw_field">
 			   	<th><#WLANConfig11b_ChannelBW_itemname#></th>
 			   	<td>				    			
@@ -2315,11 +2386,14 @@ function ajax_wl_channel(){
 				<tr style="display:none">
 					<th><#WLANConfig11b_x_mfp#></th>
 					<td>
-				  		<select name="wl_mfp" class="input_option" >
+				  		<select name="wl_mfp" class="input_option" onchange="handleMFP();">
 								<option value="0" <% nvram_match("wl_mfp", "0", "selected"); %>><#WLANConfig11b_WirelessCtrl_buttonname#></option>
 								<option value="1" <% nvram_match("wl_mfp", "1", "selected"); %>><#WLANConfig11b_x_mfp_opt1#></option>
 								<option value="2" <% nvram_match("wl_mfp", "2", "selected"); %>><#WLANConfig11b_x_mfp_opt2#></option>
-				  		</select>
+						  </select>
+						  <span id="mbo_notice_wpa3" style="display:none">*If the Authenticatoin Method is WAP3-Personal, the Protected Management Frames will be Required.</span>
+						  <span id="mbo_notice_combo" style="display:none">*If the Authenticatoin Method is WPA2/WAP3-Personal, the Protected Management Frames will be Capable.</span>
+						  <span id="mbo_notice" style="display:none">*If the Wi-Fi Agile Multiband is enabled, the Protected Management Frames will must be enabled.(Capable or Required)</span>
 					</td>
 			  	</tr>
 			  

@@ -732,7 +732,8 @@ static int getSplitFromPartition(int imageNumber)
     struct ubi_ec_hdr *ec = NULL;
 
     NVRAM_DATA *nvramData = KMALLOC(sizeof(NVRAM_DATA),sizeof(void*));
-    if (!nvramData) {
+    if (!nvramData)
+    {
         return NULL;
     }
     NVRAM_COPY_TO(nvramData);
@@ -744,9 +745,9 @@ static int getSplitFromPartition(int imageNumber)
         NVRAM.ulNandPartSizeKb[rootfs] > 0 &&
         NVRAM.ulNandPartSizeKb[rootfs] < ((num_blks * len) / 1024) )
     {
-        int read_len;
         unsigned char* buf = KMALLOC(len + 1024, sizeof(void*));
-        if (!buf) {
+        if (!buf)
+        {
             KFREE(nvramData);
             return NULL;
         }
@@ -754,53 +755,65 @@ static int getSplitFromPartition(int imageNumber)
         end_blk = start_blk + (NVRAM.ulNandPartSizeKb[rootfs] / (len / 1024));
 
         /* Find the directory entry. */
-        if( (read_len = flash_read_buf(start_blk, 0, buf, 4)) > 0 )
+        for( i = start_blk; (i < end_blk) ; i++ )
         {
-            ec = (struct ubi_ec_hdr *) buf;
-            if (be32_to_cpu(ec->magic) == UBI_EC_HDR_MAGIC)
+            if( flash_read_buf(i, 0, buf, 4) > 0 )
             {
-                char squash;
-                int try;
+                ec = (struct ubi_ec_hdr *) buf;
+                if (be32_to_cpu(ec->magic) == UBI_EC_HDR_MAGIC)
+                {
+                    char squash;
+                    int try;
 
-                for (try = 0; try < 2; try++)
-                {
-                    if (parse_ubi(0, buf, start_blk, end_blk, len, (try ? VOLID_METADATA_COPY : VOLID_METADATA), "squash", &squash, 0, 0, read_blk, 0, 0, 0, 0) == 1)
+                    for (try = 0; try < 2; try++)
                     {
-                       KFREE(nvramData);
-                       return(SQUBI_FS);
+                        if (parse_ubi(0, buf, i, end_blk, len, (try ? VOLID_METADATA_COPY : VOLID_METADATA), "squash", &squash, 0, 0, read_blk, 0, 0, 0, 0) == 1)
+                        {
+                            KFREE(buf);
+                            KFREE(nvramData);
+                            return(SQUBI_FS);
+                        }
                     }
+
+                    KFREE(buf);
+                    KFREE(nvramData);
+                    return(UBIFS_FS);
                 }
-                KFREE(nvramData);
-                return(UBIFS_FS);
-            }
-            else
-            {
-                /* SPLIT_FS - Find offset to split marker */
-                for( i = start_blk, done = 0; (i < end_blk) && (done == 0); i++ )
+                else
                 {
-                    if( (read_len = flash_read_buf(i,len-0x100, buf, 0x100)) > 0 )
+                    /* SPLIT_FS - Find offset to split marker */
+                    for( done = 0; (i < end_blk) && (done == 0); i++ )
                     {
-                        if (!strncmp(BCM_BCMFS_TAG, (char*)buf, strlen(BCM_BCMFS_TAG))) 
-			{
-                            if (!strncmp(BCM_BCMFS_TYPE_SQUBIFS, (char*)&buf[strlen(BCM_BCMFS_TAG)], strlen(BCM_BCMFS_TYPE_SQUBIFS)))
+                        if( flash_read_buf(i, len-0x100, buf, 0x100) > 0 )
+                        {
+                            if (!strncmp(BCM_BCMFS_TAG, (char*)buf, strlen(BCM_BCMFS_TAG))) 
                             {
-                                KFREE(nvramData);
-                                return(SQSPLIT_FS);
-                            }  /* Note: determining SQSPLIT must be done before UBIFS!! Why? pls refer to clarification in the define of 'BCM_BCMFS_TYPE_SQUBIFS'*/
-                            else if (!strncmp(BCM_BCMFS_TYPE_UBIFS, (char*)&buf[strlen(BCM_BCMFS_TAG)], strlen(BCM_BCMFS_TYPE_UBIFS))) 
-                            {
-                                KFREE(nvramData);
-                                return(SPLIT_FS);
+                                if (!strncmp(BCM_BCMFS_TYPE_SQUBIFS, (char*)&buf[strlen(BCM_BCMFS_TAG)], strlen(BCM_BCMFS_TYPE_SQUBIFS)))
+                                {
+                                    KFREE(buf);
+                                    KFREE(nvramData);
+                                    return(SQSPLIT_FS);
+                                }  /* Note: determining SQSPLIT must be done before UBIFS!! Why? pls refer to clarification in the define of 'BCM_BCMFS_TYPE_SQUBIFS'*/
+                                else if (!strncmp(BCM_BCMFS_TYPE_UBIFS, (char*)&buf[strlen(BCM_BCMFS_TAG)], strlen(BCM_BCMFS_TYPE_UBIFS))) 
+                                {
+                                    KFREE(buf);
+                                    KFREE(nvramData);
+                                    return(SPLIT_FS);
+                                }
                             }
                         }
                     }
                 }
             }
         }
+
+        KFREE(buf);
     }
+
     KFREE(nvramData);
     return(JFFS2_FS);
 }
+
 #define tag_not_searched    0
 #define tag_not_found       1
 #define tag_found           2

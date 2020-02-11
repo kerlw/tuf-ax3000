@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: dhd_common.c 776530 2019-07-02 05:16:43Z $
+ * $Id: dhd_common.c 777862 2019-08-13 22:16:50Z $
  */
 #include <typedefs.h>
 #include <osl.h>
@@ -691,6 +691,17 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 				((dhd_msg_level & DHD_DNGL_IOVAR_SET_VAL) && ioc->set == TRUE);
 		char *pars = (char *)ioc->buf; // points at user buffer
 
+		/* blocking version and magic ioctl */
+		if (ioc->cmd == WLC_GET_VERSION && dhd_pub->wl_ioctl_version != 0) {
+			memcpy(buf, &(dhd_pub->wl_ioctl_version), sizeof(int));
+			dhd_os_proto_unblock(dhd_pub);
+			return BCME_OK;
+		} else if (ioc->cmd == WLC_GET_MAGIC && dhd_pub->wl_ioctl_magic != 0) {
+			memcpy(buf, &(dhd_pub->wl_ioctl_magic), sizeof(int));
+			dhd_os_proto_unblock(dhd_pub);
+			return BCME_OK;
+		}
+
 		if (log_ioctl) {
 			char *getset = (ioc->set == TRUE ? "set": "get");
 
@@ -752,6 +763,13 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 				printf(" 0x%x", *(uint32*)buf);
 			}
 			printf("\n");
+		}
+
+		/* only cache the version and magic ioctl value at first time */
+		if (ioc->cmd == WLC_GET_VERSION && ret == BCME_OK) {
+			memcpy(&(dhd_pub->wl_ioctl_version), buf, sizeof(int));
+		} else if (ioc->cmd == WLC_GET_MAGIC && ret == BCME_OK) {
+			memcpy(&(dhd_pub->wl_ioctl_magic), buf, sizeof(int));
 		}
 
 		dhd_os_proto_unblock(dhd_pub);

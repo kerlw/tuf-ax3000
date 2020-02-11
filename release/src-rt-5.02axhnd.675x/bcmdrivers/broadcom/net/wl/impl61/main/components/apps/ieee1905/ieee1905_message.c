@@ -859,7 +859,6 @@ void i5MessageTopologyDiscoveryReceive(i5_message_type *pmsg)
     }
 
     if (pDevice) {
-      pDevice->psock = pmsg->psock;
       time(&pDevice->active_time);
     }
     i5MessageTopologyQuerySend(pmsg->psock, neighbor_al_mac_address);
@@ -986,6 +985,28 @@ void i5MessageBridgeDiscoveryReceive(i5_message_type *pmsg)
   }
 }
 
+void i5MessageUpdateDeviceSock(i5_message_type *pmsg, unsigned char *pmac)
+{
+  i5_dm_device_type *pdevice = i5DmDeviceFind(pmac);
+
+  if (!pdevice) {
+    return;
+  }
+  if (!pdevice->psock) {
+    pdevice->psock = pmsg->psock;
+    return;
+  }
+  if (pdevice->psock != pmsg->psock) {
+    pdevice->psock = pmsg->psock;
+    if (I5_IS_MULTIAP_CONTROLLER(pdevice->flags)) {
+    /* Controller socket changed - Dynamic backhaul. Send search and enable/disable bh sta
+     * roaming based on the interface type on which autoconfiguration response is received
+     */
+      i5WlCfgMultiApControllerSearch(NULL);
+    }
+  }
+}
+
 void i5MessageTopologyNotificationReceive(i5_message_type *pmsg)
 {
   unsigned char neighbor_al_mac_address[6];
@@ -999,6 +1020,7 @@ void i5MessageTopologyNotificationReceive(i5_message_type *pmsg)
 
   rc = i5MessageRelayMulticastCheck(pmsg, neighbor_al_mac_address);
   if (rc == 0) {
+    i5MessageUpdateDeviceSock(pmsg, neighbor_al_mac_address);
 #ifdef MULTIAP
     i5TlvClientAssociationEventTypeExtract(pmsg, neighbor_al_mac_address);
 #endif /* MULTIAP */
@@ -1082,6 +1104,7 @@ void i5MessageTopologyQueryReceive(i5_message_type *pmsg)
     i5MessageFree(pmsg);
     return;
   }
+  i5MessageUpdateDeviceSock(pmsg, i5MessageSrcMacAddressGet(pmsg));
   i5MessageTopologyResponseSend(pmsg);
   i5MessageFree(pmsg);
 }
@@ -1243,7 +1266,7 @@ void i5MessageTopologyResponseReceive(i5_message_type *pmsg)
     if ( pdevice == NULL ) {
       return;
     }
-    pdevice->psock = pmsg->psock;
+    i5MessageUpdateDeviceSock(pmsg, neighbor_al_mac_address);
 
     time(&pdevice->active_time);
 #ifdef MULTIAP

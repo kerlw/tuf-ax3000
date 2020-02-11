@@ -1278,10 +1278,16 @@ int i5WlCfgProcessAPAutoConfigSearch(i5_message_type *pmsg, unsigned int freqban
       i5_dm_interface_type *pdmif;
 
       pdmif = i5DmInterfaceFind(i5DmGetSelfDevice(), pmsg->psock->u.sll.mac_address);
-      if (pdmif && !i5DmIsInterfaceWireless(pdmif->MediaType)) {
-	i5Trace("Bakchaul interface %s ["I5_MAC_DELIM_FMT"] which is not wireless."
-	  "Disable Backhaul STA roaming\n", pdmif->ifname, I5_MAC_PRM(pdmif->InterfaceId));
-        i5_config.cbs.set_bh_sta_params(IEEE1905_BH_STA_ROAM_DISB_VAP_UP);
+      if (pdmif) {
+        if (i5DmIsInterfaceWireless(pdmif->MediaType)) {
+          i5Trace("Bakchaul interface %s ["I5_MAC_DELIM_FMT"] is wireless."
+            "Enable Backhaul STA roaming\n", pdmif->ifname, I5_MAC_PRM(pdmif->InterfaceId));
+          i5_config.cbs.set_bh_sta_params(IEEE1905_BH_STA_ROAM_ENAB_VAP_FOLLOW);
+        } else {
+          i5Trace("Bakchaul interface %s ["I5_MAC_DELIM_FMT"] is not wireless."
+          "Disable Backhaul STA roaming\n", pdmif->ifname, I5_MAC_PRM(pdmif->InterfaceId));
+          i5_config.cbs.set_bh_sta_params(IEEE1905_BH_STA_ROAM_DISB_VAP_UP);
+        }
       }
     }
 
@@ -2159,7 +2165,7 @@ void i5WlcfgMarkAllInterfacesUnconfigured()
 int i5WlcfgApAutoconfigurationRenewProcess(i5_message_type *pmsg, unsigned int freqband,
   unsigned char *neighbor_al_mac_address)
 {
-    i5_dm_device_type *pdevice = i5DmGetSelfDevice();
+    i5_dm_device_type *pdevice = i5DmDeviceFind(neighbor_al_mac_address);
 
     i5Trace(" band %d\n", freqband);
 
@@ -2169,17 +2175,24 @@ int i5WlcfgApAutoconfigurationRenewProcess(i5_message_type *pmsg, unsigned int f
         return -1;
     }
 
-    time(&pdevice->active_time);
     if (I5_IS_REGISTRAR(i5_config.flags)) {
         i5Trace(" Device is registrar - ignore renew\n");
         return -1;
     }
 
+    time(&pdevice->active_time);
+
     /* make all the interface as not configured */
     i5WlcfgMarkAllInterfacesUnconfigured();
 
-    /* Start the WSC message timer(M1) to renew all the interfaces */
-    i5WlCfgMultiApWSCTimeout(NULL);
+    if (pdevice->psock && (pdevice->psock != pmsg->psock)) {
+      /* Renew received from different controller socket. Start with search */
+      pdevice->psock = pmsg->psock;
+      i5WlCfgMultiApControllerSearch(NULL);
+    } else {
+      /* Start the WSC message timer(M1) to renew all the interfaces */
+      i5WlCfgMultiApWSCTimeout(NULL);
+    }
 
     return 0;
 }

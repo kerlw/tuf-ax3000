@@ -231,7 +231,6 @@ static int nvram_kcommit(void)
     char *name,*value;
     FILE *fp;
     static char line_buffer[NVRAM_LINE_MAX];
-	
     fp=fopen(PRE_COMMIT_KERNEL_NVRM_FILE,"r");
     /* if there is no new nvram in temporary file, quit */
     if(!fp) return 0;
@@ -266,7 +265,6 @@ static int nvram_kcommit(void)
 void kernel_nvram_populate(char *file_name)
 {
     char *name,*value;
-
     if(file_name) {
         FILE *fp=fopen(file_name,"r+");
         if(fp) {

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_shared.c 776891 2019-07-12 08:16:51Z $
+ * $Id: wbd_shared.c 777559 2019-08-06 06:57:38Z $
  */
 
 #include <ctype.h>
@@ -649,6 +649,11 @@ wbd_retrieve_common_config(wbd_info_t *info)
 	/* Get NVRAM : Timeout for Master to run Target BSS Watchdog for Backhaul Optimization */
 	info->max.tm_wd_bh_opt_tbss = blanket_get_config_val_int(NULL,
 		WBD_NVRAM_TM_SLV_WD_BH_OPT_TARGET_BSS, WBD_TM_SLV_WD_BH_OPT_TARGET_BSS);
+
+	/* Hostapd is enabled or not */
+	if (blanket_get_config_val_int(NULL, NVRAM_HAPD_ENABLED, 0)) {
+		info->flags |= WBD_INFO_FLAGS_IS_HAPD_ENABLED;
+	}
 
 	WBD_DEBUG("%s=%d\n %s=%d\n"
 		" %s=%d\n %s=%d\n %s=%d\n"

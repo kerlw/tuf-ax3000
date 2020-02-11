@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: acsd_svr.h 776843 2019-07-11 07:41:32Z $
+ * $Id: acsd_svr.h 777995 2019-08-20 06:13:13Z $
  */
 
 #ifndef _acsd_srv_h_
@@ -138,11 +138,12 @@
 #define COEXCHECK(c_info)	((c_info)->mode == ACS_MODE_COEXCHECK)
 #define ACS11H(c_info)		((c_info)->mode == ACS_MODE_11H)
 #define FIXCHSPEC(c_info)	((c_info)->mode == ACS_MODE_FIXCHSPEC)
+#define MONITORCHECK(c_info)	((c_info)->mode == ACS_MODE_MONITOR)
 
 #define ACS_STATUS_POLL		5
 #define ACS_ASSOCLIST_POLL      30
 #define ACS_CHANIM_POLL_MIN	60 /* Query chanim_stats in cur ch only after 60sec */
-#define ACS_CHANIM_TXRX_PER	30 /* Combination of tx+inbss+delta */
+#define ACS_CHANIM_TX_AVAIL	70 /* Combination of tx+txop+inbss */
 #define ACS_CHANIM_DELTA	10
 
 #define ACS_DYN160_CENTER_CH	50 /* on 160MHz with dyn160 enabled, use this center chanspec */
@@ -740,9 +741,10 @@ struct acs_chaninfo {
 	bool acs_zdfs_2g_ignore_radar; /* Ignore radar detection if enabled only for 2G */
 	uint8 switch_reason_type; /* CI or CS scan */
 	uint8 channel_free; /* amount of time channel is free(txop) */
-	uint8 txrx_delta_per;
+	uint8 acs_chanim_tx_avail; /* channel free per */
 	uint8 acs_use_csa; /* If set csa will be used instead of update driver */
 	uint8 fallback_to_primary;
+	uint8 autochannel_through_cli; /* Becomes true on acs_cli autochannel command */
 	bool wet_enabled;
 	int unit;
 };
@@ -941,6 +943,7 @@ extern bool chanim_chk_lockout(chanim_info_t *ch_info);
 extern int acs_allow_scan(acs_chaninfo_t *c_info, uint8 type);
 extern int acs_csa_handle_request(acs_chaninfo_t *c_info);
 extern bool acs_is_initial_selection(acs_chaninfo_t* c_info);
+extern int acsd_segmentize_chanim(acs_chaninfo_t * c_info);
 #ifdef DEBUG
 void acs_dump_policy(acs_policy_t *a_pol);
 void acs_dump_config_extra(acs_chaninfo_t *c_info);

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlu.c 775850 2019-06-13 22:12:41Z $
+ * $Id: wlu.c 777731 2019-08-07 19:37:44Z $
  */
 
 #include <typedefs.h>
@@ -516,6 +516,16 @@ static cmd_func_t wl_txbfcfg_cmd;
 static cmd_func_t wl_srcfg_cmd;
 
 static cmd_func_t wl_nd_ra_limit_intv;
+
+#if defined(BCMDBG)
+static cmd_func_t wl_cca_chan_util_interval;
+static cmd_func_t wl_cca_chan_util_dur;
+static cmd_func_t wl_cca_chan_util;
+static cmd_func_t wl_cca_rx_util;
+static cmd_func_t wl_cca_tx_util;
+static cmd_func_t wl_cca_raw_stats;
+static cmd_func_t wl_cca_delta_stats;
+#endif // endif
 
 static void dlystat_dump(txdelay_stats_t *txdelay_stats);
 static int wl_dlystats(void *wl, cmd_t *cmd, char **argv);
@@ -1347,6 +1357,25 @@ cmd_t wl_cmds[] = {
 	"\tprevious unless a new channel or duration is specified."},
 	{ "rm_rep", wl_rm_report, WLC_GET_VAR, -1,
 	"Get current radio measurement report"},
+#if defined(BCMDBG)
+	{ "cca_chan_util_interval", wl_cca_chan_util_interval, WLC_GET_VAR, WLC_SET_VAR,
+	"Usage: \n\t wl cca_chan_util_interval [-d num msecs] to config measurement interval\n"
+	"\t wl cca_chan_util_interval to query for current measurement interval" },
+	{ "cca_chan_util_dur", wl_cca_chan_util_dur, WLC_GET_VAR, WLC_SET_VAR,
+	"Usage: \n\t wl cca_chan_util_dur [-d num TUs] to config measurement duration\n"
+	"\t wl cca_chan_util_dur to query for current measurement dur\n"
+	"\t measurement duration is in TUs (1 TU = 1024 usecs). Default 1000 TUs or 1.024 secs" },
+	{ "cca_chan_util", wl_cca_chan_util, WLC_GET_VAR, -1,
+	"Usage: \n\t wl cca_chan_util [-v verbose] Returns current channel busy percentage\n" },
+	{ "cca_rx_util", wl_cca_rx_util, WLC_GET_VAR, -1,
+	"Usage: \n\t wl cca_rx_util Returns current channel Rx busy percentage\n" },
+	{ "cca_tx_util", wl_cca_tx_util, WLC_GET_VAR, -1,
+	"Usage: \n\t wl cca_tx_util Returns current channel Tx busy percentage\n" },
+	{ "cca_stats_raw", wl_cca_raw_stats, WLC_GET_VAR, -1,
+	"Usage: \n\t wl cca_stats_raw Returns raw CCA counters\n" },
+	{ "cca_stats_delta", wl_cca_delta_stats, WLC_GET_VAR, -1,
+	"Usage: \n\t wl cca_stats_delta Returns CCA delta counters\n" },
+#endif // endif
 	{ "join_pref", wl_join_pref, WLC_GET_VAR, WLC_SET_VAR,
 	"Set/Get join target preferences."},
 	{ "assoc_pref", wl_assoc_pref, WLC_GET_ASSOC_PREFER, WLC_SET_ASSOC_PREFER,
@@ -26413,3 +26442,185 @@ exit:
 	return err;
 }
 #endif /* defined(BCMDBG) || defined(BCMDBG_MU) */
+
+#if defined(BCMDBG)
+static int
+wl_cca_chan_util_interval(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	unsigned int interval;
+	/* skip the command name */
+	argv++;
+
+	/* only switch -d for now */
+	if (*argv != NULL && !strcmp(*argv, "-d")) {
+		argv++;
+		if (*argv == NULL || (interval = atoi(*argv)) <= 0) {
+			printf("enter correct interval\n");
+			return 0;
+		}
+
+		if ((err = wlu_iovar_set(wl, cmd->name, &interval, sizeof(unsigned int))) < 0) {
+			return err;
+		}
+	} else {
+		if ((err = wlu_iovar_get(wl, cmd->name, &interval, sizeof(unsigned int))) < 0) {
+			return err;
+		}
+		printf("CCA utilization interval: %u secs\n", interval);
+	}
+
+	return err;
+}
+
+static int
+wl_cca_chan_util_dur(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	unsigned int dur;
+	/* skip the command name */
+	argv++;
+
+	/* only switch -d for now */
+	if (*argv != NULL && !strcmp(*argv, "-d")) {
+		argv++;
+		if (*argv == NULL || (dur = htod32(atoi(*argv))) <= 0) {
+			printf("enter correct duration in TUs min 30\n");
+			return 0;
+		}
+
+		if (dtoh32(dur) < 30) {
+			printf("Invalid duration. Enter duration in TUs min 30\n");
+			return 0;
+		}
+
+		if ((err = wlu_iovar_set(wl, cmd->name, &dur, sizeof(unsigned int))) < 0) {
+			return err;
+		}
+	} else {
+		if ((err = wlu_iovar_get(wl, cmd->name, &dur, sizeof(unsigned int))) < 0) {
+			return err;
+		}
+		printf("CCA Measurement interval: %u msecs\n", dur);
+	}
+
+	return err;
+}
+
+static int
+wl_cca_chan_util(void *wl, cmd_t *cmd, char **argv)
+{
+	char buf[WLC_IOCTL_MAXLEN];
+	int err = 0;
+	char *ptr;
+
+	/* skip the command name */
+	argv++;
+
+	if (*argv != NULL) {
+		printf("Help: wl cca_chan_utilization\n");
+		return err;
+	}
+
+	if ((err = wlu_iovar_getbuf(wl, cmd->name, NULL, 0,
+		buf, WLC_IOCTL_MAXLEN)) < 0) {
+		return err;
+	}
+
+		ptr = buf;
+		fputs(ptr, stdout);
+
+	return err;
+}
+
+static int
+wl_cca_rx_util(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	unsigned int rx_util;
+	/* skip the command name */
+	argv++;
+
+	/* only switch -d for now */
+	if (*argv != NULL) {
+		printf("Help: wl cca_rx_util\n" "Invalid parameter %s\n", *argv);
+			return 0;
+
+	} else {
+		if ((err = wlu_iovar_get(wl, cmd->name, &rx_util, sizeof(unsigned int))) < 0) {
+			return err;
+		}
+		printf("CCA Rx utilization: %u %%\n", rx_util);
+	}
+
+	return err;
+}
+
+static int
+wl_cca_tx_util(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	unsigned int tx_util;
+	/* skip the command name */
+	argv++;
+
+	/* only switch -d for now */
+	if (*argv != NULL) {
+		printf("Help: wl cca_tx_util\n" "Invalid parameter %s\n", *argv);
+			return 0;
+	} else {
+		if ((err = wlu_iovar_get(wl, cmd->name, &tx_util, sizeof(unsigned int))) < 0) {
+			return err;
+		}
+		printf("CCA Tx utilization: %u %%\n", tx_util);
+	}
+
+	return err;
+}
+
+static int
+wl_cca_raw_stats(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	char cca_buf[WLC_IOCTL_MAXLEN];
+	/* skip the command name */
+	argv++;
+
+	/* only switch -d for now */
+	if (*argv != NULL) {
+		printf("Help: wl cca_stats_raw\n" "Invalid parameter %s\n", *argv);
+			return 0;
+	} else {
+		if ((err = wlu_iovar_getbuf(wl, cmd->name, NULL, 0,
+		                            cca_buf, WLC_IOCTL_MAXLEN)) < 0) {
+			return err;
+		}
+		fputs(cca_buf, stdout);
+	}
+
+	return err;
+}
+
+static int
+wl_cca_delta_stats(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	char cca_buf[WLC_IOCTL_MAXLEN];
+	/* skip the command name */
+	argv++;
+
+	/* only switch -d for now */
+	if (*argv != NULL) {
+		printf("Help: wl cca_stats_delta\n" "Invalid parameter %s\n", *argv);
+			return 0;
+	} else {
+		if ((err = wlu_iovar_getbuf(wl, cmd->name, NULL, 0,
+		                            cca_buf, WLC_IOCTL_MAXLEN)) < 0) {
+			return err;
+		}
+		fputs(cca_buf, stdout);
+	}
+
+	return err;
+}
+#endif // endif

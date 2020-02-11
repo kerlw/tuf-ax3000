@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_noise.c 776822 2019-07-10 18:15:38Z $
+ * $Id: phy_ac_noise.c 778021 2019-08-20 11:08:01Z $
  */
 
 #include <phy_cfg.h>
@@ -474,9 +474,11 @@ BCMATTACHFN(phy_ac_noise_attach_modes)(phy_info_t *pi)
 				| ACPHY_HWACI_MITIGATION;
 		}
 	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
-		/* enable glitched based desense only */
-		pi->sh->interference_mode_2G |= ACPHY_ACI_GLITCHBASED_DESENSE;
-		pi->sh->interference_mode_5G |= ACPHY_ACI_GLITCHBASED_DESENSE;
+		/* enable glitched based desense and preemption */
+		pi->sh->interference_mode_2G |= ACPHY_ACI_GLITCHBASED_DESENSE
+				| ACPHY_ACI_PREEMPTION;
+		pi->sh->interference_mode_5G |= ACPHY_ACI_GLITCHBASED_DESENSE
+				| ACPHY_ACI_PREEMPTION;
 	} else if (ACMAJORREV_47(pi->pubpi->phy_rev) && ACMINORREV_GE(pi, 1)) {
 		/* No premption for 43684A0/B0 */
 		pi->sh->interference_mode_2G |= ACPHY_ACI_GLITCHBASED_DESENSE;
@@ -5283,7 +5285,7 @@ phy_ac_noise_preempt(phy_ac_noise_info_t *ni, bool enable_preempt, bool EnablePo
 	uint8 stall_val;
 	phy_info_t *pi = ni->pi;
 
-	if (ACMAJORREV_40_128(pi->pubpi->phy_rev)) {
+	if (ACMAJORREV_40(pi->pubpi->phy_rev)) {
 		return;
 	}
 
@@ -5781,7 +5783,7 @@ phy_ac_noise_preempt(phy_ac_noise_info_t *ni, bool enable_preempt, bool EnablePo
 				WRITE_PHYREG(pi, PktAbortCounterClr, 0x1D58);
 			}
 
-			if (ACMAJORREV_40(pi->pubpi->phy_rev) ||
+			if (ACMAJORREV_40_128(pi->pubpi->phy_rev) ||
 				(ACMAJORREV_44(pi->pubpi->phy_rev) &&
 				pi->pubpi->slice == DUALMAC_AUX)) {
 				/* Bphy related setting */
@@ -5790,7 +5792,7 @@ phy_ac_noise_preempt(phy_ac_noise_info_t *ni, bool enable_preempt, bool EnablePo
 
 			ACPHY_REG_LIST_START
 				/* Thresholds */
-				ACPHYREG_BCAST_ENTRY(pi, PREMPT_per_pkt_en0, 0x99)
+				ACPHYREG_BCAST_ENTRY(pi, PREMPT_per_pkt_en0, 0x9d)
 				ACPHYREG_BCAST_ENTRY(pi,
 					PREMPT_ofdm_nominal_clip_th_hipwr_xtra_bits0, 0x1403)
 				ACPHYREG_BCAST_ENTRY(pi, PREMPT_ofdm_low_power_mismatch_th0, 24)

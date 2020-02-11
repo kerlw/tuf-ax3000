@@ -21,7 +21,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wlioctl_defs.h 776001 2019-06-17 14:24:43Z $
+ * $Id: wlioctl_defs.h 777802 2019-08-12 05:29:38Z $
  */
 
 #ifndef wlioctl_defs_h
@@ -888,7 +888,8 @@
 #define WLC_GET_DWDSLIST			324
 #define WLC_SCB_AUTHENTICATE                    325
 #define WLC_CURRENT_TXCTRL			326
-#define WLC_LAST				327	/* XXX The last ioctl. Also push this
+#define WLC_SCB_ASSOCIATE			327
+#define WLC_LAST				328	/* XXX The last ioctl. Also push this
 							 * number when adding new ioctls
 							 */
 /* XXX

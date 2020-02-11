@@ -131,6 +131,9 @@ start_wps_method(void)
 	char buf[256] = "SET ";
 	int len = 4;
 	char ifname[NVRAM_MAX_PARAM_LEN];
+#ifdef RTCONFIG_BRCM_HOSTAPD
+	char word[256], *next;
+#endif
 
 	if (getpid()!=1) {
 		notify_rc("start_wps_method");
@@ -190,25 +193,44 @@ start_wps_method(void)
 		char cmd[HAPD_CMD_BUF] = {0};
 		char sta_mac[32] = {0};
 
-		if (strlen(wps_sta_pin) && strcmp(wps_sta_pin, "00000000") && (wl_wpsPincheck(wps_sta_pin) == 0)) {
-			char *ptr = sta_mac[0] != '\0' ? sta_mac : "";
-			snprintf(cmd, sizeof(cmd),
-				"hostapd_cli -p %s -i %s wps_pin any %s %s",
-				HAPD_DIR, ifname, wps_sta_pin, ptr);
-		} else {
-			snprintf(cmd, sizeof(cmd), "hostapd_cli -p"
-				" %s -i %s wps_pbc", HAPD_DIR, ifname);
-		}
-		if (cmd[0] != '\0') {
-			int ret = system(cmd);
-			if (ret == 0) {
-				wps_config_command = WPS_UI_CMD_START;
-				wl_wlif_update_wps_ui(WLIF_WPS_UI_FINDING_PBC_STA);
-			} else {
-				dbg("Err : %s failed to execute %s \n",
-					__FUNCTION__, cmd);
-			}
+		if (is_router_mode() && !nvram_get_int("w_Setting") && !strcmp(wps_sta_pin, "00000000")) {
+			// Register for wps success notification so that once wps succeeds
+			// in any single interface it can be stopped on other interfaces
+			kill_pidfile_s("/var/run/wps_pbcd.pid", SIGUSR1);
 
+			foreach (word, nvram_safe_get("wl_ifnames"), next) {
+				snprintf(cmd, sizeof(cmd), "hostapd_cli -p"
+					" %s -i %s wps_pbc", HAPD_DIR, word);
+
+				if (cmd[0] != '\0') {
+					if (system(cmd) == 0) {
+						wps_config_command = WPS_UI_CMD_START;
+						wl_wlif_update_wps_ui(WLIF_WPS_UI_FINDING_PBC_STA);
+					} else {
+						dbg("Err : %s failed to execute %s \n",
+							__FUNCTION__, cmd);
+					}
+				}
+			}
+		} else {
+			if (strlen(wps_sta_pin) && strcmp(wps_sta_pin, "00000000") && (wl_wpsPincheck(wps_sta_pin) == 0)) {
+				char *ptr = sta_mac[0] != '\0' ? sta_mac : "";
+				snprintf(cmd, sizeof(cmd),
+					"hostapd_cli -p %s -i %s wps_pin any %s %s",
+					HAPD_DIR, ifname, wps_sta_pin, ptr);
+			} else {
+				snprintf(cmd, sizeof(cmd), "hostapd_cli -p"
+					" %s -i %s wps_pbc", HAPD_DIR, ifname);
+			}
+			if (cmd[0] != '\0') {
+				if (system(cmd) == 0) {
+					wps_config_command = WPS_UI_CMD_START;
+					wl_wlif_update_wps_ui(WLIF_WPS_UI_FINDING_PBC_STA);
+				} else {
+					dbg("Err : %s failed to execute %s \n",
+						__FUNCTION__, cmd);
+				}
+			}
 		}
 	} else
 #endif	/* RTCONFIG_BRCM_HOSTAPD */
@@ -264,6 +286,9 @@ stop_wps_method(void)
 {
 	char buf[256] = "SET ";
 	int len = 4;
+#ifdef RTCONFIG_BRCM_HOSTAPD
+	char word[256], *next;
+#endif
 
 	if (getpid()!=1) {
 		notify_rc("stop_wps_method");
@@ -282,23 +307,50 @@ stop_wps_method(void)
 		char *mode;
 		char cmd[HAPD_CMD_BUF] = {0};
 		char ifname[NVRAM_MAX_PARAM_LEN];
+		int unit;
 
-		snprintf(prefix, sizeof(prefix), "wl%d", nvram_get_int("wps_band_x"));
-		mode = nvram_safe_get(strcat_r(prefix, "_mode", tmp));
-		wl_ifname(nvram_get_int("wps_band_x"), 0, ifname);
-		if (!strcmp(mode, "ap")) {
-			/* Execute wps_cancel cli cmd and reset the wps state variables to 0 */
-			snprintf(cmd, sizeof(cmd), "hostapd_cli -p"
-				" %s -i %s wps_cancel", HAPD_DIR, ifname);
+		if (is_router_mode()) {
+			foreach (word, nvram_safe_get("wl_ifnames"), next) {
+				if (wl_ioctl(word, WLC_GET_INSTANCE, &unit, sizeof(unit)))
+					continue;
+
+				snprintf(prefix, sizeof(prefix), "wl%d", unit);
+	                        mode = nvram_safe_get(strcat_r(prefix, "_mode", tmp));
+
+				if (!strcmp(mode, "ap")) {
+					/* Execute wps_cancel cli cmd and reset the wps state variables to 0 */
+					snprintf(cmd, sizeof(cmd), "hostapd_cli -p"
+						" %s -i %s wps_cancel", HAPD_DIR, word);
+				} else {
+					snprintf(cmd, sizeof(cmd), "%s -p "
+						"/var/run/%s_wpa_supplicant -i %s wps_cancel",
+						WPA_CLI_APP, prefix, word);
+				}
+
+				if (system(cmd) == 0) {
+					wps_config_command = WPS_UI_CMD_NONE;
+					wl_wlif_update_wps_ui(WLIF_WPS_UI_INIT);
+				}
+			}
 		} else {
-			snprintf(cmd, sizeof(cmd), "%s -p "
-				"/var/run/%s_wpa_supplicant -i %s wps_cancel",
-				WPA_CLI_APP, prefix, ifname);
-		}
+			snprintf(prefix, sizeof(prefix), "wl%d", nvram_get_int("wps_band_x"));
+			mode = nvram_safe_get(strcat_r(prefix, "_mode", tmp));
+			wl_ifname(nvram_get_int("wps_band_x"), 0, ifname);
 
-		if (system(cmd) == 0) {
-			wps_config_command = WPS_UI_CMD_NONE;
-			wl_wlif_update_wps_ui(WLIF_WPS_UI_INIT);
+			if (!strcmp(mode, "ap")) {
+				/* Execute wps_cancel cli cmd and reset the wps state variables to 0 */
+				snprintf(cmd, sizeof(cmd), "hostapd_cli -p"
+					" %s -i %s wps_cancel", HAPD_DIR, ifname);
+			} else {
+				snprintf(cmd, sizeof(cmd), "%s -p "
+					"/var/run/%s_wpa_supplicant -i %s wps_cancel",
+					WPA_CLI_APP, prefix, ifname);
+			}
+
+			if (system(cmd) == 0) {
+				wps_config_command = WPS_UI_CMD_NONE;
+				wl_wlif_update_wps_ui(WLIF_WPS_UI_INIT);
+			}
 		}
 	} else
 #endif

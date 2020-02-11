@@ -519,5 +519,28 @@ void setup_mbss_Mac_addr(void)
     }
 }
 
+int
+dpsta_ioctl(char *name, void *buf, int len)
+{
+	struct ifreq ifr;
+	int ret = 0;
+	int s;
+
+	/* open socket to kernel */
+	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		perror("socket");
+		return errno;
+	}
+
+	strncpy(ifr.ifr_name, name, IFNAMSIZ);
+	ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
+	ifr.ifr_data = (caddr_t)buf;
+	if ((ret = ioctl(s, SIOCDEVPRIVATE, &ifr)) < 0)
+		perror(ifr.ifr_name);
+
+	/* cleanup */
+	close(s);
+	return ret;
+}
 //endof wsyscall.c
 

@@ -3034,8 +3034,11 @@ start_samba(void)
 	int acc_num;
 	char cmd[256];
 #if defined(SMP)
-	char *cpu_list = nvram_get("usb_user_core");
+	char cpu_list[4];
 #if defined(RTCONFIG_BCMARM) || defined(RTCONFIG_SOC_IPQ8064)
+#ifndef RTCONFIG_BCMARM
+	char *cpu_list_manual = nvram_get("usb_user_core");
+#endif
 	int cpu_num = sysconf(_SC_NPROCESSORS_CONF);
 	int taskset_ret = -1;
 #endif
@@ -3209,8 +3212,16 @@ start_samba(void)
 		taskset_ret = eval("ionice", "-c1", "-n0", smbd_cmd, "-D", "-s", "/etc/smb.conf");
 #else
 	if(!nvram_match("stop_taskset", "1")){
-		if(cpu_num > 1 && cpu_list)
+		if(cpu_num > 1)
+		{
+#ifndef RTCONFIG_BCMARM
+			if (cpu_list_manual)
+				snprintf(cpu_list, sizeof(cpu_list), "%s", cpu_list_manual);
+			else
+#endif
+				snprintf(cpu_list, sizeof(cpu_list), "%d", cpu_num - 1);
 			taskset_ret = cpu_eval(NULL, cpu_list, smbd_cmd, "-D", "-s", "/etc/smb.conf");
+		}
 		else
 			taskset_ret = eval(smbd_cmd, "-D", "-s", "/etc/smb.conf");
 	}
@@ -3359,7 +3370,7 @@ void start_dms(void)
 	char *argv[] = { MEDIA_SERVER_APP, "-f", "/etc/"MEDIA_SERVER_APP".conf", "-R", NULL, NULL, NULL };
 	static int once = 1;
 	unsigned char ea[ETHER_ADDR_LEN];
-	char serial[18], uuid[37];
+	char serial[18], uuid[37], *friendly_name;
 	char *nv, *nvp, *b, *c;
 	char *nv2, *nvp2;
 	unsigned char type = 0;
@@ -3436,6 +3447,10 @@ void start_dms(void)
 			snprintf(uuid, sizeof(uuid), "4d696e69-444c-164e-9d41-%02x%02x%02x%02x%02x%02x",
 				 ea[0], ea[1], ea[2], ea[3], ea[4], ea[5]);
 
+			friendly_name = nvram_get("dms_friendly_name");
+			if (*friendly_name == '\0' || !is_valid_hostname(friendly_name))
+				friendly_name = get_lan_hostname();
+
 			fprintf(f,
 				"network_interface=%s\n"
 				"port=%d\n"
@@ -3448,7 +3463,7 @@ void start_dms(void)
 				"album_art_names=Cover.jpg/cover.jpg/Thumb.jpg/thumb.jpg\n",
 				nvram_safe_get("lan_ifname"),
 				(port < 0) || (port >= 0xffff) ? 0 : port,
-				is_valid_hostname(nvram_get("dms_friendly_name")) ? nvram_get("dms_friendly_name") : get_productid(),
+				friendly_name,
 				dbdir,
 				nvram_get_int("dms_tivo") ? "yes" : "no",
 				nvram_get_int("dms_stdlna") ? "yes" : "no");
@@ -3641,7 +3656,7 @@ write_mt_daapd_conf(char *servername)
 void
 start_mt_daapd()
 {
-	char servername[32];
+	char *servername;
 
 	if (getpid() != 1) {
 		notify_rc("start_mt_daapd");
@@ -3659,12 +3674,11 @@ start_mt_daapd()
 	if (!sd_partition_num() && !nvram_match("usb_debug", "1"))
 		return;
 
-	if (is_valid_hostname(nvram_safe_get("daapd_friendly_name")))
-		strncpy(servername, nvram_safe_get("daapd_friendly_name"), sizeof(servername));
-	else
-		servername[0] = '\0';
-	if (strlen(servername)==0) strncpy(servername, get_productid(), sizeof(servername));
-		write_mt_daapd_conf(servername);
+	servername = nvram_safe_get("daapd_friendly_name");
+	if (*servername == '\0' || !is_valid_hostname(servername))
+		servername = get_lan_hostname();
+
+	write_mt_daapd_conf(servername);
 
 	if (pids("mt-daapd")) {
 		killall_tk("mt-daapd");

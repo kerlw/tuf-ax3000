@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_ds.c 776278 2019-06-24 11:02:00Z $
+ * $Id: wbd_ds.c 777368 2019-07-30 16:20:53Z $
  */
 
 #include "wbd.h"
@@ -2373,11 +2373,11 @@ end:
 	WBD_EXIT();
 }
 
-#ifdef WLHOSTFBT
 /* Check if FBT is possible on this 1905 Device or not */
 int
 wbd_ds_is_fbt_possible_on_agent()
 {
+#ifdef WLHOSTFBT
 	int ret = WBDE_OK, fbt = WBD_FBT_DEF_FBT_DISABLED;
 	i5_dm_device_type *self_device;
 	i5_dm_interface_type *iter_ifr;
@@ -2419,9 +2419,9 @@ wbd_ds_is_fbt_possible_on_agent()
 
 end:
 	WBD_EXIT();
+#endif /* WLHOSTFBT */
 	return WBDE_DS_FBT_NT_POS;
 }
-#endif /* WLHOSTFBT */
 
 /* Traverse rclass list to find the rclass */
 wbd_bcn_req_rclass_list_t*

@@ -199,19 +199,43 @@ km_b4m4_buffer_key(keymgmt_t *km, wlc_bsscfg_t *bsscfg, const wl_wsec_key_t *wl_
 	return err;
 }
 
+static void km_deauth(wlc_info_t *wlc, scb_t *scb)
+{
+	wlc_bsscfg_t *bsscfg;
+
+	/* scb can be null for unexpected encrypted frames */
+	if (scb == NULL)
+		return;
+
+	bsscfg = SCB_BSSCFG(scb);
+	KM_DBG_ASSERT(bsscfg != NULL);
+
+	wlc_senddeauth(wlc, bsscfg, scb, &scb->ea,
+			&bsscfg->cur_etheraddr, &bsscfg->cur_etheraddr,
+			DOT11_RC_AUTH_INVAL);
+	wlc_scb_clearstatebit(wlc, scb, AUTHENTICATED | ASSOCIATED |
+			AUTHORIZED);
+	wlc_scb_disassoc_cleanup(wlc, scb);
+	wlc_deauth_complete(wlc, bsscfg, WLC_E_STATUS_SUCCESS, &scb->ea,
+			DOT11_RC_AUTH_INVAL, 0);
+
+}
+
 static void
 km_b4m4_m4cb(wlc_info_t *wlc, uint tx_status, void *arg)
 {
 	km_bsscfg_t *bss_km;
+	scb_t *scb;
 	wlc_bsscfg_t *bsscfg;
 	wlc_keymgmt_t *km;
 
+	km = wlc->keymgmt;
+	scb = (scb_t *)arg;
+	bsscfg = SCB_BSSCFG(scb);
+
 	/* if no ack is received, skip installing keys */
 	if (!(tx_status  & TX_STATUS_ACK_RCV))
-		goto done;
-
-	km = wlc->keymgmt;
-	bsscfg = (wlc_bsscfg_t *)arg;
+		goto deauth;
 
 	KM_DBG_ASSERT(KM_VALID(km) && bsscfg != NULL);
 
@@ -220,7 +244,9 @@ km_b4m4_m4cb(wlc_info_t *wlc, uint tx_status, void *arg)
 	bss_km->flags &= ~KM_BSSCFG_FLAG_M1RX;
 
 	km_b4m4_install_keys(wlc->keymgmt, bsscfg);
-done:;
+	return;
+deauth:
+	km_deauth(wlc, scb);
 }
 
 void
@@ -242,7 +268,7 @@ km_b4m4_notify(keymgmt_t *km, wlc_keymgmt_notif_t notif,
 		km_b4m4_reset_keys(km, bsscfg);
 		break;
 	case WLC_KEYMGMT_NOTIF_M4_TX:
-		err = wlc_pcb_fn_register(KM_PCB(km), km_b4m4_m4cb, bsscfg, pkt);
+		err = wlc_pcb_fn_register(KM_PCB(km), km_b4m4_m4cb, scb, pkt);
 		if (err != BCME_OK) {
 			KM_REGST_ERR(("wl%d: %s: error %d registering packet callback\n",
 				KM_UNIT(km), __FUNCTION__, err));

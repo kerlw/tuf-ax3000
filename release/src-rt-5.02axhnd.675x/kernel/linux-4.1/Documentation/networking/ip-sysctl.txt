@@ -223,6 +223,8 @@ tcp_base_mss - INTEGER
 	Path MTU discovery (MTU probing).  If MTU probing is enabled,
 	this is the initial MSS used by the connection.
 
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/* CVE-2019-11479 */
 tcp_min_snd_mss - INTEGER
 	TCP SYN and SYNACK messages usually advertise an ADVMSS option,
 	as described in RFC 1122 and RFC 6691.
@@ -230,6 +232,7 @@ tcp_min_snd_mss - INTEGER
 	it is silently capped to tcp_min_snd_mss.
 
 	Default : 48 (at least 8 bytes of payload per segment)
+#endif
 
 tcp_congestion_control - STRING
 	Set the congestion control algorithm to be used for new

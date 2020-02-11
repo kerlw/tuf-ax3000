@@ -20,7 +20,7 @@
  * <<Broadcom-WL-IPTag/Open:>>
  *
  *
- * $Id: ceventd.h 774823 2019-05-08 08:15:07Z $
+ * $Id: ceventd.h 777386 2019-07-31 06:15:54Z $
  */
 
 #ifndef __CEVENTD_H__
@@ -84,6 +84,7 @@ typedef struct {
 	uint8 pkt_cli_rsp[CA_CLI_RSP_LEN];	/* buffer for cli socket to send response */
 
 	int pid;		/* current process id */
+	int pid_fd;		/* FD to lock for this process ID */
 	uint32 flags;		/* see CA_WKSP_FLAG_* defines for possible flag values */
 	char interface[IFNAMSIZ+1];		/* LAN interface name */
 	uint32	log_type;	/* see CA_LOG_TYPE_* */

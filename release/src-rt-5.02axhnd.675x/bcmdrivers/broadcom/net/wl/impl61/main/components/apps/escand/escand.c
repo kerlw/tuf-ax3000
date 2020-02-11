@@ -90,7 +90,8 @@ escand_info_t *escand_info;
 static int escand_get_traffic_info(escand_chaninfo_t * c_info, escand_traffic_info_t *t_info);
 
 /* get traffic information about TOAd video STAs (if any) */
-static int escand_get_video_sta_traffic_info(escand_chaninfo_t * c_info, escand_traffic_info_t *t_info);
+static int escand_get_video_sta_traffic_info(escand_chaninfo_t * c_info,
+	escand_traffic_info_t *t_info);
 
 /* To check whether bss is enabled for particaular interface or not */
 static int
@@ -355,7 +356,8 @@ escand_channel_info(escand_chaninfo_t *c_info, chanspec_t chspec)
 
 	FOREACH_20_SB(chspec, sub_channel) {
 		sub_chspec = (uint16) sub_channel;
-		ret = escand_get_per_chan_info(c_info, sub_chspec, sc.resbuf, ESCAND_PER_CHAN_INFO_BUF_LEN);
+		ret = escand_get_per_chan_info(c_info, sub_chspec, sc.resbuf,
+			ESCAND_PER_CHAN_INFO_BUF_LEN);
 		if (ret != BCME_OK) {
 			ESCAND_ERROR("%s Failed to get channel (0x%02x) info: %d\n",
 				c_info->name, sub_chspec, ret);
@@ -623,7 +625,7 @@ escand_update_status(escand_chaninfo_t * c_info)
 	c_info->cur_is_dfs_weather = escand_is_dfs_weather_chanspec(c_info, cur_chspec);
 	c_info->is160_bwcap = WL_BW_CAP_160MHZ((c_info->rs_info).bw_cap);
 
-	ESCAND_INFO("%s: chanspec: 0x%x is160_bwcap %d is160_upgradable %d, is160_downgradable %d\n",
+	ESCAND_INFO("%s: chanspec:0x%x is160_bwcap %d is160_upgradable %d, is160_downgradable %d\n",
 		c_info->name, c_info->cur_chspec, c_info->is160_bwcap,
 		c_info->is160_upgradable, c_info->is160_downgradable);
 
@@ -656,6 +658,9 @@ escan_cleanup(escand_info_t ** escand_info_p)
 
 	for (i = 0; i < ESCAND_MAX_IF_NUM; i++) {
 		escand_chaninfo_t* c_info = (*escand_info_p)->chan_info[i];
+
+		if (!c_info)
+			continue;
 
 		ESCAND_FREE(c_info->scan_results);
 

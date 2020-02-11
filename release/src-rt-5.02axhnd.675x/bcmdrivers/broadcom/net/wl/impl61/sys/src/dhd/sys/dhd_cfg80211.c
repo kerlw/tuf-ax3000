@@ -431,7 +431,11 @@ s32 dhd_config_dongle(struct bcm_cfg80211 *cfg)
 		goto default_conf_out;
 	}
 #ifndef OEM_ANDROID
+#ifdef BCA_HNDROUTER
+	err = wl_dongle_power(ndev, PM_OFF);
+#else
 	err = wl_dongle_power(ndev, PM_FAST);
+#endif // endif
 	if (unlikely(err)) {
 		WL_ERR(("wl_dongle_power failed\n"));
 		goto default_conf_out;

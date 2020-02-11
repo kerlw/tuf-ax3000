@@ -61,4 +61,5 @@ extern void wlc_macreq_detach(wlc_macreq_info_t *macreq);
 
 extern int wlc_macreq_upd_bfi(wlc_info_t *wlc, scb_t *scb, uint16 fifogrp_idx, bool add);
 extern int wlc_macreq_upd_lmem(wlc_info_t *wlc, uint16 lmem_idx, bool add);
+extern int wlc_macreq_txbf_mutimer(wlc_info_t *wlc, uint16 mutimer_val);
 #endif /* WLC_MACREQ_H_ */

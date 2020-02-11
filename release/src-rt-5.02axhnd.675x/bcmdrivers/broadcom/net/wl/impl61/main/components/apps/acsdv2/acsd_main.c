@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: acsd_main.c 775476 2019-05-31 11:00:28Z $
+ * $Id: acsd_main.c 777105 2019-07-19 06:49:03Z $
  */
 
 #include <ethernet.h>
@@ -764,7 +764,8 @@ acsd_main_loop(struct timeval *tv)
 		}
 
 		if (!AUTOCHANNEL(c_info) && !COEXCHECK(c_info) &&
-				evt_type != WLC_E_REQ_BW_CHANGE) {
+				evt_type != WLC_E_REQ_BW_CHANGE &&
+				evt_type != WLC_E_RADAR_DETECTED) {
 			ACSD_INFO("Event fail ACSD not in autochannel/coex modes \n");
 			return;
 		}

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wluc_phy.c 776456 2019-06-28 16:43:09Z $
+ * $Id: wluc_phy.c 777970 2019-08-19 14:14:24Z $
  */
 
 #include <wlioctl.h>
@@ -4707,6 +4707,7 @@ wl_rxiq(void *wl, cmd_t *cmd, char **argv)
 
 	memset(&params, 0, sizeof(params));
 	memset(&revinfo, 0, sizeof(revinfo));
+	memset(&iqest_core, 0, sizeof(iqest_core));
 	IFERR(wlu_get(wl, WLC_GET_REVINFO, &revinfo, sizeof(revinfo)));
 
 	IFERR(wl_rxiq_prepare(argv, &params, &resolution));
@@ -4715,9 +4716,7 @@ wl_rxiq(void *wl, cmd_t *cmd, char **argv)
 		BCM7271_CHIP(dtoh32(revinfo.chipnum)) ||
 		EMBEDDED_2x2AX_CORE(dtoh32(revinfo.chipnum)) ||
 		BCM43684_CHIP(dtoh32(revinfo.chipnum))) {
-		iqest_core[0] = params.rxiq & 0xffff;
-		iqest_core[1] = (params.rxiq >> 16) & 0xffff;
-		IFERR(wlu_var_setbuf(wl, cmd->name, iqest_core, WL_STA_ANT_MAX*sizeof(int16)));
+		IFERR(wlu_var_setbuf(wl, cmd->name, &params, sizeof(params)));
 		IFERR(wlu_iovar_get(wl, cmd->name, iqest_core, WL_STA_ANT_MAX*sizeof(int16)));
 		wl_rxiq_print_4365(iqest_core, resolution);
 		return BCME_OK;

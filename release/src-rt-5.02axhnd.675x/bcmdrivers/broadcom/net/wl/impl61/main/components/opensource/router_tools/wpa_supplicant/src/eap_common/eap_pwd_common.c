@@ -83,9 +83,10 @@ static int eap_pwd_kdf(const u8 *key, size_t keylen, const u8 *label,
 static int eap_pwd_suitable_group(u16 num)
 {
 	/* Do not allow ECC groups with prime under 256 bits based on guidance
-	 * for the similar design in SAE. */
-	return num == 19 || num == 20 || num == 21 ||
-		num == 28 || num == 29 || num == 30;
+	 * for the similar design in SAE. Disable groups that use Brainpool
+	 * curves as well for now since they leak more timing information due
+	 * to the prime not being close to a power of two. */
+	return num == 19 || num == 20 || num == 21;
 }
 
 EAP_PWD_group * get_eap_pwd_group(u16 num)

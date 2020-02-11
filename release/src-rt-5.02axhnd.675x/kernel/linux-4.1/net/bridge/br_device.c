@@ -84,9 +84,7 @@ netdev_tx_t br_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 				nbuff_free(SKBUFF_2_PNBUFF(skb));
 				goto lock_return;
 			}
-			local_bh_enable();
 			dev_queue_xmit(skb);
-			local_bh_disable();
 	lock_return:
 			return NETDEV_TX_OK;
 		}

@@ -923,9 +923,7 @@ static inline netdev_tx_t __enet_xmit(pNBuff_t pNBuff, struct net_device *dev)
             nbuff_free(SKBUFF_2_PNBUFF(skb));
             return PKT_DROP;
         }
-        local_bh_enable();
         dev_queue_xmit(skb);
-        local_bh_disable();
         return 0;
     }
 

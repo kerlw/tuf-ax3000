@@ -1186,26 +1186,61 @@ wbd_slave_process_bh_steer_request_cb(wbd_info_t *info, char *ifname,
 	WBD_INFO("Received callback: Backhaul STA["MACDBG"] is moving to BSSID["MACDBG"]\n",
 		MAC2STRDBG(bh_steer_req->bh_sta_mac), MAC2STRDBG(bh_steer_req->trgt_bssid));
 
-	/* allocate the storage */
-	join_params_size = WL_JOIN_PARAMS_FIXED_SIZE + sizeof(chanspec_t);
-	if ((join_params = malloc(join_params_size)) == NULL) {
-		WBD_ERROR("Error allocating %d bytes for assoc params\n", join_params_size);
-		goto free_arg;
+	if (WBD_IS_HAPD_ENABLED(info->flags)) {
+		char cmd[WBD_MAX_BUF_128] = {0};
+		uint start_factor, band, frequency;
+
+		/* For scan on particualr channel, for wpa supplicant we should pass frequency.
+		 * For getting the frequency we should pass control channela and start_factor.
+		 * start_factor depends on band. So get the band and from band get start_factor
+		 */
+		band = WBD_BAND_FROM_CHANNEL(bh_steer_req->channel);
+		if (WBD_IS_BAND_5G(band)) {
+			start_factor = WF_CHAN_FACTOR_5_G;
+		} else {
+			start_factor = WF_CHAN_FACTOR_2_4_G;
+		}
+		frequency = wf_channel2mhz(bh_steer_req->channel, start_factor);
+
+		snprintf(cmd, sizeof(cmd), "wpa_cli -p %s/%swpa_supplicant -i%s scan freq=%u "
+			"bssid="MACDBG"",
+			WBD_HAPD_SUPP_CTRL_DIR, prefix, ifname,
+			frequency, MAC2STRDBG(bh_steer_req->trgt_bssid));
+		WBD_INFO("%s\n", cmd);
+		system(cmd);
+		/* Scan for the BSSID and frequency gets over in 0.25 seconds. After giving some
+		 * buffer making it 0.5 seconds
+		 */
+		usleep(500000);
+
+		/* For wpa_supplicant instead of wl join use roam cli cmd. */
+		snprintf(cmd, sizeof(cmd), "wpa_cli -p %s/%swpa_supplicant -i%s roam "MACDBG"",
+			WBD_HAPD_SUPP_CTRL_DIR, prefix, ifname,
+			MAC2STRDBG(bh_steer_req->trgt_bssid));
+		WBD_INFO("%s\n", cmd);
+		system(cmd);
+	} else {
+		/* allocate the storage */
+		join_params_size = WL_JOIN_PARAMS_FIXED_SIZE + sizeof(chanspec_t);
+		if ((join_params = malloc(join_params_size)) == NULL) {
+			WBD_ERROR("Error allocating %d bytes for assoc params\n", join_params_size);
+			goto free_arg;
+		}
+
+		/* Join SSID with assoc params */
+		memset(join_params, 0, join_params_size);
+		blanket_get_ssid(ifname, &join_params->ssid);
+		memcpy(&join_params->params.bssid, &bh_steer_req->trgt_bssid, ETHER_ADDR_LEN);
+		join_params->params.bssid_cnt = 0;
+		join_params->params.chanspec_num = 1;
+		blanket_get_bw_from_rc(bh_steer_req->opclass, &bw);
+		join_params->params.chanspec_list[0] = wf_channel2chspec(bh_steer_req->channel, bw);
+		WBD_INFO("Joining SSID: %s BSSID:["MACF"] chanspec: 0x%x\n", join_params->ssid.SSID,
+			ETHER_TO_MACF(join_params->params.bssid),
+			join_params->params.chanspec_list[0]);
+		blanket_join_ssid(ifname, join_params, join_params_size);
+		free(join_params);
 	}
-
-	/* Join SSID with assoc params */
-	memset(join_params, 0, join_params_size);
-	blanket_get_ssid(ifname, &join_params->ssid);
-	memcpy(&join_params->params.bssid, &bh_steer_req->trgt_bssid, ETHER_ADDR_LEN);
-	join_params->params.bssid_cnt = 0;
-	join_params->params.chanspec_num = 1;
-	blanket_get_bw_from_rc(bh_steer_req->opclass, &bw);
-	join_params->params.chanspec_list[0] = wf_channel2chspec(bh_steer_req->channel, bw);
-	WBD_INFO("Joining SSID: %s BSSID:["MACF"] chanspec: 0x%x\n", join_params->ssid.SSID,
-		ETHER_TO_MACF(join_params->params.bssid), join_params->params.chanspec_list[0]);
-	blanket_join_ssid(ifname, join_params, join_params_size);
-	free(join_params);
-
 	if ((param_cb = malloc(sizeof(*param_cb))) == NULL) {
 		WBD_ERROR("Error allocating bytes for callback params\n");
 		goto free_arg;

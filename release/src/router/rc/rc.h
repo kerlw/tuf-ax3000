@@ -141,9 +141,9 @@ static inline int is_cap(){
 
 static inline char *node_str(){
 	if(is_cap())
-		return "CAP";
+		return "C";
 
-	return "RE";
+	return "R";
 }
 #endif
 
@@ -2114,6 +2114,9 @@ enum LED_STATUS
 #ifdef RTCONFIG_TUNNEL
 extern void start_mastiff();
 extern void stop_mastiff();
+extern void start_aae_sip_conn(int sdk_init);
+extern void stop_aae_sip_conn(int sdk_deinit);
+extern void stop_aae_gently();
 #endif
 
 #if defined(RTCONFIG_TCODE) && defined(CONFIG_BCMWL5)

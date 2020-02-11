@@ -630,4 +630,24 @@ wlc_macreq_upd_lmem(wlc_info_t *wlc, uint16 lmem_idx, bool add)
 
 	return wlc_maccmd_req(wlc, &mreq, TRUE);
 }
+
+int
+wlc_macreq_txbf_mutimer(wlc_info_t *wlc, uint16 mutimer_val)
+{
+	wl_macreq_params_t mreq;
+
+	if (D11REV_LT(wlc->pub->corerev, 128)) {
+		return BCME_UNSUPPORTED;
+	}
+
+	memset(&mreq, 0x00, sizeof(wl_macreq_params_t));
+
+	mreq.flag = 1; /* valid */
+	mreq.type = C_MREQ_LD_MTMR;
+	mreq.len = 1;
+	mreq.lidx_list[0] = mutimer_val;
+
+	return wlc_maccmd_req(wlc, &mreq, TRUE);
+}
+
 #endif /* WL_PSMX */

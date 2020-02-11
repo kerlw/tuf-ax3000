@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_mbss.c 774319 2019-04-18 13:16:39Z $
+ * $Id: wlc_mbss.c 777923 2019-08-15 00:27:48Z $
  */
 
 /**
@@ -123,6 +123,7 @@ struct wlc_mbss_info {
 	uint16		prq_base;		/* Base address of PRQ in shm */
 	uint16		prq_rd_ptr;		/* Cached read pointer for PRQ */
 	int		bcast_next_start;	/* For rotating probe responses to bcast requests */
+	uint16		pervap_cck_bitmap;
 	bool		mbbsid_enab;		/* MBSSID enabled */
 	int16		mbss16_beacon_count;	/* Number of beacons configured in last tbtt */
 };
@@ -1369,6 +1370,7 @@ wlc_mbss_bsscfg_dump(void *hdl, wlc_bsscfg_t *cfg, struct bcmstrbuf *b)
 		wlc_format_ssid(ssidbuf, ssid.SSID, ssid.SSID_len);
 		bcm_bprintf(b, "MBSS: ucode idx %d; shm ssid >%s< of len %d\n",
 			bmi->_ucidx, ssidbuf, ssid.SSID_len);
+
 	} else {
 		bcm_bprintf(b, "Core clock disabled, not dumping SHM info\n");
 	}

@@ -374,6 +374,20 @@ enable_mmu:
     CALLINIT(=armv7_enable_branch_predictor)
 #endif
 
+#if defined(RTAX95Q)
+/* RT-AX95Q Power LED, GPIO_14, GPIO_15 and GPIO_16 oupt and low */
+	SETLEDS('P','W','L','D')
+	ldr r0,=0xff800500
+	ldr r1, [r0]
+	orr r1, r1, #0x0001C000
+	str r1, [r0]
+
+	ldr r0,=0xff800520
+	ldr r1, [r0]
+	and r1, r1, #0xfffe3fff
+	str r1, [r0]
+#endif
+
 clear_bss:
         SETLEDS('Z','B','B','S')
 	LOADREL(r4,=segment_table)

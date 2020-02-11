@@ -768,9 +768,7 @@ void board_netdevice_init(void)
 }
 
 #if defined(RTAX95Q)
-/* RT-AX95Q power CLED only */
-void PowerCLEDOn(void)
-{
+
 #define AL_AH_REG       0xFF803014
 #define SW_INPUT_REG    0xFF803010
 
@@ -787,6 +785,8 @@ void PowerCLEDOn(void)
 #define LED_B_REG_1      0xff803124      /* GPIO 16 */
 #define LED_B_REG_2      0xff803128      /* GPIO 16 */
 #define LED_B_REG_3      0xff80312c      /* GPIO 16 */
+#define LED_OFF_DELAY      200000
+#define LED_START_DELAY      777777
 
 // gpio 14,15,16,29(BT) ON
 #define LED_Bit_MASK    0x2001c000
@@ -799,6 +799,18 @@ void PowerCLEDOn(void)
 #define LED_G_BRIGHTNESS    0x80
 #define LED_B_BRIGHTNESS    0x80
 
+#if 0
+#define GPIO_TEST_PORT_BLK_DATA_LSB 0xff800558
+#define GPIO_TEST_PORT_COMMAND      0xff80055c
+#define GPIO_PINMUX                 2
+#define GPIO_LED_R                  14
+#define GPIO_LED_G                  15
+#define GPIO_LED_B                  16
+#endif
+
+/* RT-AX95Q power CLED only */
+void PowerCLEDOn(void)
+{
     volatile uint32_t *cled_al_ah_reg = (void *)(AL_AH_REG);
     volatile uint32_t *cled_input_reg = (void *)(SW_INPUT_REG);
     volatile uint32_t *cled_led_r_reg = (void *)(LED_R_REG);
@@ -814,6 +826,8 @@ void PowerCLEDOn(void)
     volatile uint32_t *cled_led_b_reg_2 = (void *)(LED_B_REG_2);
     volatile uint32_t *cled_led_b_reg_3 = (void *)(LED_B_REG_3);
     volatile uint32_t *cled_act_cfg = (void *)(LED_ACT_CFG);
+	// volatile uint32_t *gpio_blk_data_lsb = (void *)(GPIO_TEST_PORT_BLK_DATA_LSB);
+	// volatile uint32_t *gpio_command = (void *)(GPIO_TEST_PORT_COMMAND);
     uint32_t val32;
 
     /* set LED14(R), LED15(G), LED16(B), LED29(BT) as active low */
@@ -826,39 +840,174 @@ void PowerCLEDOn(void)
     val32 &= LED_N_Bit_MASK;
     *cled_input_reg = val32;
 
+	/* LED off */
+	*cled_led_r_reg = 0x0003c000;
+	*cled_led_g_reg = 0x0003c000;
+	*cled_led_b_reg = 0x0003c000;
+	*cled_act_cfg = 0x2001C000;
+	cfe_usleep(LED_OFF_DELAY);
+
     /* Config amber */
 #if 0
     *cled_led_r_reg = (LED_R_BRIGHTNESS << 6);
     *cled_led_g_reg = (LED_G_BRIGHTNESS << 6);
     *cled_led_b_reg = (LED_B_BRIGHTNESS << 6);
 #else
-	*cled_led_r_reg = 0x0003c082;
+	*cled_led_r_reg = 0x0003e002;
 	*cled_led_r_reg_1 = 0x00a34a32;
 	*cled_led_r_reg_2 = 0x00000c34;
-	*cled_led_r_reg_3 = 0x00320032;
-	*cled_led_g_reg = 0x0003c082;
+	*cled_led_r_reg_3 = 0x00000000;
+	*cled_led_g_reg = 0x0003e002;
 	*cled_led_g_reg_1 = 0x00a34a32;
 	*cled_led_g_reg_2 = 0x00000c34;
-	*cled_led_g_reg_3 = 0x00320032;
-	*cled_led_b_reg = 0x0003c082;
+	*cled_led_g_reg_3 = 0x00000000;
+	*cled_led_b_reg = 0x00032080;
 	*cled_led_b_reg_1 = 0x00a34a32;
 	*cled_led_b_reg_2 = 0x00000c34;
-	*cled_led_b_reg_3 = 0x00320032;
+	*cled_led_b_reg_3 = 0x00000000;
 #endif
 
     /* active */
 #if 0
     *cled_act_cfg = LED_Bit_MASK;
 #else
+#if 0
 	/* GPIO 14, 29 */
     *cled_act_cfg = 0x20004000;
 	cfe_sleep(CFE_HZ * 3);
-	/* GPIO 15 */
-    *cled_act_cfg = 0x00008000;
-	cfe_sleep(CFE_HZ * 3);
-	/* GPIO 16 */
-    *cled_act_cfg = 0x00010000;
 #endif
+	/* GPIO 14, 15, 29 */
+    *cled_act_cfg = 0x2000C000;
+	// cfe_usleep(LED_START_DELAY);
+	// cfe_sleep(CFE_HZ * 3);
+#endif
+
+#if 0
+	/* set GPIO_14/GPIO_15/GPIO_16 PINMUX to 2 */
+	*gpio_blk_data_lsb = (GPIO_PINMUX << 12) | GPIO_LED_R;
+	*gpio_command = 0x21;
+	*gpio_blk_data_lsb = (GPIO_PINMUX << 12) | GPIO_LED_G;
+	*gpio_command = 0x21;
+	*gpio_blk_data_lsb = (GPIO_PINMUX << 12) | GPIO_LED_B;
+	*gpio_command = 0x21;
+#endif
+
+    return;
+}
+void PowerCLEDOff(void)
+{
+    volatile uint32_t *cled_al_ah_reg = (void *)(AL_AH_REG);
+    volatile uint32_t *cled_input_reg = (void *)(SW_INPUT_REG);
+    volatile uint32_t *cled_led_r_reg = (void *)(LED_R_REG);
+    volatile uint32_t *cled_led_g_reg = (void *)(LED_G_REG);
+    volatile uint32_t *cled_led_b_reg = (void *)(LED_B_REG);
+    volatile uint32_t *cled_act_cfg = (void *)(LED_ACT_CFG);
+    uint32_t val32;
+
+    /* set LED14(R), LED15(G), LED16(B), LED29(BT) as active low */
+    val32 = *cled_al_ah_reg;
+    val32 &= LED_N_Bit_MASK;
+    *cled_al_ah_reg = val32;
+
+    /* set LED14(R), LED15(G), LED16(B), LED29(BT) ON */
+    val32 = *cled_input_reg;
+    val32 &= LED_N_Bit_MASK;
+    *cled_input_reg = val32;
+
+	/* LED off */
+	*cled_led_r_reg = 0x00000000;
+	*cled_led_g_reg = 0x00000000;
+	*cled_led_b_reg = 0x00000000;
+	*cled_act_cfg = 0x2001C000;
+
+    return;
+}
+void PowerCLEDRescueOn(void)
+{
+    volatile uint32_t *cled_al_ah_reg = (void *)(AL_AH_REG);
+    volatile uint32_t *cled_input_reg = (void *)(SW_INPUT_REG);
+    volatile uint32_t *cled_led_r_reg = (void *)(LED_R_REG);
+    volatile uint32_t *cled_led_g_reg = (void *)(LED_G_REG);
+    volatile uint32_t *cled_led_b_reg = (void *)(LED_B_REG);
+    volatile uint32_t *cled_act_cfg = (void *)(LED_ACT_CFG);
+    uint32_t val32;
+
+    /* set LED14(R), LED15(G), LED16(B), LED29(BT) as active low */
+    val32 = *cled_al_ah_reg;
+    val32 &= LED_N_Bit_MASK;
+    *cled_al_ah_reg = val32;
+
+    /* set LED14(R), LED15(G), LED16(B), LED29(BT) ON */
+    val32 = *cled_input_reg;
+    val32 &= LED_N_Bit_MASK;
+    *cled_input_reg = val32;
+
+	/* LED off */
+	*cled_led_r_reg = 0x0003e800;
+	*cled_led_g_reg = 0x0003c800;
+	*cled_led_b_reg = 0x0003fe00;
+	*cled_act_cfg = 0x2001C000;
+
+    return;
+}
+#endif
+
+#if defined(RTAX56U)
+#define AL_AH_REG       0xFF803014
+#define SW_INPUT_REG    0xFF803010
+
+/* brightness */
+#define LED_16_REG      0xff803120      /* GPIO 16 */
+
+// gpio 16
+#define LED_N_Bit_MASK  0xFFFEFFFF
+#define LED_ACT_CFG     0xFF80301c
+void PowerCLEDOn_ax56u(void)
+{
+    volatile uint32_t *cled_al_ah_reg = (void *)(AL_AH_REG);
+    volatile uint32_t *cled_input_reg = (void *)(SW_INPUT_REG);
+    volatile uint32_t *cled_led_16_reg = (void *)(LED_16_REG);
+    volatile uint32_t *cled_act_cfg = (void *)(LED_ACT_CFG);
+    uint32_t val32;
+
+    /* set 16, 27, 28 as active low */
+    val32 = *cled_al_ah_reg;
+    val32 &= LED_N_Bit_MASK;
+    *cled_al_ah_reg = val32;
+
+    /* set LED16 ON */
+    val32 = *cled_input_reg;
+    val32 &= LED_N_Bit_MASK;
+    *cled_input_reg = val32;
+
+	/* LED 16 on */
+	*cled_led_16_reg = 0x0003e000;
+	*cled_act_cfg = 0x00010000;
+
+    return;
+}
+
+void PowerCLEDOff_ax56u(void)
+{
+    volatile uint32_t *cled_al_ah_reg = (void *)(AL_AH_REG);
+    volatile uint32_t *cled_input_reg = (void *)(SW_INPUT_REG);
+    volatile uint32_t *cled_led_16_reg = (void *)(LED_16_REG);
+    volatile uint32_t *cled_act_cfg = (void *)(LED_ACT_CFG);
+    uint32_t val32;
+
+    /* set LED16 as active low */
+    val32 = *cled_al_ah_reg;
+    val32 &= LED_N_Bit_MASK;
+    *cled_al_ah_reg = val32;
+
+    /* set LED16 ON */
+    val32 = *cled_input_reg;
+    val32 &= LED_N_Bit_MASK;
+    *cled_input_reg = val32;
+
+	/* LED off */
+	*cled_led_16_reg = 0x00000000;
+	*cled_act_cfg = 0x00010000;
 
     return;
 }
@@ -923,6 +1072,12 @@ static int checkForSesBtnWirelessHold(void)
             printf("wps button pressed...\n");
             if (i == nDelay) {
                 printf("You could release wps button now\n\n");
+#if defined(RTAX95Q)
+			PowerCLEDOff();
+#endif
+#if defined(RTAX56U)
+			PowerCLEDOff_ax56u();
+#endif
 		setPowerOnLedOff();
                 ret = 1;
                 break;
@@ -965,6 +1120,10 @@ void board_final_init(int force_cfe)
 	printf("RT-AX95Q Power CLED on\n");
 	PowerCLEDOn();
 #endif
+#if defined(RTAX56U)
+	printf("RT-AX56U Power CLED on\n");
+	PowerCLEDOn_ax56u();
+#endif
 
 #if (INC_SPI_PROG_NAND==1)
     rstToDfltIrq = 1 ;
@@ -989,15 +1148,19 @@ void board_final_init(int force_cfe)
 #elif defined(RTAX58U) || defined(TUFAX3000)
             gpio = 23 | BP_ACTIVE_LOW;	// use WPS LED instead
 #elif defined(RTAX56U)
-            gpio = 38 | BP_ACTIVE_LOW;
+            gpio = 16 | BP_ACTIVE_LOW;
 #endif
 
         /* Wait forever for an image */
         while ((ret = ui_docommand("w 255.255.255.255:ASUSSPACELINK")) == CFE_ERR_TIMEOUT) {
+#if defined(RTAX95Q)
+			PowerCLEDRescueOn();
+#else
             if (i%2 == 0)
                 setLed(gpio, LED_OFF);
             else
                 setLed(gpio, LED_ON);
+#endif
 
             i++;
             if (i==0xffffff)

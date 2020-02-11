@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_ds.h 776891 2019-07-12 08:16:51Z $
+ * $Id: wbd_ds.h 777368 2019-07-30 16:20:53Z $
  */
 
 #ifndef _WBD_DS_H_
@@ -1165,10 +1165,8 @@ extern void wbd_ds_sta_init(wbd_info_t *info, i5_dm_clients_type *i5_assoc_sta);
 /* This Deinit the STA on the BSS */
 extern void wbd_ds_sta_deinit(i5_dm_clients_type *i5_assoc_sta);
 
-#ifdef WLHOSTFBT
 /* Check if FBT is possible on this 1905 Device or not */
 extern int wbd_ds_is_fbt_possible_on_agent();
-#endif /* WLHOSTFBT */
 
 /* Traverse rclass list to find the rclass */
 extern wbd_bcn_req_rclass_list_t* wbd_ds_find_rclass_in_ap_chan_report(

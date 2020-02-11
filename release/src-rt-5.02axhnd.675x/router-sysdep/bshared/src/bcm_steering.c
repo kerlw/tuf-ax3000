@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: bcm_steering.c 776550 2019-07-02 09:45:39Z $
+ * $Id: bcm_steering.c 778087 2019-08-22 06:32:45Z $
  */
 
 #include <typedefs.h>
@@ -186,6 +186,7 @@ static int wl_wlif_do_block_mac(wl_wlif_hdl *hdl,
 	wl_wlif_bss_trans_data_t *ioctl_hndlr_data, int event_fd);
 static int wl_wlif_do_unblock_mac(wl_wlif_hdl *hdl,
 	wl_wlif_bss_trans_data_t *ioctl_hndlr_data, int event_fd);
+static void wl_retrieve_wnm_oui_action_config(void);
 
 /* Order of the function in array and ACTION position should match  */
 static wnm_action_t wnm_actions[] = {
@@ -324,9 +325,6 @@ wl_wlif_proc_event_socket(int event_fd, struct timeval *tv, char *ifreq, uint8 t
 		return WLIFU_BSS_TRANS_RESP_UNKNOWN;
 	}
 
-	WLIF_BSSTRANS("For event_fd[%d] ifname[%s] bss_token[%d] bssid["MACF"]\n",
-		event_fd, ifreq, token, ETHERP_TO_MACF(bssid));
-
 	while (1) {
 		pkt = buf_ptr;
 
@@ -342,17 +340,20 @@ wl_wlif_proc_event_socket(int event_fd, struct timeval *tv, char *ifreq, uint8 t
 
 		width = fdmax + 1;
 
+		WLIF_BSSTRANS("%s: Waiting %d sec for event. event_fd=%d token=%d bssid "MACF"\n",
+			ifreq, (int) tv->tv_sec, event_fd, token, ETHERP_TO_MACF(bssid));
 		/* listen to data availible on all sockets */
 		status = select(width, &fdset, NULL, NULL, tv);
 
 		if ((status == -1 && errno == EINTR) || (status == 0)) {
-			WLIF_BSSTRANS("ifname[%s] status[%d] errno[%d]- No event\n",
-				ifreq, status, errno);
+			WLIF_BSSTRANS("%s: Error from select. status=%d errno=%d (%s)\n", ifreq,
+				status, errno, strerror(errno));
 			return WLIFU_BSS_TRANS_RESP_UNKNOWN;
 		}
 
 		if (status <= 0) {
-			WLIF_BSSTRANS("ifname[%s]: err from select: %s\n", ifreq, strerror(errno));
+			WLIF_BSSTRANS("%s: Error from select. status=%d errno=%d (%s)\n", ifreq,
+				status, errno, strerror(errno));
 			return WLIFU_BSS_TRANS_RESP_UNKNOWN;
 		}
 
@@ -360,7 +361,8 @@ wl_wlif_proc_event_socket(int event_fd, struct timeval *tv, char *ifreq, uint8 t
 		if (event_fd !=  -1 && FD_ISSET(event_fd, &fdset)) {
 			memset(pkt, 0, sizeof(buf_ptr));
 			if ((bytes = recv(event_fd, pkt, sizeof(buf_ptr), 0)) <= IFNAMSIZ) {
-				WLIF_BSSTRANS("ifname[%s] BSS Transit Response: recv err\n", ifreq);
+				WLIF_BSSTRANS("%s: Error from recv. bytes=%d errno=%d (%s)\n",
+					ifreq, bytes, errno, strerror(errno));
 				return WLIFU_BSS_TRANS_RESP_UNKNOWN;
 			}
 
@@ -371,16 +373,16 @@ wl_wlif_proc_event_socket(int event_fd, struct timeval *tv, char *ifreq, uint8 t
 			pdata_len = bytes - IFNAMSIZ;
 
 			if (pdata_len <= BCM_EVENT_HEADER_LEN) {
-				WLIF_BSSTRANS("ifname[%s] BSS Transit Response: "
-					"data_len %d too small\n", ifreq, pdata_len);
+				WLIF_BSSTRANS("%s: BTM Response: data_len %d too small\n", ifreq,
+					pdata_len);
 				continue;
 			}
 
 			dpkt = (bcm_event_t *)pkt;
 			event_id = ntohl(dpkt->event.event_type);
 			if (event_id != WLC_E_BSSTRANS_RESP) {
-				WLIF_BSSTRANS("ifname[%s] BSS Transit Response: "
-					"wrong event_id %d\n", ifreq, event_id);
+				WLIF_BSSTRANS("%s: BTM Response: wrong event_id %d. Expected %d\n",
+					ifreq, event_id, WLC_E_BSSTRANS_RESP);
 				continue;
 			}
 
@@ -391,25 +393,23 @@ wl_wlif_proc_event_socket(int event_fd, struct timeval *tv, char *ifreq, uint8 t
 			addr = (struct ether_addr *)(bsstrans_resp->data);
 			neighbor = (dot11_neighbor_rep_ie_t *)bsstrans_resp->data;
 
-			WLIF_BSSTRANS("BSS Transit Response: ifname[%s], event[%d], "
-				"token[%d], status[%d], mac["MACF"]\n",
-				ifname, event_id, bsstrans_resp->token,
+			WLIF_BSSTRANS("%s: BTM Response: ifname=%s event=%d token=%d status=%d "
+				"ToBSS="MACF"\n", ifreq, ifname, event_id, bsstrans_resp->token,
 				bsstrans_resp->status, ETHERP_TO_MACF(addr));
 
 			/* check interface */
 			if (strncmp(ifname, ifreq, strlen(ifreq)) != 0) {
 				/* not for the requested interface */
-				WLIF_BSSTRANS("BSS Transit Response: not for interface "
-					"%s its for %s\n", ifreq, ifname);
+				WLIF_BSSTRANS("%s: BTM Response: wrong interface %s. Expected %s\n",
+					ifreq, ifname, ifreq);
 				continue;
 			}
 
 			/* check token */
 			if (bsstrans_resp->token != token) {
 				/* not for the requested interface */
-				WLIF_BSSTRANS("BSS Transit Response: not for "
-					"token %x it's for %x\n",
-					token, bsstrans_resp->token);
+				WLIF_BSSTRANS("%s: BTM Response: wrong token %x. Expected %x\n",
+					ifreq, bsstrans_resp->token, token);
 				continue;
 			}
 
@@ -424,29 +424,24 @@ wl_wlif_proc_event_socket(int event_fd, struct timeval *tv, char *ifreq, uint8 t
 				}
 			}
 
+			/* If there is some neigbor report */
+			if (bsstrans_resp->status == 6) {
+				WLIF_BSSTRANS("%s: BTM Response is %d : id=%d len=%d bssid["MACF"] "
+					"bssid_info=0x%X Operatin class=%d channel=%d phytype=%d\n",
+					ifreq, bsstrans_resp->status, neighbor->id, neighbor->len,
+					ETHER_TO_MACF(neighbor->bssid), neighbor->bssid_info,
+					neighbor->reg, neighbor->channel, neighbor->phytype);
+			}
 			/* reject */
 			if (bsstrans_resp->status) {
-				/* If there is some neigbor report */
-				if (bsstrans_resp->status == 6) {
-					WLIF_BSSTRANS("id[%d] len[%d] bssid["MACF"] "
-						"bssid_info[%d] reg[%d] "
-						"channel[%d] phytype[%d] \n",
-						neighbor->id, neighbor->len,
-						ETHER_TO_MACF(neighbor->bssid),
-						neighbor->bssid_info, neighbor->reg,
-						neighbor->channel, neighbor->phytype);
-				}
-				WLIF_BSSTRANS("BSS Transit Response: STA reject"
-					"and status = [%d]\n", bsstrans_resp->status);
-
 				return WLIFU_BSS_TRANS_RESP_REJECT;
 			}
 
 			/* accept, but use another target bssid */
 			if (eacmp(bssid, addr) != 0) {
-				WLIF_BSSTRANS("BSS Transit Response: target bssid not same "
-					"["MACF"] != ["MACF"]\n", ETHERP_TO_MACF(bssid),
-					ETHERP_TO_MACF(addr));
+				WLIF_BSSTRANS("%s: BTM Response: Different Target bssid. BTM "
+					"Request was for "MACF". STA responded with "MACF"\n",
+					ifreq, ETHERP_TO_MACF(bssid), ETHERP_TO_MACF(addr));
 				return WLIFU_BSS_TRANS_RESP_REJECT;
 			}
 
@@ -680,7 +675,7 @@ wl_wlif_send_bss_transreq_actframe(wl_wlif_hdl_data_t *hdl_data,
 	if (ioctl_data->flags & WLIFU_BSS_TRANS_FLAGS_DISASSOC_IMNT) {
 		disassoc_data = (disassoc_t *)malloc(sizeof(disassoc_t));
 		if (!disassoc_data) {
-			WLIF_BSSTRANS("Err: malloc disassoc timer arg failed\n");
+			WLIF_BSSTRANS("Error: malloc disassoc timer arg failed\n");
 			goto done;
 		}
 		disassoc_data->hdl_data = hdl_data;
@@ -689,28 +684,37 @@ wl_wlif_send_bss_transreq_actframe(wl_wlif_hdl_data_t *hdl_data,
 		ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_BCNPRD, &(bcn_period),
 			sizeof(bcn_period), hdl_data->data);
 		if (ret < 0) {
-			WLIF_BSSTRANS("Err:get %s beacon period fails%d\n", hdl_data->ifname, ret);
+			WLIF_BSSTRANS("%s: Error getting beacon period iovar (WLC_GET_BCNPRD). "
+				"ret=%d. Stations won't be disassociated after %d beacons\n",
+				hdl_data->ifname, ret, ioctl_data->disassoc_timer);
 			goto done;
 		}
 
 		tmp_time = ioctl_data->disassoc_timer * bcn_period;
 		timeout = MILISEC_TO_SEC(tmp_time);
 
-		WLIF_BSSTRANS("disassoc timer timout[%d]\n", timeout);
 		ret = wl_wlif_create_timer(hdl_data->uschd_hdl, hdl_data->timer_hdl,
 			(hdl_data->uschd_hdl ? (void*)wl_wlif_disassoc_mac_usched_cb :
 			(void*)wl_wlif_disassoc_mac_cb), (void*)disassoc_data, timeout, FALSE);
 		if (!ret) {
-			WLIF_BSSTRANS("Err: Failed to create Disassoc Timer\n");
+			WLIF_BSSTRANS("Error: Failed to create disassoc timer. ret=%d\n", ret);
 			free(disassoc_data);
+		} else {
+			WLIF_BSSTRANS("Disassoc timer created for %d sec\n", timeout);
 		}
 	}
 done:
+	WLIF_BSSTRANS("%s: Sending BTM Request via actframe to "MACF". Token=%d, Reqmode=0x%X, "
+		"Disassoc bcn count=%d. Validity=%d. TBSSID["MACF"] BSSInfo=0x%X "
+		"Operating class=%d Channel=%d Phytype=%d\n", hdl_data->ifname,
+		ETHER_TO_MACF(action_frame->da), bss_token, transreq->reqmode,
+		transreq->disassoc_tmr, transreq->validity_intrvl, ETHER_TO_MACF(nbr_ie->bssid),
+		nbr_ie->bssid_info, nbr_ie->reg, nbr_ie->channel, nbr_ie->phytype);
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_SET_VAR, ioctl_buf,
 		WL_WIFI_AF_PARAMS_SIZE, hdl_data->data);
 
 	if (ret < 0) {
-		printf("Err: intf:%s actframe %d\n", hdl_data->ifname, ret);
+		printf("%s: Error sending BTM Req actframe: ret=%d\n", hdl_data->ifname, ret);
 	} else if (event_fd != -1) {
 		/* Find OUI ,vendor and do post bsstransreq after send BTM request */
 		wl_wlif_create_post_bss_transreq_timer(hdl_data, ioctl_data, event_fd);
@@ -765,8 +769,8 @@ wl_wlif_send_bss_transreq(wl_wlif_hdl_data_t *hdl_data,
 		/* If driver doesnt support this then fallback to action frame
 		 * mechnism of sending bss transition request.
 		*/
-		WLIF_BSSTRANS("Err: intf:%s ioctl error %d fallback to actframe \n",
-			hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in iovar wnm_btq_nbr_del. ret=%d. Fallback to BTM Request "
+			"with actframe\n", hdl_data->ifname, ret);
 		goto actframe;
 	}
 
@@ -798,10 +802,14 @@ wl_wlif_send_bss_transreq(wl_wlif_hdl_data_t *hdl_data,
 		/* If driver doesnt support this then fallback to action frame
 		 * mechnism of sending bss transition request.
 		*/
-		WLIF_BSSTRANS("Err: intf:%s ioctl error %d fallback to actframe \n",
-			hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in iovar wnm_btq_nbr_add. ret=%d. Fallback to BTM Request "
+			"with actframe\n", hdl_data->ifname, ret);
 		goto actframe;
 	}
+	WLIF_BSSTRANS("%s: Added neighbor ["MACF"] BSSInfo=0x%X Operating class=%d Channel=%d "
+		"Phytype=%d Chanspec=0x%X\n", hdl_data->ifname, ETHER_TO_MACF(btq_nbr.bssid),
+		btq_nbr.bssid_info, btq_nbr.reg, btq_nbr.channel, btq_nbr.phytype,
+		btq_nbr.chanspec);
 
 	/* Send BSS Transition Request */
 	memset(&bsstrans_req, 0, sizeof(bsstrans_req));
@@ -837,10 +845,17 @@ wl_wlif_send_bss_transreq(wl_wlif_hdl_data_t *hdl_data,
 		/* If driver doesnt support this then fallback to action frame
 		 * mechnism of sending bss transition request.
 		*/
-		WLIF_BSSTRANS("Err: intf:%s ioctl error %d fallback to actframe \n",
-			hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in iovar wnm_bsstrans_req. ret=%d. Fallback to BTM Request"
+				" with actframe\n", hdl_data->ifname, ret);
 		goto actframe;
-	} else if (event_fd != -1) {
+	}
+
+	WLIF_BSSTRANS("%s: Sent BTM Request via wnm_bsstrans_req. to "MACF". Token=%d, "
+		"Reqmode=0x%X, Disassoc bcn count=%d.\n", hdl_data->ifname,
+		ETHER_TO_MACF(bsstrans_req.sta_mac),
+		bsstrans_req.token, bsstrans_req.reqmode, bsstrans_req.tbtt);
+
+	if (event_fd != -1) {
 		/* Find OUI ,vendor and do post bsstransreq after send BTM request */
 		wl_wlif_create_post_bss_transreq_timer(hdl_data, ioctl_data, event_fd);
 		/* read the BSS transition response only if event_fd is valid */
@@ -877,6 +892,10 @@ wl_update_block_mac_list(maclist_t *static_maclist, maclist_t *maclist,
 	 * DENY   UNBLOCK	DEL
 	 */
 	action = ((macmode == WLC_MACMODE_ALLOW) ^ block) ? WL_MAC_ADD : WL_MAC_DEL;
+
+	WLIF_BSSTRANS("%sblocking STA "MACF" by %s the maclist. macmode=%d\n", block ? "" : "Un",
+		ETHERP_TO_MACF(addr), action ? "adding to" : "deleting from", macmode);
+
 	switch (action) {
 		case WL_MAC_DEL:
 			for (idx = 0; idx < static_maclist->count; idx++) {
@@ -1028,22 +1047,23 @@ wl_wlif_block_mac(wl_wlif_hdl *hdl, struct ether_addr addr, int timeout)
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_MACMODE, &(macmode),
 		sizeof(macmode), hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err: get %s macmode fails %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in WLC_GET_MACMODE. ret=%d.\n", hdl_data->ifname, ret);
 		return FALSE;
 	}
 	macmode = dtoh32(macmode);
 
 	/* retrive static maclist */
-	if (hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_MACLIST, (void *)s_maclist,
-		sizeof(maclist_buf), hdl_data->data) < 0) {
-		WLIF_BSSTRANS("Err: get %s maclist fails\n", hdl_data->ifname);
+	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_MACLIST, (void *)s_maclist,
+		sizeof(maclist_buf), hdl_data->data);
+	if (ret < 0) {
+		WLIF_BSSTRANS("%s: Error in WLC_GET_MACLIST. ret=%d.\n", hdl_data->ifname, ret);
 		return FALSE;
 	}
 	s_maclist->count = dtoh32(s_maclist->count);
 
 	ret = wl_iovar_getint(hdl_data->ifname, "probresp_mac_filter", &macprobresp);
 	if (ret != 0) {
-		WLIF_BSSTRANS("Err: %s Probresp mac filter set failed %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in probresp_mac_filter. ret=%d.\n", hdl_data->ifname, ret);
 	}
 
 	if (flag == 0) {
@@ -1051,10 +1071,12 @@ wl_wlif_block_mac(wl_wlif_hdl *hdl, struct ether_addr addr, int timeout)
 		flag |= WL_MAC_PROB_MODE_SET(macmode, macprobresp, TRUE);
 	}
 
+	WLIF_BSSTRANS("%s: Blocking "MACF" for %d seconds\n", hdl_data->ifname,
+		ETHER_TO_MACF(addr), timeout);
 	/* Get the updated mac list to be set. If there is no change, then just return */
 	if (!wl_update_block_mac_list(s_maclist, maclist, macmode, &addr, TRUE)) {
-		WLIF_BSSTRANS("Info: %s There is no change to the MAC list while trying to add "
-			"MAC["MACF"]\n", hdl_data->ifname, ETHER_TO_MACF(addr));
+		WLIF_BSSTRANS("%s MAC list unchanged while blocking "MACF".\n", hdl_data->ifname,
+			ETHER_TO_MACF(addr));
 		return TRUE;
 	}
 
@@ -1064,6 +1086,8 @@ wl_wlif_block_mac(wl_wlif_hdl *hdl, struct ether_addr addr, int timeout)
 
 		/* If Unblock MAC Timer Creation Fails, return Error fm this function */
 		if (ret == FALSE) {
+			WLIF_BSSTRANS("%s: Failed to create timer for unblocking "MACF" after %d "
+				"seconds\n", hdl_data->ifname, ETHER_TO_MACF(addr), timeout);
 			return FALSE;
 		}
 	}
@@ -1073,25 +1097,25 @@ wl_wlif_block_mac(wl_wlif_hdl *hdl, struct ether_addr addr, int timeout)
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_SET_MACLIST, maclist,
 		ETHER_ADDR_LEN * maclist->count + sizeof(uint), hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err: %s maclist set failed %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in WLC_SET_MACLIST. ret=%d\n", hdl_data->ifname, ret);
 	}
 
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_SET_MACMODE, &macmode,
 		sizeof(int), hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err: %s macmode set failed %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in WLC_SET_MACMODE. ret=%d\n", hdl_data->ifname, ret);
 	}
 
 	ret = wl_iovar_setint(hdl_data->ifname, "probresp_mac_filter", TRUE);
 	if (ret != 0) {
-		WLIF_BSSTRANS("Err: %s Probresp mac filter set failed %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in probresp_mac_filter. ret=%d\n", hdl_data->ifname, ret);
 	}
 
 	/* For open networks set nobcnssid iovar */
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_CLOSED, &closed,
 		sizeof(closed), hdl_data->data);
 	if (ret != 0) {
-		WLIF_BSSTRANS("Err: %s closed get failed %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in WLC_GET_CLOSED. ret=%d\n", hdl_data->ifname, ret);
 	}
 	if (!closed) {
 		val = nvram_safe_get(WLIFU_NVRAM_STEER_FLAGS);
@@ -1100,7 +1124,7 @@ wl_wlif_block_mac(wl_wlif_hdl *hdl, struct ether_addr addr, int timeout)
 		}
 
 		if (IS_NOBCNSSID_ENABLED(steer_flags) && !wl_wlif_set_nobcnssid(hdl)) {
-			WLIF_BSSTRANS("Err: %s in setting nobcnssid iovar \n", hdl_data->ifname);
+			WLIF_BSSTRANS("%s: Error in setting nobcnssid\n", hdl_data->ifname);
 		}
 	}
 
@@ -1132,12 +1156,14 @@ wl_wlif_block_mac_and_disassoc(wl_wlif_hdl *hdl, struct ether_addr addr,
 	if (disassoc) {
 
 		/* Send Disassoc to STA from Source BSSID */
+		WLIF_BSSTRANS("%s: Sending disassoc to STA "MACF"\n", hdl_data->ifname,
+			ETHER_TO_MACF(addr));
 		ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_DISASSOC,
 			&(addr), ETHER_ADDR_LEN, hdl_data->data);
 
 		if (ret < 0) {
-			WLIF_BSSTRANS("Disassoc to STA["MACF"] from %s failed\n",
-				ETHER_TO_MACF(addr), hdl_data->ifname);
+			WLIF_BSSTRANS("%s: WLC_DISASSOC to STA "MACF" failed\n", hdl_data->ifname,
+				ETHER_TO_MACF(addr));
 			goto end;
 		}
 	}
@@ -1174,10 +1200,13 @@ wl_set_channel_util(wl_wlif_hdl *hdl,
 	bss_load->chan_util = chan_util;	/* Initialize the channel utilization value */
 	memcpy(maclist->ea, addr, sizeof(struct ether_addr));
 
+	WLIF_BSSTRANS("%s: Setting bssload_fake_chan_util to %d for "MACF"\n",
+		hdl_data->ifname,  chan_util, ETHERP_TO_MACF(addr));
+
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_SET_VAR, (void *)maclist_buf,
 			sizeof(maclist_buf), hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err : %s: fail to set  bss_steering_sta "MACF"\n",
+		WLIF_BSSTRANS("%s: Error setting bssload_fake_chan_util for "MACF"\n",
 			hdl_data->ifname,  ETHERP_TO_MACF(addr));
 		return ret;
 	}
@@ -1243,7 +1272,7 @@ wl_wlif_do_unblock_mac(wl_wlif_hdl *hdl,
  * wnm_oui_action_config format: xx:xx:xx,oui_action_value1,oui_action_value2,timeout  ".
  */
 
-void
+static void
 wl_retrieve_wnm_oui_action_config(void)
 {
 	char var[80], *next, *pstr;
@@ -1400,8 +1429,8 @@ wl_wlif_do_bss_trans(wl_wlif_hdl *hdl,
 
 	/* Create & Send BSS Transition Action Frame & Return the Response */
 	bsstrans_ret = wl_wlif_send_bss_transreq(hdl_data, ioctl_hndlr_data, event_fd, out_resp);
-	WLIF_BSSTRANS("BSS Transition Resp from STA["MACF"] to BSSID["MACF"] is : %s\n",
-		ETHER_TO_MACF(ioctl_hndlr_data->addr),
+	WLIF_BSSTRANS("%s: BSS Transition Resp from STA "MACF" to BSSID "MACF" is : %s\n",
+		hdl_data->ifname, ETHER_TO_MACF(ioctl_hndlr_data->addr),
 		ETHER_TO_MACF(ioctl_hndlr_data->bssid),
 		((bsstrans_ret == WLIFU_BSS_TRANS_RESP_REJECT) ? "REJECT" :
 		((bsstrans_ret == WLIFU_BSS_TRANS_RESP_UNKNOWN) ? "UNKNOWN" :"ACCEPT")));
@@ -1429,6 +1458,9 @@ wl_wlif_do_bss_trans(wl_wlif_hdl *hdl,
 	if ((bsstrans_ret == WLIFU_BSS_TRANS_RESP_ACCEPT) && BTR_ACPT_DEFIANT_WD_ON(steer_flags)) {
 
 		/* Create Defiant STA Watchdog Timer */
+		WLIF_BSSTRANS("%s: Creating timer for %d sec to check if the STA "MACF" actually "
+			"moved\n", hdl_data->ifname, ioctl_hndlr_data->timeout,
+			ETHER_TO_MACF(ioctl_hndlr_data->addr));
 		wl_wlif_create_defiant_sta_watchdog_timer(hdl_data,
 			ioctl_hndlr_data->addr, ioctl_hndlr_data->timeout);
 	}
@@ -1440,12 +1472,11 @@ wl_wlif_do_bss_trans(wl_wlif_hdl *hdl,
 		((bsstrans_ret == WLIFU_BSS_TRANS_RESP_UNKNOWN) &&
 		(!BTR_UNWN_BRUTFORCE_BLK(steer_flags))));
 
+	WLIF_BSSTRANS("%s:%s brute force disassoc of STA "MACF" after %d sec. NVRAM %s=%d\n",
+		hdl_data->ifname, brute_force ? "" : " No", ETHER_TO_MACF(ioctl_hndlr_data->addr),
+		ioctl_hndlr_data->timeout, WLIFU_NVRAM_STEER_FLAGS, steer_flags);
 	/* If Brute Force Steer is not applicable, for this Response Type, Leave */
 	if (!brute_force) {
-
-		WLIF_BSSTRANS("No Disassoc to STA["MACF"] from %s by NVRAM %s = %d\n",
-			ETHER_TO_MACF(ioctl_hndlr_data->addr), hdl_data->ifname,
-			WLIFU_NVRAM_STEER_FLAGS, steer_flags);
 		goto end;
 	}
 
@@ -1484,17 +1515,19 @@ wl_wlif_unblock_mac(wl_wlif_hdl *hdl, struct ether_addr addr, int flag)
 	memset(maclist_buf, 0, WLC_IOCTL_MAXLEN);
 	memset(smaclist_buf, 0, WLC_IOCTL_MAXLEN);
 
-	if (hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_MACMODE, &(macmode),
-		sizeof(macmode), hdl_data->data) != 0) {
-		WLIF_BSSTRANS("Err: get %s macmode fails \n", hdl_data->ifname);
+	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_MACMODE, &(macmode),
+		sizeof(macmode), hdl_data->data);
+	if (ret != 0) {
+		WLIF_BSSTRANS("%s: Error in WLC_GET_MACMODE. ret=%d.\n", hdl_data->ifname, ret);
 		return FALSE;
 	}
 	macmode = dtoh32(macmode);
 
 	/* retrive static maclist */
-	if (hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_MACLIST, (void *)s_maclist,
-		sizeof(maclist_buf), hdl_data->data) < 0) {
-		WLIF_BSSTRANS("Err: get %s maclist fails\n", hdl_data->ifname);
+	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_MACLIST, (void *)s_maclist,
+		sizeof(maclist_buf), hdl_data->data);
+	if (ret < 0) {
+		WLIF_BSSTRANS("%s: Error in WLC_GET_MACLIST. ret=%d.\n", hdl_data->ifname, ret);
 		return FALSE;
 	}
 	s_maclist->count = dtoh32(s_maclist->count);
@@ -1504,10 +1537,11 @@ wl_wlif_unblock_mac(wl_wlif_hdl *hdl, struct ether_addr addr, int flag)
 
 	if (flag && (maclist->count == (flag & 0xFF))) {
 		macmode = WL_MACMODE_GET(flag);
-		if (wl_iovar_setint(hdl_data->ifname, "probresp_mac_filter",
-			WL_MACPROBE_GET(flag)) != 0) {
-			WLIF_BSSTRANS("Error:%s Probresp mac filter set failed \n",
-				hdl_data->ifname);
+		ret = wl_iovar_setint(hdl_data->ifname, "probresp_mac_filter",
+			WL_MACPROBE_GET(flag));
+		if (ret != 0) {
+			WLIF_BSSTRANS("%s: Error in probresp_mac_filter. ret=%d.\n",
+				hdl_data->ifname, ret);
 		}
 	}
 
@@ -1515,14 +1549,14 @@ wl_wlif_unblock_mac(wl_wlif_hdl *hdl, struct ether_addr addr, int flag)
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_SET_MACLIST, maclist,
 		ETHER_ADDR_LEN * maclist->count + sizeof(uint), hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err: %s maclist filter set failed %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in WLC_SET_MACLIST. ret=%d\n", hdl_data->ifname, ret);
 	}
 
 	macmode = htod32(macmode);
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_SET_MACMODE, &macmode,
 		sizeof(int), hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err: %s macmode set failed %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: Error in WLC_SET_MACMODE. ret=%d\n", hdl_data->ifname, ret);
 	}
 
 	return TRUE;
@@ -1576,6 +1610,8 @@ wl_wlif_create_unblock_mac_timer(wl_wlif_hdl_data_t *hdl_data,
 		(hdl_data->uschd_hdl ? (void*)wl_wlif_unblock_mac_usched_cb :
 		(void*)wl_wlif_unblock_mac_cb), (void*)tmr_data, timeout, FALSE);
 	if (!ret) {
+		WLIF_BSSTRANS("%s: Error creating timer to unblock STA "MACF". ret=%d\n",
+			hdl_data->ifname, ETHER_TO_MACF(addr), ret);
 		free(tmr_data);
 		return FALSE;
 	}
@@ -1606,7 +1642,7 @@ wl_wlif_find_sta_in_assoclist(wl_wlif_hdl_data_t *hdl_data, struct ether_addr *f
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_GET_ASSOCLIST, list,
 		WL_WLIF_BUFSIZE_4K, hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err: [%s] WLC_GET_ASSOCLIST Failed : %d\n", hdl_data->ifname, ret);
+		WLIF_BSSTRANS("%s: WLC_GET_ASSOCLIST Failed. ret=%d\n", hdl_data->ifname, ret);
 		goto end;
 	}
 
@@ -1644,6 +1680,8 @@ wl_wlif_run_defiant_sta_watchdog(void* arg)
 		&defiant_tmr_data->addr);
 
 	if (sta_found) {
+		WLIF_BSSTRANS("%s: STA "MACF" still associated. Disassoc him\n",
+			defiant_tmr_data->hdl_data->ifname, ETHER_TO_MACF(defiant_tmr_data->addr));
 		/* If Brute Force is applicable, for this Response Type, Do Brute Force way */
 		wl_wlif_block_mac_and_disassoc(defiant_tmr_data->hdl_data, defiant_tmr_data->addr,
 			defiant_tmr_data->timeout, 1);
@@ -1705,6 +1743,8 @@ wl_wlif_create_defiant_sta_watchdog_timer(wl_wlif_hdl_data_t *hdl_data,
 		(hdl_data->uschd_hdl ? (void*)wl_wlif_defiant_sta_wd_usched_cb :
 		(void*)wl_wlif_defiant_sta_wd_cb), (void*)defiant_tmr_data, tm_defiant_wd, FALSE);
 	if (!ret) {
+		WLIF_BSSTRANS("%s: Error creating timer for defiant STA "MACF". ret=%d\n",
+			hdl_data->ifname, ETHER_TO_MACF(addr), ret);
 		free(defiant_tmr_data);
 		return FALSE;
 	}
@@ -1717,9 +1757,11 @@ static bool
 wl_wlif_unset_nobcnssid(wl_wlif_hdl *hdl)
 {
 	wl_wlif_hdl_data_t *hdl_data = (wl_wlif_hdl_data_t*)hdl;
+	int ret = 0;
 
-	if (wl_iovar_setint(hdl_data->ifname, "nobcnssid", 0) != 0) {
-		WLIF_BSSTRANS("Err: %s nobcnssid unset failed \n", hdl_data->ifname);
+	ret = wl_iovar_setint(hdl_data->ifname, "nobcnssid", 0);
+	if (ret != 0) {
+		WLIF_BSSTRANS("%s: nobcnssid unset failed. ret=%d\n", hdl_data->ifname, ret);
 		return FALSE;
 	}
 
@@ -1732,10 +1774,7 @@ wl_wlif_unset_nobcnssid_cb(bcm_timer_id timer_id, void* arg)
 {
 	static_maclist_t *data = (static_maclist_t*)arg;
 
-	if (!wl_wlif_unset_nobcnssid(data->hdl_data)) {
-		WLIF_BSSTRANS("Err: nobcnssid unset failed \n");
-	}
-
+	wl_wlif_unset_nobcnssid(data->hdl_data);
 	free(data);
 	bcm_timer_delete(timer_id);
 }
@@ -1746,10 +1785,7 @@ wl_wlif_unset_nobcnssid_usched_cb(bcm_usched_handle* hdl, void* arg)
 {
 	static_maclist_t *data = (static_maclist_t*)arg;
 
-	if (!wl_wlif_unset_nobcnssid(data->hdl_data)) {
-		WLIF_BSSTRANS("Err: nobcnssid unset failed \n");
-	}
-
+	wl_wlif_unset_nobcnssid(data->hdl_data);
 	free(data);
 }
 
@@ -1773,7 +1809,8 @@ wl_wlif_create_nobcnssid_timer(wl_wlif_hdl_data_t *hdl_data, int timeout)
 		(hdl_data->uschd_hdl ? (void*)wl_wlif_unset_nobcnssid_usched_cb :
 		(void*)wl_wlif_unset_nobcnssid_cb), tm_data, timeout, FALSE);
 	if (!ret) {
-		WLIF_BSSTRANS("Err: nobcnssid timer creation failed \n");
+		WLIF_BSSTRANS("%s: Error creating nobcnssid timer. ret=%d\n", hdl_data->ifname,
+			ret);
 		free(tm_data);
 		return FALSE;
 	}
@@ -1790,9 +1827,10 @@ wl_wlif_set_nobcnssid(wl_wlif_hdl *hdl)
 {
 	wl_wlif_hdl_data_t *hdl_data;
 	int timeout = atoi(nvram_safe_get(WLIFU_NVRAM_NOBCNSSID_TIMEOUT));
+	int ret = 0;
 
 	if (!hdl) {
-		WLIF_BSSTRANS("Err: Invalid wlif handle \n");
+		WLIF_BSSTRANS("Err: Invalid wlif handle\n");
 		return FALSE;
 	}
 
@@ -1800,8 +1838,9 @@ wl_wlif_set_nobcnssid(wl_wlif_hdl *hdl)
 
 	wl_endian_probe(hdl_data->ifname);
 
-	if (wl_iovar_setint(hdl_data->ifname, "nobcnssid", 1) != 0) {
-		WLIF_BSSTRANS("Err: %s nobcnssid set failed \n", hdl_data->ifname);
+	ret = wl_iovar_setint(hdl_data->ifname, "nobcnssid", 1);
+	if (ret != 0) {
+		WLIF_BSSTRANS("%s: nobcnssid set failed. ret=%d\n", hdl_data->ifname, ret);
 		return FALSE;
 	}
 
@@ -1812,7 +1851,6 @@ wl_wlif_set_nobcnssid(wl_wlif_hdl *hdl)
 	/* In case of timer creation failure unset the nobcnssid iovar */
 	if (!wl_wlif_create_nobcnssid_timer(hdl_data, timeout)) {
 		if (!wl_wlif_unset_nobcnssid(hdl)) {
-			WLIF_BSSTRANS("Err: %s nobcnssid unset failed \n", hdl_data->ifname);
 			return FALSE;
 		}
 	}
@@ -1831,7 +1869,8 @@ wl_wlif_disassoc_mac_cb(bcm_timer_id timer_id, void* arg)
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_DISASSOC, &(data->addr),
 		ETHER_ADDR_LEN, hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err: Sending Disassoc error[%d]\n", ret);
+		WLIF_BSSTRANS("%s: WLC_DISASSOC to STA "MACF" failed. ret=%d\n", hdl_data->ifname,
+			ETHER_TO_MACF(data->addr), ret);
 	}
 
 	free(data);
@@ -1849,7 +1888,8 @@ wl_wlif_disassoc_mac_usched_cb(bcm_usched_handle* hdl, void* arg)
 	ret = hdl_data->ioctl_hndlr(hdl_data->ifname, WLC_DISASSOC, &(data->addr),
 		ETHER_ADDR_LEN, hdl_data->data);
 	if (ret < 0) {
-		WLIF_BSSTRANS("Err: Sending Disassoc error[%d]\n", ret);
+		WLIF_BSSTRANS("%s: WLC_DISASSOC to STA "MACF" failed. ret=%d\n", hdl_data->ifname,
+			ETHER_TO_MACF(data->addr), ret);
 	}
 
 	free(data);

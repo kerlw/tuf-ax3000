@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: airiq_app.c 772947 2019-03-07 18:56:43Z $
+ * $Id: airiq_app.c 777631 2019-08-06 21:49:36Z $
  */
 
 /* bsa_service.c: Starts manager service and SIRP server */
@@ -1570,7 +1570,65 @@ void ConfigureSWSAScanParam3p1(airiq_config_t *pParam, airiq_scan_specs_t *scans
 			pParam->core_config[cnt]         = core;
 			cnt++;
 		} else {
-			if (bw == WL_CHANSPEC_BW_20) {
+			if ((bw == WL_CHANSPEC_BW_80) || (scanspec->revinfo.corerev >= 128)) {
+				/*43684 supports different bw on +1 chain and 3x3 chain.
+				So we do 80 Mhz scans on all 5G channels irrespective of 3x3 bandwidth*/
+
+				pParam->chanspec_list[cnt]       = 42  | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
+				pParam->dwell_interval_ms[cnt]   = shortdwell;
+				pParam->capture_interval_us[cnt] = capture_interval;
+				pParam->capture_count[cnt]       = shortfftcnt;
+				pParam->core_config[cnt]         = core;
+				cnt++;
+
+				pParam->chanspec_list[cnt]       = 58  | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
+				pParam->dwell_interval_ms[cnt]   = shortdwell;
+				pParam->capture_interval_us[cnt] = capture_interval;
+				pParam->capture_count[cnt]       = shortfftcnt;
+				pParam->core_config[cnt]         = core;
+				cnt++;
+
+				pParam->chanspec_list[cnt]       = 106 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
+				pParam->dwell_interval_ms[cnt]   = shortdwell;
+				pParam->capture_interval_us[cnt] = capture_interval;
+				pParam->capture_count[cnt]       = shortfftcnt;
+				pParam->core_config[cnt]         = core;
+				cnt++;
+
+				pParam->chanspec_list[cnt]       = 122 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
+				pParam->dwell_interval_ms[cnt]   = shortdwell;
+				pParam->capture_interval_us[cnt] = capture_interval;
+				pParam->capture_count[cnt]       = shortfftcnt;
+				pParam->core_config[cnt]         = core;
+				cnt++;
+
+				pParam->chanspec_list[cnt]       = 138 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
+				pParam->dwell_interval_ms[cnt]   = shortdwell;
+				pParam->capture_interval_us[cnt] = capture_interval;
+				pParam->capture_count[cnt]       = shortfftcnt;
+				pParam->core_config[cnt]         = core;
+				cnt++;
+
+				pParam->chanspec_list[cnt]       = 155 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
+				pParam->dwell_interval_ms[cnt]   = longdwell;
+				pParam->capture_interval_us[cnt] = capture_interval;
+				pParam->capture_count[cnt]       = longfftcnt;
+				pParam->core_config[cnt]         = core;
+				cnt++;
+
+				if (phy_mode == PHYMODE_3x3_1x1) {
+					pParam->chanspec_list[cnt] = 168 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
+				} else if (scan80only) {
+					pParam->chanspec_list[cnt] = 165 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
+				} else {
+					pParam->chanspec_list[cnt] = 165 | WL_CHANSPEC_BW_20 | WL_CHANSPEC_BAND_5G;
+				}
+				pParam->dwell_interval_ms[cnt]   = longdwell / 2;
+				pParam->capture_interval_us[cnt] = capture_interval;
+				pParam->capture_count[cnt]       = longfftcnt / 2;
+				pParam->core_config[cnt]         = core;
+				cnt++;
+			} else if (bw == WL_CHANSPEC_BW_20) {
 				/* 5GHz low 36,40,44,48,52,56,60,64 (8 channels)  --> 80ms */
 				for (i = 36; i <= 64; i = i + 4) {
 					pParam->chanspec_list[cnt]       = i   | WL_CHANSPEC_BW_20 | WL_CHANSPEC_BAND_5G;
@@ -1647,63 +1705,6 @@ void ConfigureSWSAScanParam3p1(airiq_config_t *pParam, airiq_scan_specs_t *scans
 					pParam->core_config[cnt]         = core;
 					cnt++;
 				}
-			} else if (bw == WL_CHANSPEC_BW_80) {
-				pParam->chanspec_list[cnt]       = 42  | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
-				/* pParam->chanspec_list[cnt] = 0xe02a; */
-				pParam->dwell_interval_ms[cnt]   = shortdwell;
-				pParam->capture_interval_us[cnt] = capture_interval;
-				pParam->capture_count[cnt]       = shortfftcnt;
-				pParam->core_config[cnt]         = core;
-				cnt++;
-
-				pParam->chanspec_list[cnt]       = 58  | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
-				pParam->dwell_interval_ms[cnt]   = shortdwell;
-				pParam->capture_interval_us[cnt] = capture_interval;
-				pParam->capture_count[cnt]       = shortfftcnt;
-				pParam->core_config[cnt]         = core;
-				cnt++;
-
-				pParam->chanspec_list[cnt]       = 106 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
-				pParam->dwell_interval_ms[cnt]   = shortdwell;
-				pParam->capture_interval_us[cnt] = capture_interval;
-				pParam->capture_count[cnt]       = shortfftcnt;
-				pParam->core_config[cnt]         = core;
-				cnt++;
-
-				pParam->chanspec_list[cnt]       = 122 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
-				pParam->dwell_interval_ms[cnt]   = shortdwell;
-				pParam->capture_interval_us[cnt] = capture_interval;
-				pParam->capture_count[cnt]       = shortfftcnt;
-				pParam->core_config[cnt]         = core;
-				cnt++;
-
-				pParam->chanspec_list[cnt]       = 138 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
-				pParam->dwell_interval_ms[cnt]   = shortdwell;
-				pParam->capture_interval_us[cnt] = capture_interval;
-				pParam->capture_count[cnt]       = shortfftcnt;
-				pParam->core_config[cnt]         = core;
-				cnt++;
-
-				pParam->chanspec_list[cnt]       = 155 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
-				/* pParam->chanspec_list[cnt] = 0xe29b; */
-				pParam->dwell_interval_ms[cnt]   = longdwell;
-				pParam->capture_interval_us[cnt] = capture_interval;
-				pParam->capture_count[cnt]       = longfftcnt;
-				pParam->core_config[cnt]         = core;
-				cnt++;
-
-				if (phy_mode == PHYMODE_3x3_1x1) {
-					pParam->chanspec_list[cnt] = 168 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
-				} else if (scan80only) {
-					pParam->chanspec_list[cnt] = 165 | WL_CHANSPEC_BW_80 | WL_CHANSPEC_BAND_5G;
-				} else {
-					pParam->chanspec_list[cnt] = 165 | WL_CHANSPEC_BW_20 | WL_CHANSPEC_BAND_5G;
-				}
-				pParam->dwell_interval_ms[cnt]   = longdwell / 2;
-				pParam->capture_interval_us[cnt] = capture_interval;
-				pParam->capture_count[cnt]       = longfftcnt / 2;
-				pParam->core_config[cnt]         = core;
-				cnt++;
 			} else {
 				printf("%s: Unknown bandwidth bw = 0x%x\n", __FUNCTION__, bw);
 			}
@@ -2140,9 +2141,25 @@ void ComputeScanSpecs(airiq_scan_req_t *scanreq, airiq_scan_specs_t *scanspecs)
 		scanspecs->bw = CHSPEC_BW((chanspec_t)chanspec_int);
 		scanspecs->chanspec3x3 = (chanspec_t)chanspec_int;
 	} else if (scanreq->phy_mode == 0) {
-		// TODO: need to add back support for 80 Mhz  for 4x4 mode
 		if (scanspecs->bband){
-			scanspecs->bw = WL_CHANSPEC_BW_40;
+			switch (scanreq->revinfo.corerev) {
+				case (128):
+				case (129):
+					// TODO: need to add support for 80 Mhz  for 4x4 mode
+					scanspecs->bw = WL_CHANSPEC_BW_40;
+					break;
+				case (130):
+					// TODO: need to add support for 40/80 Mhz  for 4x4 mode
+					scanspecs->bw = WL_CHANSPEC_BW_20;
+					break;
+				default:
+					scanspecs->bw = WL_CHANSPEC_BW_20;
+					fprintf(stderr, "%s: Unknown core:%d chip rev %d."
+						       " Default 2.4 scan bw to 20 mhz\n",
+							__FUNCTION__, scanreq->core,
+							scanreq->revinfo.corerev);
+
+			}
 		} else {
 			scanspecs->bw = WL_CHANSPEC_BW_80;
 		}
@@ -2481,6 +2498,7 @@ int main(int argc, char*argv[])
 	int                    CuRssiThrDbm = 80;
 	int                    CuWifiDetSnr = 100;
 	bool                   trsw_enable = FALSE;
+	bool                   core_override = FALSE;
 
 	/* Check if this is a lte_u scan and call lte_u scan function */
 	for (i = 1; i < argc; i++) {
@@ -2619,6 +2637,7 @@ int main(int argc, char*argv[])
 						fprintf(stderr, "Illegal core number specified: %s. Must be greater than 0.\n", argv[i]);
 						exit(-1);
 					}
+					core_override = TRUE;
 				}
 			}
 			continue;
@@ -2630,6 +2649,11 @@ int main(int argc, char*argv[])
 					i++;
 					if ((strcmp(argv[i], "4x4") == 0)) {
 						scanreqs[ifidx].phy_mode = 0;
+						// default core to 0 for 4x4 HW FFT
+						if (core_override)
+							fprintf(stderr,
+							"Phymode 4x4: RX core is forced to 0\n");
+						scanreqs[ifidx].core = 0;
 					} else if ((strcmp(argv[i], "3+1") == 0)) {
 						scanreqs[ifidx].phy_mode = PHYMODE_3x3_1x1;
 					} else {
@@ -2760,12 +2784,13 @@ int main(int argc, char*argv[])
 		exit(-1);
 	} else if (cfg_ifcount == 1) {
 		/* the default is dual-band scan, if no args */
-		if (scanreqs[0].aband + scanreqs[0].bband == 0) {
+		if (scanreqs[0].scan_channel + scanreqs[0].aband + scanreqs[0].bband == 0) {
 			scanreqs[0].aband = scanreqs[0].bband = 1;
 		}
-		printf("One radio interface: %s (%s)\n",
+		printf("One radio interface: %s (%s) bband:%d aband:%d scan_channel:%d\n",
 		       scanreqs[0].ifname,
-		       (scanreqs[0].offloads & 0x100) ? "OFFLOADED" : "NOT OFFLOADED");
+		       (scanreqs[0].offloads & 0x100) ? "OFFLOADED" : "NOT OFFLOADED",
+		       scanreqs[0].bband, scanreqs[0].aband, scanreqs[0].scan_channel);
 	} else if (cfg_ifcount == 2) {
 		scanreqs[0].wlband = GetInterfaceBand(scanreqs[0].ifname);
 		scanreqs[1].wlband = GetInterfaceBand(scanreqs[1].ifname);

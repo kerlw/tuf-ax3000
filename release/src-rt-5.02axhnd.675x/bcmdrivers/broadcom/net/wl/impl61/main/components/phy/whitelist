@@ -46,3 +46,27 @@ JIRA:BCAWLAN-209650 [47622] channel 100/20 does not work anymore
 JIRA:BCAWLAN-209323 [47622] Rx PER spread in 5GHz band
 JIRA:BCAWLAN-209763 Fix average fc calculation for FCC type5 radar detection
 JIRA:BCAWLAN-209107 [KUDU] Allow txbf related phy dumps even when BFD is busy
+JIRA:BCAWLAN-209703 [EAP] Exclude scan samples from noise history
+JIRA:BCAWLAN-209401 [63178A1] RxPER receiver oscillations in 2GHz BW20 rate54 TSS part 3 at -40degC and high voltage
+JIRA:BCAWLAN-209857 [63178] Sync TX CAL setup TCL to driver
+JIRA:BCAWLAN-209884 [63178][47622] ch169/173 support
+JIRA:BCAWLAN-209932 43684 optimize the process of radarargs setting
+JIRA:BCAWLAN-209902 43684 improve FCC-5 detection rate on BW20 high channels
+JIRA:BCAWLAN-209937 [43684] For knoise, update INITgain & a lower gain in shmem based on actual gains used by PHY
+JIRA:BCAWLAN-209987 [EAP] proxd/location
+JIRA:BCAWLAN-210018 FCC type 5 radar false detection in 5G band
+JIRA:BCAWLAN-209603 [6878] RSSI curve in 5G shows jump at LNA bypass point
+JIRA:BCAWLAN-209674 [6878] Sync TX CAL setup TCL to driver
+JIRA:BCAWLAN-209685 [6878] RSSI on in 5G Hz on core 0 shows spike around -45dBm
+JIRA:BCAWLAN-209835 [6878] Tx THPT dips in 5G BW20
+JIRA:BCAWLAN-209892 [6878A1] Improvements to 5G PAPD in driver
+JIRA:BCAWLAN-209974 [6878] increase Tx farrow precision, needed for PAPD accuracy
+JIRA:BCAWLAN-210247 Not supporting ch169 and 173 for Non-HE capable PHY.
+JIRA:BCAWLAN-210433 Fix incorrect FCC-5 average fc value for avg_fc_bin5 and wlc_phy_radar_fc_chirp_2_subband
+JIRA:BCAWLAN-210558 [43684] ULOFDMA: disable per user rssi digGain comp
+JIRA:BCAWLAN-210538 [43684] BW160 11ag packet will be 3dB lower than BW160 11ac/11ax
+JIRA:BCAWLAN-210456 [EAP] [Proxd] give default k values instead of zeros
+JIRA:BCAWLAN-210531 [EAP] [Proxd] [phy] Fixes for Handling subband cases
+JIRA:BCAWLAN-210381 [6878] Enable and configure packet preemption
+JIRA:BCAWLAN-210398 [EAP] Skipping assert when FIPS capable SU ucode is loaded
+JIRA:BCAWLAN-210616 [43684] Un-phydeaf before unsuspend mac for transmitting pkt

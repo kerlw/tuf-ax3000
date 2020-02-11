@@ -20,7 +20,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: bcmpcie.h 760343 2018-05-01 22:10:14Z $
+ * $Id: bcmpcie.h 777863 2019-08-13 22:19:53Z $
  */
 
 #ifndef	_bcmpcie_h_
@@ -605,6 +605,12 @@ typedef struct pcie_ipc
 
 #define CHECK_NOWRITE_SPACE(r, w, d) \
 	(((r) == (w) + 1) || (((r) == 0) && ((w) == ((d) - 1))))
+
+#define IS_RING_SPACE_EMPTY(r, w, d) \
+	((r) == (w))
+
+#define IS_RING_SPACE_FULL(r, w, d) \
+	(WRITE_SPACE_AVAIL((r), (w), (d)) == 0)
 
 /*
  * In TCM, the RD and WR indices are saved in individual RD and WR index arrays

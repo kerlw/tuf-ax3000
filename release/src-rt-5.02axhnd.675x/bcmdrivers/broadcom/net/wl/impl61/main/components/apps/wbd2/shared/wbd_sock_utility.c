@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_sock_utility.c 772457 2019-02-25 10:27:32Z $
+ * $Id: wbd_sock_utility.c 778085 2019-08-22 06:32:04Z $
  */
 #include <fcntl.h>
 
@@ -80,17 +80,15 @@ wbd_connect_to_server(char* straddrs, unsigned int nport)
 	memset(&server_addr, 0, sizeof(server_addr));
 
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-		WBD_SOCKET("Socket call failed for ip[%s] port[%d] Error[%s]\n", straddrs,
+		WBD_ERROR("Socket call failed for ip[%s] port=%d Error[%s]\n", straddrs,
 			nport, strerror(errno));
 		goto error;
 	}
 
-	WBD_SOCKET("Server = %s\t port = %d\n", straddrs, nport);
-
 	/* Set nonblock on the socket so we can timeout */
 	if ((arg = fcntl(sockfd, F_GETFL, NULL)) < 0 ||
 		fcntl(sockfd, F_SETFL, arg | O_NONBLOCK) < 0) {
-			WBD_SOCKET("fcntl call failed for ip[%s] port[%d] Error[%s]\n",
+			WBD_ERROR("fcntl call failed for ip[%s] port=%d Error[%s]\n",
 				straddrs, nport, strerror(errno));
 			goto error;
 	}
@@ -98,8 +96,7 @@ wbd_connect_to_server(char* straddrs, unsigned int nport)
 	server_addr.sin_port = htons(nport);
 	server_addr.sin_addr.s_addr = inet_addr(straddrs);
 
-	res = connect(sockfd, (struct sockaddr*)&server_addr,
-		sizeof(struct sockaddr));
+	res = connect(sockfd, (struct sockaddr*)&server_addr, sizeof(struct sockaddr));
 	if (res < 0) {
 		if (errno == EINPROGRESS) {
 			tv.tv_sec = WBD_TM_SOCKET;
@@ -111,23 +108,23 @@ wbd_connect_to_server(char* straddrs, unsigned int nport)
 				getsockopt(sockfd, SOL_SOCKET, SO_ERROR,
 					(void*)(&valopt), &lon);
 				if (valopt) {
-					WBD_SOCKET("For ip[%s] port[%d]. Error in getsockopt "
-						"valopt[%d] Error[%s]\n", straddrs, nport,
+					WBD_ERROR("getsockopt call failed for ip[%s] port=%d. "
+						"valopt=%d Error[%s]\n", straddrs, nport,
 						valopt, strerror(valopt));
 					goto error;
 				}
 			} else {
-				WBD_SOCKET("For ip[%s] port[%d]. Timeout or error() %d - %s\n",
-					straddrs, nport, errno, strerror(errno));
+				WBD_ERROR("Select timeout/error for ip[%s] port=%d Error[%s]\n",
+					straddrs, nport, strerror(errno));
 				goto error;
 			}
 		} else {
-			WBD_SOCKET("For ip[%s] port[%d]. Error connecting %d - %s\n",
-				straddrs, nport, errno, strerror(errno));
+			WBD_ERROR("Connect failed For ip[%s] port=%d. Error[%s]\n",
+				straddrs, nport, strerror(errno));
 			goto error;
 		}
 	}
-	WBD_SOCKET("Connection Successfull with server : %s port[%d]\n", straddrs, nport);
+	WBD_DEBUG("Connect Successfull: ip[%s] port=%d sockfd=%d\n", straddrs, nport, sockfd);
 
 	WBD_EXIT();
 	return sockfd;
@@ -156,7 +153,7 @@ wbd_socket_send_data(int sockfd, char *data, unsigned int len)
 		FD_ZERO(&WriteFDs);
 
 		if (sockfd == INVALID_SOCKET) {
-			WBD_SOCKET("sockfd[%d]. Invalid socket\n", sockfd);
+			WBD_ERROR("Invalid socket. sockfd=%d\n", sockfd);
 			goto error;
 		}
 
@@ -168,22 +165,22 @@ wbd_socket_send_data(int sockfd, char *data, unsigned int len)
 			if (FD_ISSET(sockfd, &WriteFDs)) {
 				;
 			} else {
-				WBD_SOCKET("sockfd[%d]. Exception occured\n", sockfd);
+				WBD_ERROR("Exception occured. sockfd=%d\n", sockfd);
 				goto error;
 			}
 		} else {
 			if (ret == 0) {
-				WBD_SOCKET("sockfd[%d]. Timeout occured\n", sockfd);
+				WBD_WARNING("Select timeout after %d sec. sockfd=%d\n",
+						WBD_TM_SOCKET, sockfd);
 			} else {
-				WBD_SOCKET("sockfd[%d]. Send Error : %s\n", sockfd,
-					strerror(errno));
+				WBD_ERROR("Send error [%s]. sockfd=%d\n", strerror(errno), sockfd);
 			}
 			goto error;
 		}
 
 		nret = send(sockfd, &(data[totalsent]), len, 0);
 		if (nret < 0) {
-			WBD_SOCKET("sockfd[%d]. send error is : %s\n", sockfd, strerror(errno));
+			WBD_ERROR("Send failed [%s]. sockfd=%d\n", strerror(errno), sockfd);
 			goto error;
 		}
 		totalsent += nret;
@@ -191,6 +188,7 @@ wbd_socket_send_data(int sockfd, char *data, unsigned int len)
 		nret = 0;
 	}
 
+	WBD_DEBUG("Send %d bytes of %d. sockfd=%d\n", totalsent, len, sockfd);
 	WBD_EXIT();
 	return totalsent;
 error:
@@ -225,8 +223,8 @@ wbd_socket_recv_data(int sockfd, char **data)
 			cursize += MAX_READ_BUFFER;
 			tmp = (char*)realloc(buffer, cursize);
 			if (tmp == NULL) {
-				WBD_SOCKET("sockfd[%d]. Failed to allocate memory for read "
-					"buffer\n", sockfd);
+				WBD_ERROR("Failed to allocate memory for read. sockfd=%d.\n",
+						sockfd);
 				goto error;
 			}
 			buffer = tmp;
@@ -235,15 +233,15 @@ wbd_socket_recv_data(int sockfd, char **data)
 			if (FD_ISSET(sockfd, &ReadFDs)) {
 				/* fprintf(stdout, "SOCKET : Data is ready to read\n"); */;
 			} else {
-				WBD_SOCKET("sockfd[%d]. Exception occured\n", sockfd);
+				WBD_ERROR("Exception occured. sockfd=%d\n", sockfd);
 				goto error;
 			}
 		} else {
 			if (ret == 0) {
-				WBD_SOCKET("sockfd[%d]. Timeout occured\n", sockfd);
+				WBD_WARNING("Select timeout after %d sec. sockfd=%d\n",
+						WBD_TM_SOCKET, sockfd);
 			} else {
-				WBD_SOCKET("sockfd[%d]. Error While Reading : %s\n", sockfd,
-					strerror(errno));
+				WBD_ERROR("Recv error [%s]. sockfd=%d\n", strerror(errno), sockfd);
 			}
 			goto error;
 		}
@@ -252,7 +250,8 @@ wbd_socket_recv_data(int sockfd, char **data)
 		totalread += nbytes;
 
 		if (nbytes <= 0) {
-			WBD_SOCKET("sockfd[%d], read error is : %s\n", sockfd, strerror(errno));
+			WBD_ERROR("Read error [%s]. sockfd=%d nbytes=%d\n", strerror(errno),
+					sockfd, nbytes);
 			goto error;
 		}
 
@@ -264,6 +263,7 @@ wbd_socket_recv_data(int sockfd, char **data)
 
 	*data = buffer;
 
+	WBD_DEBUG("Read %d bytes. sockfd=%d\n", totalread, sockfd);
 	WBD_EXIT();
 	return totalread;
 
@@ -283,7 +283,8 @@ wbd_socket_recv_bindata(int sockfd, char *data, unsigned int dlen)
 	nbytes = read(sockfd, data, dlen);
 
 	if (nbytes <= 0) {
-		WBD_SOCKET("sockfd[%d] read error is : %s\n", sockfd, strerror(errno));
+		WBD_ERROR("Read error [%s]. sockfd=%d nbytes=%d\n", strerror(errno),
+				sockfd, nbytes);
 		return INVALID_SOCKET;
 	}
 
@@ -304,21 +305,24 @@ int wbd_open_eventfd(int portno)
 	sockaddr.sin_port = htons(portno);
 
 	if ((sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-		WBD_SOCKET("portno[%d]. Unable to create loopback socket\n", portno);
+		WBD_ERROR("Unable to create loopback socket. portno=%d. Error[%s] \n", portno,
+				strerror(errno));
 		goto error;
 	}
 
 	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) < 0) {
-		WBD_SOCKET("Unable to setsockopt to loopback socket[%d] portno[%d]\n", sockfd,
-			portno);
+		WBD_ERROR("Unable to setsockopt to loopback socket. portno=%d. sockfd=%d. "
+				"Error[%s]\n", portno, sockfd, strerror(errno));
 		goto error;
 	}
 
 	if (bind(sockfd, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) < 0) {
-		WBD_SOCKET("Unable to bind to loopback socket[%d] portno[%d]\n", sockfd, portno);
+		WBD_ERROR("Unable to bind to loopback socket. portno=%d sockfd=%d Error[%s]\n",
+				portno, sockfd, strerror(errno));
 		goto error;
 	}
 
+	WBD_DEBUG("Opened loopback socket %d\n", sockfd);
 	return sockfd;
 	/* error handling */
 error:
@@ -341,28 +345,29 @@ wbd_open_server_fd(int portno)
 	sockaddr.sin_port = htons(portno);
 
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-		WBD_SOCKET("portno[%d]. socket error is : %s\n", portno, strerror(errno));
+		WBD_ERROR("Socket call failed for port=%d Error[%s]\n", portno, strerror(errno));
 		goto error;
 	}
 
 	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
-		WBD_SOCKET("sockfd[%d] portno[%d]. setsockopt error is : %s\n", sockfd, portno,
-			strerror(errno));
+		WBD_ERROR("Unable to setsockopt. portno=%d. sockfd=%d. Error[%s]\n", portno,
+				sockfd, strerror(errno));
 		goto error;
 	}
 
 	if (bind(sockfd, (struct sockaddr *) &sockaddr, sizeof(sockaddr)) < 0) {
-		WBD_SOCKET("sockfd[%d] portno[%d]. bind error is : %s\n", sockfd, portno,
-			strerror(errno));
+		WBD_ERROR("Unable to bind to socket. portno=%d sockfd=%d Error[%s]\n", portno,
+				sockfd, strerror(errno));
 		goto error;
 	}
 
 	if (listen(sockfd, 10) < 0) {
-		WBD_SOCKET("sockfd[%d] portno[%d]. listen error is : %s\n", sockfd, portno,
+		WBD_ERROR("Socket listen error. portno=%d sockfd=%d Error[%s]\n", portno, sockfd,
 			strerror(errno));
 		goto error;
 	}
 
+	WBD_DEBUG("Opened listen socket %d\n", sockfd);
 	return sockfd;
 
 error:
@@ -383,10 +388,12 @@ wbd_accept_connection(int server_fd)
 	clientlen = sizeof(clientaddr);
 	childfd = accept(server_fd, (struct sockaddr *)&clientaddr, &clientlen);
 	if (childfd < 0) {
-		WBD_SOCKET("server_fd[%d] accept error : %s\n", server_fd, strerror(errno));
+		WBD_ERROR("Client accept error [%s]. server_fd=%d childfd=%d\n", strerror(errno),
+				server_fd, childfd);
 		return INVALID_SOCKET;
 	}
 
+	WBD_DEBUG("Opened childfd %d\n", childfd);
 	return childfd;
 }
 
@@ -399,7 +406,8 @@ wbd_read_nl_sock(int sockFd, char *bufPtr, int seqNum, int pId)
 	do {
 		/* Recieve response from the kernel */
 		if ((readLen = recv(sockFd, bufPtr, NL_SOCK_BUFSIZE - msgLen, 0)) < 0) {
-			WBD_DEBUG("sockFd[%d]. SOCK READ %s\n", sockFd, strerror(errno));
+			WBD_ERROR("Recv error [%s]. sockfd=%d seqNo=%d pId=%d\n", strerror(errno),
+					sockFd, seqNum, pId);
 			return WBDE_SOCK_KRECV_ERR;
 		}
 
@@ -407,7 +415,7 @@ wbd_read_nl_sock(int sockFd, char *bufPtr, int seqNum, int pId)
 
 		/* Check if the header is valid */
 		if ((NLMSG_OK(nlHdr, readLen) == 0) || (nlHdr->nlmsg_type == NLMSG_ERROR)) {
-			WBD_DEBUG("sockFd[%d]. Error in recieved packet %s\n", sockFd,
+			WBD_ERROR("Error in recieved packet. sockFd=%d. Error[%s]\n", sockFd,
 				strerror(errno));
 			return WBDE_SOCK_PKTHDR_ERR;
 		}
@@ -428,6 +436,7 @@ wbd_read_nl_sock(int sockFd, char *bufPtr, int seqNum, int pId)
 		}
 	} while ((nlHdr->nlmsg_seq != seqNum) || (nlHdr->nlmsg_pid != pId));
 
+	WBD_DEBUG("Received %d bytes. SockFd=%d, seqNo=%d, pId=%d\n", msgLen, sockFd, seqNum, pId);
 	return msgLen;
 }
 
@@ -440,7 +449,7 @@ wbd_sock_get_ip_from_sockfd(int sockfd, char *buf, int buflen)
 
 	peer_len = sizeof(peer);
 	if (getpeername(sockfd, (struct sockaddr*)&peer, &peer_len) == -1) {
-		WBD_SOCKET("sockfd[%d]. getpeername error : %s\n", sockfd, strerror(errno));
+		WBD_ERROR("getpeername error. sockfd=%d. Error[%s]\n", sockfd, strerror(errno));
 		return WBDE_SOCK_ERROR;
 	}
 	snprintf(buf, buflen, "%s", inet_ntoa(peer.sin_addr));
@@ -469,33 +478,32 @@ wbd_sock_recvdata(int sockfd, unsigned char *data, unsigned int length)
 
 		if ((ret = select(sockfd + 1, &ReadFDs, NULL, &ExceptFDs, &tv)) > 0) {
 			if (!FD_ISSET(sockfd, &ReadFDs)) {
-				WBD_SOCKET("sockfd[%d]. Exception occured.\n", sockfd);
+				WBD_ERROR("Exception occured. sockfd=%d\n", sockfd);
 				goto error;
 			}
 		} else {
 
 			if (ret == 0) {
-				WBD_SOCKET("sockfd[%d]. Timeout occured.\n", sockfd);
+				WBD_WARNING("Select timeout after %d sec. sockfd=%d\n",
+						WBD_TM_SOCKET, sockfd);
 			} else {
-				WBD_SOCKET("sockfd[%d]. Error While Reading : %s.\n",
-					sockfd, strerror(errno));
+				WBD_ERROR("Read error [%s]. sockfd=%d\n", strerror(errno), sockfd);
 			}
 			goto error;
 
 		}
 
 		nbytes = read(sockfd, &(data[totalread]), (length - totalread));
-		WBD_TRACE("sockfd[%d]. Read bytes  = %d\n\n", sockfd, nbytes);
 
 		if (nbytes <= 0) {
-			WBD_SOCKET("sockfd[%d], read error is : %s.\n",
-				sockfd, strerror(errno));
+			WBD_ERROR("Read error [%s]. sockfd=%d nbytes=%d\n", strerror(errno),
+					sockfd, nbytes);
 			goto error;
 		}
 
 		totalread += nbytes;
-
 	}
+	WBD_DEBUG("Received %d bytes. sockfd=%d\n", totalread, sockfd);
 
 	return totalread;
 

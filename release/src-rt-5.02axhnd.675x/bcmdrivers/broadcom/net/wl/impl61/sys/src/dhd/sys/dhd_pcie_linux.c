@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: dhd_pcie_linux.c 769468 2018-11-15 18:02:36Z $
+ * $Id: dhd_pcie_linux.c 778092 2019-08-22 09:22:49Z $
  */
 
 /* include files */
@@ -601,11 +601,7 @@ dhdpcie_request_irq(dhdpcie_info_t *dhdpcie_info)
 	struct pci_dev *pdev = dhdpcie_info->bus->dev;
 
 	snprintf(dhdpcie_info->pciname, sizeof(dhdpcie_info->pciname),
-#ifdef BCA_HNDROUTER
 	    "dhdpcie:%s, wl%d", pci_name(pdev), dhdpcie_info->bus->dhd->unit);
-#else
-	    "dhdpcie:%s", pci_name(pdev));
-#endif // endif
 
 	if (request_irq(pdev->irq, dhdpcie_isr, IRQF_SHARED,
 	                dhdpcie_info->pciname, bus) < 0) {

@@ -111,6 +111,7 @@
 #define SVMP_SMPL_CHANSPEC_ADDR      (5 + SVMP_HEADER_EXT_ADDR)
 // chanspec of 3x3 chain, set by driver
 #define SVMP_SMPL_CHANSPEC_3X3_ADDR  (6 + SVMP_HEADER_EXT_ADDR)
+#define SVMP_SMPL_COEX_GPIO_MASK_ADDR  (7 + SVMP_HEADER_EXT_ADDR)
 
 /* End of offsets into SVMP */
 /* Offsets into SVMP for AX chip */
@@ -136,6 +137,7 @@
 #define SVMP_AX_SMPL_CHANSPEC_ADDR      (5 + SVMP_AX_HEADER_EXT_ADDR)
 // chanspec of 3x3 chain, set by driver
 #define SVMP_AX_SMPL_CHANSPEC_3X3_ADDR  (6 + SVMP_AX_HEADER_EXT_ADDR)
+#define SVMP_AX_SMPL_COEX_GPIO_MASK_ADDR  (7 + SVMP_AX_HEADER_EXT_ADDR)
 
 /* End of offsets into SVMP for AX chip */
 
@@ -207,7 +209,7 @@ struct _airiq_scan_config {
 	uint32 capture_count[MAXCHANNEL];
 	uint8 core_config[MAXCHANNEL]; /* which core to use */
 	uint32 timestamp_us; /* timestamp of the scan */
-	bool bandlocked_save;
+	bool bandlocked_save; /* used for 4x4 mode */
 	/* array of chanspec_t's specified by user in IOVAR */
 	chanspec_t user_chanspec_list[MAXCHANNEL];
 	/* Number of channels in the current scan specified by user in IOVAR */
@@ -281,7 +283,6 @@ struct airiq_info {
 	uint32 core;
 	uint16 phy_mode;
 	uint16 bw_3x3;
-	bool fft_capture_enable;
 #define AIRIQ_DESENS_CNT 16
 	uint32 desens_lut_24ghz[AIRIQ_DESENS_CNT]; /* stores gain codes, steps of 2 db */
 	int16 gain_lut_24ghz[AIRIQ_DESENS_CNT]; /* stores gain */
@@ -348,6 +349,9 @@ struct airiq_info {
 	uint32 svmp_smpl_seq_num_addr;
 	uint32 svmp_smpl_chanspec_addr;
 	uint32 svmp_smpl_chanspec_3x3_addr;
+	uint32 svmp_smpl_coex_gpio_mask_addr;
+	uint16 coex_gpio_mask_2g;
+	uint16 coex_gpio_mask_5g;
 };
 
 /*
@@ -383,6 +387,8 @@ int wlc_airiq_update(airiq_info_t * airiqh,
 #ifdef BCMDBG
 extern int wlc_airiq_dump(airiq_info_t * airiqh, struct bcmstrbuf *b);
 #endif /* BCMDBG */
+
+chanspec_t wlc_airiq_get_current_scan_chanspec(wlc_info_t * wlc);
 
 void wlc_airiq_fftcapture(airiq_info_t * airiqh, uint8 * fftdata, int32 len);
 void wlc_airiq_start_fftcapture(airiq_info_t * airiqh);
@@ -455,6 +461,8 @@ bool wlc_airiq_phymode_3p1(wlc_info_t * wlc);
 /* ----------------------------------------------------------------------- */
 /* airiq general */
 /* ----------------------------------------------------------------------- */
+/* uses only for 4x4 mode */
+void wlc_airiq_set_scan_in_progress(airiq_info_t * airiqh, bool in_progress);
 void wlc_airiq_log_fft(airiq_info_t * airiqh, uint16 channel, uint16 latency);
 int airiq_doiovar(void *hdl,  uint32 actionid,
 		void *p, uint plen, void *arg, uint alen,

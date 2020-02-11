@@ -45,7 +45,7 @@
  *      OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *      NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_cfg.c 776841 2019-07-11 07:39:12Z $
+ *	$Id: acs_cfg.c 777145 2019-07-22 05:05:21Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -570,12 +570,13 @@ acs_retrieve_config(acs_chaninfo_t *c_info, char *prefix)
 		c_info->fallback_to_primary = atoi(str);
 	}
 
-	if ((str = nvram_get(strcat_r(prefix, "acs_txrx_delta_per", tmp))) == NULL) {
-		c_info->txrx_delta_per = ACS_CHANIM_TXRX_PER;
+	if (((str = nvram_get(strcat_r(prefix, "acs_chanim_tx_avail", tmp))) == NULL) ||
+			!str[0] || str[0] < '1' || str[0] > '9') {
+		c_info->acs_chanim_tx_avail = ACS_CHANIM_TX_AVAIL;
 	} else {
-		c_info->txrx_delta_per = atoi(str);
-		if (c_info->txrx_delta_per <= 0) {
-			c_info->txrx_delta_per = ACS_CHANIM_TXRX_PER;
+		c_info->acs_chanim_tx_avail = atoi(str);
+		if (c_info->acs_chanim_tx_avail <= 0) {
+			c_info->acs_chanim_tx_avail = ACS_CHANIM_TX_AVAIL;
 		}
 	}
 
@@ -714,7 +715,8 @@ acs_retrieve_config(acs_chaninfo_t *c_info, char *prefix)
 		c_info->dfs_reentry = strtol(str, NULL, 0);
 	}
 
-	if ((str = nvram_get(strcat_r(prefix, "acs_use_csa", tmp))) == NULL) {
+	if (((str = nvram_get(strcat_r(prefix, "acs_use_csa", tmp))) == NULL) ||
+			!str[0] || str[0] < '1' || str[0] > '9') {
 		c_info->acs_use_csa = ACS_USE_CSA;
 	} else {
 		c_info->acs_use_csa = strtol(str, NULL, 0);

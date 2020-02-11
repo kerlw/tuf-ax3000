@@ -46,7 +46,7 @@
  *      OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *      NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_bgdfs.c 775476 2019-05-31 11:00:28Z $
+ *	$Id: acs_bgdfs.c 777995 2019-08-20 06:13:13Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -664,8 +664,9 @@ acs_bgdfs_ahead_trigger_scan(acs_chaninfo_t * c_info)
 	}
 
 	/* In FCC/ETSI, if on a low power Non-DFS, attempt a DFS 3+1 move */
-	if (!FIXCHSPEC(c_info) && !acs_is_dfs_chanspec(c_info, c_info->cur_chspec) &&
-		acsd_is_lp_chan(c_info, c_info->cur_chspec)) {
+	if (!(FIXCHSPEC(c_info) || MONITORCHECK(c_info)) &&
+			!acs_is_dfs_chanspec(c_info, c_info->cur_chspec) &&
+			acsd_is_lp_chan(c_info, c_info->cur_chspec)) {
 		ACSD_INFO("%s: moving to DFS channel 0x%0x\n", c_info->name, chosen_chspec);
 		if ((ret = acs_bgdfs_attempt(c_info, chosen_chspec, FALSE)) != BCME_OK) {
 			ACSD_ERROR("dfs_ap_move Failed\n");
@@ -673,6 +674,7 @@ acs_bgdfs_ahead_trigger_scan(acs_chaninfo_t * c_info)
 		}
 		return BCME_OK;
 	}
+
 	if (is_etsi) {
 		/* Pre-clearing/stunt the selected channel for future use */
 		ACSD_INFO("%s: pre-clearing DFS channel 0x%0x\n", c_info->name, chosen_chspec);

@@ -55,6 +55,10 @@
 #include <ftw.h>
 #include "network_utility.h"
 
+#ifdef RTCONFIG_AHS
+#include "notify_ahs.h"
+#endif /* RTCONFIG_AHS */
+
 /* Endian conversion functions. */
 #define __bswap16(x) (uint16_t)	( \
 				(((uint16_t)(x) & 0x00ffu) << 8) | \
@@ -1821,6 +1825,7 @@ extern int mdio_phy_speed(char *ifname);
 
 /* misc.c */
 extern char *get_productid(void);
+extern char *get_lan_hostname(void);
 extern void logmessage_normal(char *logheader, char *fmt, ...);
 extern char *get_logfile_path(void);
 extern char *get_syslog_fname(unsigned int idx);
@@ -1962,6 +1967,9 @@ extern int get_bonding_speed(char *bond_if);
 #endif
 extern int isValidMacAddress(const char* mac);
 extern int isValidEnableOption(const char* option, int range);
+extern int isValid_digit_string(const char *string);
+extern int is_valid_hostname(const char *name);
+extern int is_valid_domainname(const char *name);
 
 /* mt7620.c */
 #if defined(RTCONFIG_RALINK_MT7620)
@@ -2613,6 +2621,23 @@ extern int get_chance_to_control(void);
 #ifdef RTCONFIG_GEFORCENOW
 extern int wl_set_wifiscan(char *ifname, int val);
 extern int wl_set_mcsindex(char *ifname, int *is_auto, int *idx, char *idx_type, int *stream);
+#endif
+
+#if defined(RTCONFIG_BCM_CLED)
+enum {
+	BCM_CLED_RED = 0,
+	BCM_CLED_GREEN,
+	BCM_CLED_BLUE,
+	BCM_CLED_YELLOW,
+	BCM_CLED_WHITE,
+	BCM_CLED_OFF
+};
+enum {
+	BCM_CLED_STEADY_NOBLINK = 0,
+	BCM_CLED_STEADY_BLINK,
+	BCM_CLED_PULSATING,
+	BCM_CLED_MODE_END
+};
 #endif
 
 #endif	/* !__SHARED_H__ */

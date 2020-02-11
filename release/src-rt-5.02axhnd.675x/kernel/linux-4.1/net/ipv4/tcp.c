@@ -3367,7 +3367,10 @@ void __init tcp_init(void)
 	int max_rshare, max_wshare, cnt;
 	unsigned int i;
 
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11477*/
 	BUILD_BUG_ON(TCP_MIN_SND_MSS <= MAX_TCP_OPTION_SPACE);
+#endif //#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
 	sock_skb_cb_check_size(sizeof(struct tcp_skb_cb));
 
 	percpu_counter_init(&tcp_sockets_allocated, 0, GFP_KERNEL);

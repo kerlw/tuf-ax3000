@@ -43,7 +43,7 @@
  *
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
- * $Id: wlc_rm.h 774133 2019-04-11 09:15:54Z $
+ * $Id: wlc_rm.h 777088 2019-07-18 17:39:11Z $
  *
 */
 
@@ -98,6 +98,8 @@ typedef struct wlc_rm_req_state {
 	bool	cca_active;	/* true if measurement in progress */
 	int	cca_dur;	/* TU, specified duration */
 	int	cca_idle;	/* idle carrier time reported by ucode */
+	uint32 cca_start_l;		/* CCA meas actual start TSF_L */
+	uint32 cca_end_l;   /* CCA meas actual end TSF_L */
 	uint8	cca_busy;	/* busy fraction */
 	/* RPI measurements */
 	bool	rpi_active;	/* true if measurement in progress */
@@ -120,6 +122,7 @@ struct rm_info {
 	int             rm_ioctl_rep_len;       /* length of rm_ioctl_rep block */
 	struct wl_timer *rm_timer;              /* 11h radio measurement timer */
 	struct wl_timer *rm_rpi_timer;          /* RPI sample timer */
+	struct wl_timer *rm_cca_timer;		/* RM CCA measurement host timer */
 };
 extern rm_info_t *wlc_rm_attach(wlc_info_t *wlc);
 extern void wlc_rm_detach(rm_info_t *rm_info);
@@ -162,7 +165,9 @@ extern void wlc_rm_terminate(rm_info_t *rm_info);
 
 #ifdef STA
 #ifdef WLRM
-extern void wlc_rm_cca_complete(wlc_info_t *wlc, uint32 cca_idle_us);
+#define WLC_RM_CCA_MIN_TIME		20	/* Min. CCA meas polled time */
+extern bool wlc_rm_cca_start(wlc_info_t *wlc, uint32 dur);
+extern void wlc_rm_cca_end(wlc_info_t *wlc);
 extern bool wlc_rm_rpi_sample(rm_info_t *wlc, int8 rssi);
 #endif // endif
 #endif /* STA */

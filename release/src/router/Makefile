@@ -471,6 +471,12 @@ ifeq ($(or $(RTCONFIG_BCM7114),$(RTCONFIG_HND_ROUTER)),y)
 export ICONPATH := /www/hspot
 export CFLAGS += -DICONPATH=\"$(ICONPATH)\"
 endif
+ifeq ($(HND_ROUTER_AX),y)
+# Passpoint Directories
+export PASSPOINT_DIR := $(abspath $(SRCBASE_SYS)/../components/apps/hspot)
+export PASSPOINT_ROUTER := $(abspath $(PASSPOINT_DIR)/router)
+export PASSPOINT_AP_DIR := $(abspath $(PASSPOINT_ROUTER)/hspot_ap)
+endif
 endif
 
 ifeq ($(RTCONFIG_VISUALIZATION),y)
@@ -805,14 +811,17 @@ obj-$(RTCONFIG_TRAFFIC_LIMITER) += sqlite
 obj-$(RTCONFIG_TRAFFIC_LIMITER) += traffic_limiter
 
 obj-$(RTCONFIG_LETSENCRYPT) += openssl
-obj-$(RTCONFIG_LETSENCRYPT) += acme-client-portable
-ifneq ($(RTCONFIG_WEBDAV),y)
-obj-$(RTCONFIG_LETSENCRYPT) += lighttpd-le
-endif
+obj-$(RTCONFIG_LETSENCRYPT) += acme.sh
 obj-$(RTCONFIG_LETSENCRYPT) += libletsencrypt
+obj-$(RTCONFIG_LETSENCRYPT) += socat
 
 #obj-$(RTCONFIG_SYSSTATE) += sysstate
 obj-y += sysstate
+
+obj-$(RTCONFIG_AHS) += openssl
+obj-$(RTCONFIG_AHS) += $(CURL)
+obj-$(RTCONFIG_AHS) += json-c
+obj-$(RTCONFIG_AHS) += ahs
 
 obj-$(RTCONFIG_OPENVPN) += openssl
 obj-$(RTCONFIG_OPENVPN) += libvpn
@@ -2427,7 +2436,8 @@ ifeq ($(HND_ROUTER),y)
 define makeBusybox
 	@$(MAKE) -C $(BUSYBOX_DIR) $(1) \
 		EXTRA_CFLAGS="-fPIC $(PRIVATE_EXTRACFLAGS) -I$(STAGEDIR)/usr/include -I$(TOOL_SYS_INCLUDE) \
-			$(if $(RTCONFIG_PROTECTION_SERVER),-DSECURITY_NOTIFY,)" \
+			$(if $(RTCONFIG_PROTECTION_SERVER),-DSECURITY_NOTIFY,) \
+			$(if $(RTCONFIG_BWDPI),-DBWDPI_LOGWAR,)" \
 		EXTRA_LDFLAGS="-L$(STAGEDIR)/usr/lib" \
 		EXTRA_LDLIBS="$(if $(RTCONFIG_PROTECTION_SERVER),ptcsrv,)"
 endef
@@ -2435,7 +2445,8 @@ else
 define makeBusybox
 	@$(MAKE) -C $(BUSYBOX_DIR) $(1) \
 		EXTRA_CFLAGS="-fPIC $(EXTRACFLAGS) -I$(STAGEDIR)/usr/include -idirafter $(KDIR)/include \
-			$(if $(RTCONFIG_PROTECTION_SERVER),-DSECURITY_NOTIFY,)" \
+			$(if $(RTCONFIG_PROTECTION_SERVER),-DSECURITY_NOTIFY,) \
+			$(if $(RTCONFIG_BWDPI),-DBWDPI_LOGWAR,)" \
 		EXTRA_LDFLAGS="-L$(STAGEDIR)/usr/lib" \
 		EXTRA_LDLIBS="$(if $(RTCONFIG_PROTECTION_SERVER),ptcsrv,)"
 endef
@@ -4077,6 +4088,24 @@ protect_srv-clean:
 	-$(MAKE) -C protect_srv clean
 	@rm -f protect_srv/stamp-h1
 
+socat/stamp-h1:
+	cd socat && \
+	$(CONFIGURE) --prefix=/usr \
+	CFLAGS="-I$(STAGEDIR)/usr/include" \
+	LDFLAGS="-L$(STAGEDIR)/usr/lib -ldl"
+	touch $@
+
+socat: socat/stamp-h1
+	$(MAKE) -C $@
+
+socat-clean:
+	-$(MAKE) -C socat clean
+	@rm -f socat/stamp-h1
+socat-install:
+	install -d $(INSTALLDIR)/socat/usr/sbin/
+	install -D socat/socat $(INSTALLDIR)/socat/usr/sbin/socat
+	$(STRIP) $(INSTALLDIR)/socat/usr/sbin/socat
+
 #	$(STRIP) $(INSTALLDIR)/tr/sbin/*
 
 #	libnet:
@@ -4812,6 +4841,19 @@ sysstate-install:
 	echo "install sysstate"
 	$(MAKE) -C sysstate install
 
+ahs: openssl $(CURL) json-c
+	@$(SEP)
+	echo "build ahs"
+	$(MAKE) -C ahs
+
+ahs-clean:
+	echo "clean ahs"
+	$(MAKE) -C ahs clean
+
+ahs-install:
+	echo "install ahs"
+	$(MAKE) -C ahs install
+
 qsr10g_image:
 aqr107_image:
 
@@ -5386,10 +5428,26 @@ nas$(BCMEX)$(EX7): nvram$(BCMEX)$(EX7) libbcmcrypto
 wlconf$(BCMEX)$(EX7): nvram$(BCMEX)$(EX7)
 
 hspot_ap$(BCMEX)$(EX7): shared nvram$(BCMEX)$(EX7)
+ifeq ($(HND_ROUTER_AX),y)
+	+$(MAKE) -C $(PASSPOINT_AP_DIR) EXTRA_LDFLAGS="$(EXTRA_LDFLAGS)"
+else
 	@echo "do nothing"
+endif
 
 hspot_ap$(BCMEX)$(EX7)-install:
+ifeq ($(HND_ROUTER_AX),y)
+	+$(MAKE) -C $(PASSPOINT_AP_DIR) INSTALLDIR=$(INSTALLDIR)/hspot_ap install EXTRA_LDFLAGS="$(EXTRA_LDFLAGS)"
+else
 	@echo "do nothing"
+endif
+
+hspot_ap$(BCMEX)$(EX7)-clean:
+ifeq ($(HND_ROUTER_AX),y)
+	+$(MAKE) -C $(PASSPOINT_AP_DIR) clean EXTRA_LDFLAGS="$(EXTRA_LDFLAGS)"
+else
+	@echo "do nothing"
+endif
+
 
 eapd$(BCMEX)$(EX7)-clean:
 	-@cd eapd$(BCMEX)$(EX7)/linux && make clean
@@ -5735,7 +5793,7 @@ curl-7.21.7-install: curl-7.21.7
 	install -D curl-7.21.7/lib/.libs/libcurl.so.4.2.0 $(INSTALLDIR)/curl-7.21.7/usr/lib/libcurl.so.4.2.0
 	$(STRIP) $(INSTALLDIR)/curl-7.21.7/usr/lib/libcurl.so.4.2.0
 	cd $(INSTALLDIR)/curl-7.21.7/usr/lib && ln -sf libcurl.so.4.2.0 libcurl.so && ln -sf libcurl.so.4.2.0 libcurl.so.4
-ifeq ($(RTCONFIG_SPEEDTEST),y)
+ifeq ($(or $(RTCONFIG_SPEEDTEST),$(RTCONFIG_LETSENCRYPT)),y)
 	# for speedtest
 	install -D curl-7.21.7/src/.libs/curl $(INSTALLDIR)/curl-7.21.7/usr/sbin/curl
 	$(STRIP) $(INSTALLDIR)/curl-7.21.7/usr/sbin/curl
@@ -7491,13 +7549,6 @@ phddns-install: phddns
 phddns-clean:
 	@[ ! -f phddns/Makefile ] || $(MAKE) -C phddns clean
 	@rm -f phddns/stamp-h1
-
-acme-client-portable:
-	$(MAKE) -C acme-client-portable
-
-acme-client-portable-install: acme-client-portable
-	install -D acme-client-portable/acme-client $(INSTALLDIR)/acme-client-portable/usr/sbin/acme-client
-	$(STRIP) $(INSTALLDIR)/acme-client-portable/usr/sbin/acme-client
 
 lighttpd-le/stamp-h1:
 	cd lighttpd-le && ./autogen.sh && \

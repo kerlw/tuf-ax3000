@@ -19,7 +19,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: dhd_linux.c 776777 2019-07-09 11:11:36Z $
+ * $Id: dhd_linux.c 778115 2019-08-22 19:52:06Z $
  */
 
 #include <typedefs.h>
@@ -898,7 +898,6 @@ typedef struct dhd_info {
 	struct notifier_block freq_trans;
 	int __percpu *new_freq;
 #endif // endif
-	unsigned int unit;
 #if defined(CONFIG_PM_SLEEP)
 	struct notifier_block pm_notifier;
 #endif /* CONFIG_PM_SLEEP */
@@ -2425,7 +2424,7 @@ dhd_dev_priv_save(struct net_device * dev, dhd_info_t * dhd, dhd_if_t * ifp,
 
 #ifdef BCM_PKTFWD
 	pktfwd_priv = DHD_DEV_PKTFWD_PRIV(dev);
-	pktfwd_priv->radio_unit = dhd->unit;
+	pktfwd_priv->radio_unit = dhd->pub.unit;
 	pktfwd_priv->ifidx = ifidx;
 	pktfwd_priv->d3fwd_wlif = ifp->d3fwd_wlif;
 	pktfwd_priv->ifp = ifp;
@@ -4968,7 +4967,7 @@ dhd_ifadd_event_handler(void *handle, void *event_info, enum dhd_wq_event event)
 	bssidx = if_event->event.bssidx;
 	DHD_TRACE(("%s: registering if with ifidx %d\n", __FUNCTION__, ifidx));
 #if defined(WL_CFG80211) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
-	if ((dhd_cfg80211_enabled() == BCME_OK) &&
+	if ((dhd->dhd_state & DHD_ATTACH_STATE_CFG80211) &&
 			(strstr(if_event->name, "wds") == NULL)) {
 		if (if_event->event.ifidx > 0) {
 			bzero(&info, sizeof(info));
@@ -6065,6 +6064,10 @@ dhd_start_xmit(struct sk_buff *skb, struct net_device *net)
 			ret = dhd_wmf_packets_handle(&dhd->pub, pktbuf, NULL, ifidx, 0);
 			switch (ret) {
 			case WMF_DROP:
+				/* Packet DROP decision by WMF. Toss it */
+				DHD_INFO(("%s: WMF decides to drop packet 0\n", __FUNCTION__));
+				PKTFREE(dhd->pub.osh, pktbuf, TRUE);
+				/* Fall through */
 			case WMF_TAKEN:
 				/* Either taken by WMF or we should drop it.
 				 * Exiting send path
@@ -9135,7 +9138,7 @@ dhd_stop(struct net_device *net)
 	dhd->pub.up = 0;
 
 #ifdef WL_CFG80211
-	if ((dhd_cfg80211_enabled() == BCME_OK) && (ifidx == 0)) {
+	if ((dhd->dhd_state & DHD_ATTACH_STATE_CFG80211) && (ifidx == 0)) {
 		dhd_if_t *ifp;
 		/* Unlock the locks as we take the lock again in subsequent function call. */
 		DHD_PERIM_UNLOCK(&dhd->pub);
@@ -9151,8 +9154,7 @@ dhd_stop(struct net_device *net)
 		 * when the primary Interface is brought down. [ifconfig wlan0 down]
 		 */
 		if (!dhd_download_fw_on_driverload) {
-			if ((dhd->dhd_state & DHD_ATTACH_STATE_ADD_IF) &&
-				(dhd->dhd_state & DHD_ATTACH_STATE_CFG80211)) {
+			if ((dhd->dhd_state & DHD_ATTACH_STATE_ADD_IF)) {
 				int i;
 
 #if defined(CUSTOMER_HW4) && defined(WL_CFG80211_P2P_DEV_IF)
@@ -9613,7 +9615,7 @@ dhd_event_ifadd(dhd_info_t *dhdinfo, wl_event_data_if_t *ifevent, char *name, ui
 {
 
 #ifdef WL_CFG80211
-	if ((dhd_cfg80211_enabled() == BCME_OK) &&
+	if ((dhdinfo->dhd_state & DHD_ATTACH_STATE_CFG80211) &&
 		(strstr(name, "wds") == NULL)) {
 		if (wl_cfg80211_notify_ifadd(dhd_linux_get_primary_netdev(&dhdinfo->pub),
 			ifevent->ifidx, name, mac, ifevent->bssidx, ifevent->role) == BCME_OK)
@@ -9657,7 +9659,7 @@ dhd_event_ifdel(dhd_info_t *dhdinfo, wl_event_data_if_t *ifevent, char *name, ui
 	dhd_if_event_t *if_event;
 
 #ifdef WL_CFG80211
-	if ((dhd_cfg80211_enabled() == BCME_OK) &&
+	if ((dhdinfo->dhd_state & DHD_ATTACH_STATE_CFG80211) &&
 		(strstr(name, "wds") == NULL)) {
 		if (wl_cfg80211_notify_ifdel(dhd_get_cfg(dhdinfo),
 			ifevent->ifidx, ifevent->bssidx) == BCME_OK)
@@ -9778,7 +9780,7 @@ dhd_allocate_if(dhd_pub_t *dhdpub, int ifidx, const char *name,
 #endif /* BCA_HNDROUTER */
 #if defined(BCM_PKTFWD)
 	/* BCM_PKTFWD: insert ifp into pktfwd */
-	ifp->d3fwd_wlif = dhd_pktfwd_wlif_ins(ifp, dhdpub->osh, ifp->net, dhdinfo->unit);
+	ifp->d3fwd_wlif = dhd_pktfwd_wlif_ins(ifp, dhdpub->osh, ifp->net, dhdpub->unit);
 
 	if (!ifp->d3fwd_wlif)
 		return NULL;
@@ -9836,10 +9838,10 @@ dhd_allocate_if(dhd_pub_t *dhdpub, int ifidx, const char *name,
 	{
 	    uint hwport = 0;
 #if defined(BCM_WFD)
-	    hwport = WLAN_NETDEVPATH_HWPORT(dhdinfo->unit, ifp->subunit);
+	    hwport = WLAN_NETDEVPATH_HWPORT(dhdpub->unit, ifp->subunit);
 #endif /* BCM_WFD */
-	    DHD_INFO(("%s: ifidx=%d, bssidx=%d, dhdinfo->unit=%d, hwport=%d\n", __FUNCTION__,
-	        ifidx, bssidx, dhdinfo->unit, hwport));
+	    DHD_INFO(("%s: ifidx=%d, bssidx=%d, unit=%d, hwport=%d\n", __FUNCTION__,
+	        ifidx, bssidx, dhdpub->unit, hwport));
 	    netdev_path_set_hw_port(ifp->net, hwport, BLOG_WLANPHY);
 	}
 #endif /* BCM_BLOG */
@@ -9948,11 +9950,11 @@ dhd_remove_if(dhd_pub_t *dhdpub, int ifidx, bool need_rtnl_lock)
 			if (dhd_wfd_unregisterdevice(dhdinfo->pub.wfd_idx, net) != 0)
 				DHD_ERROR(("%s: dhd_wfd_unregisterdevice failed "
 					"wfd_idx %d ifidx %d\n",
-					__FUNCTION__, dhdinfo->pub.wfd_idx, ifidx));
+					__FUNCTION__, dhdpub->wfd_idx, ifidx));
 			else
 				DHD_INFO(("%s: dhd_wfd_unregisterdevice successful "
 					"wfd_idx %d ifidx %d\n",
-					__FUNCTION__, dhdinfo->pub.wfd_idx, ifidx));
+					__FUNCTION__, dhdpub->wfd_idx, ifidx));
 #endif /* BCM_WFD */
 		}
 	}
@@ -10806,13 +10808,9 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	memset(dhd, 0, sizeof(dhd_info_t));
 	dhd_state |= DHD_ATTACH_STATE_DHD_ALLOC;
 
-	dhd->unit = dhd_found + instance_base; /* do not increment dhd_found, yet */
-
-#if defined(BCM_DHD_RUNNER) || defined(BCA_HNDROUTER)
-	dhd->pub.unit = dhd->unit; /* unique radio number */
-#endif /* BCM_DHD_RUNNER */
-
+	dhd->pub.unit = dhd_found + instance_base; /* do not increment dhd_found, yet */
 	dhd->pub.osh = osh;
+
 #if !defined(BCMDBUS) /* console not supported for USB (uses DBUS) */
 	dhd->pub.dhd_console_ms = dhd_console_ms; /* assigns default value */
 #endif /* BCMDBUS */
@@ -10882,7 +10880,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 #else /* BCM_NO_WOFA */
 	dhd->fwdh = FWDER_NULL;
 	/* DHD_FWDER_UNIT(dhd) is not initialized yet */
-	dhd_perim_radio_reg(dhd->unit, &dhd->pub);
+	dhd_perim_radio_reg(dhd->pub.unit, &dhd->pub);
 #endif /* !BCM_NO_WOFA */
 #endif /* BCM_ROUTER_DHD && BCM_GMAC3 */
 
@@ -10904,16 +10902,16 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 		ch = if_name[len - 1];
 		if ((ch > '9' || ch < '0') && (len < IFNAMSIZ - 2))
 #ifdef BCM_NBUFF_WLMCAST_IPV6
-			/* dhd->unit has been adjust to clearly indciate
-			 * how mnay wl interface there, no need to use %d
+			/* dhd->pub.unit has been adjust to clearly indciate
+			 * how many wl interfaces are there, no need to use %d
 			 */
-			snprintf(if_name+len, 2, "%d", dhd->unit);
+			snprintf(if_name+len, 2, "%d", dhd->pub.unit);
 #else
 			strcat(if_name, "%d");
 #endif // endif
 #ifdef BCM_NBUFF_WLMCAST_IPV6
 		else
-			snprintf(if_name, IFNAMSIZ, "wl%d", dhd->unit);
+			snprintf(if_name, IFNAMSIZ, "wl%d", dhd->pub.unit);
 #endif // endif
 	}
 	DHD_PERIM_LOCK(&dhd->pub);
@@ -11290,7 +11288,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	/* Allow all macdbg dumps by default */
 	dhd->macdbg_dump_level = MAXBITVAL(MACDBG_DUMP_MAX);
 #ifdef BCM_ROUTER_DHD
-	snprintf(varstr, sizeof(varstr), "macdbg_dump_level%d", dhd->unit);
+	snprintf(varstr, sizeof(varstr), "macdbg_dump_level%d", dhd->pub.unit);
 	var = getvar(NULL, varstr);
 	if (var) {
 		/* override nvram setting */
@@ -11299,23 +11297,23 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 #endif /* BCM_ROUTER_DHD */
 #if defined(BCM_PKTFWD)
 	/* BCM_PKTFWD: insert radio into pktfwd */
-	if ((dhd->pub.pktfwd_tbl = dhd_pktfwd_radio_ins(&dhd->pub, dhd->unit, net)) == NULL) {
-		DHD_ERROR(("wl%d: wl_pktc_attach failed\n", dhd->unit));
+	if ((dhd->pub.pktfwd_tbl = dhd_pktfwd_radio_ins(&dhd->pub, dhd->pub.unit, net)) == NULL) {
+		DHD_ERROR(("wl%d: wl_pktc_attach failed\n", dhd->pub.unit));
 		goto fail;
 	}
 #endif /* BCM_PKTFWD */
 
 #if defined(BCM_AWL)
-	if ((dhd->pub.awl_cb = dhd_awl_attach(&dhd->pub, dhd->unit)) == NULL) {
-	    DHD_ERROR(("wl%d: dhd_awl_attach failed\n", dhd->unit));
+	if ((dhd->pub.awl_cb = dhd_awl_attach(&dhd->pub, dhd->pub.unit)) == NULL) {
+	    DHD_ERROR(("wl%d: dhd_awl_attach failed\n", dhd->pub.unit));
 	    goto fail;
 	}
 #endif /* BCM_AWL */
 
 #if defined(BCM_WFD)
-	dhd->pub.wfd_idx = dhd_wfd_bind(net, dhd->unit);
-	dhd->pub.fwder_unit = dhd->fwder_unit = dhd->unit;
-	g_dhd_info[dhd->unit] = &(dhd->pub);
+	dhd->pub.wfd_idx = dhd_wfd_bind(net, dhd->pub.unit);
+	dhd->pub.fwder_unit = dhd->fwder_unit = dhd->pub.unit;
+	g_dhd_info[dhd->pub.unit] = &(dhd->pub);
 #endif /* BCM_WFD */
 
 #ifdef DHD_LBR_AGGR_BCM_ROUTER
@@ -11330,6 +11328,9 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	if (dhd_nbuff_bpm_init(&dhd->pub) != BCME_OK)
 		goto fail;
 #endif /* BCM_NBUFF_PKT_BPM */
+
+	dhd->pub.wl_ioctl_version = 0;
+	dhd->pub.wl_ioctl_magic = 0;
 
 	return &dhd->pub;
 
@@ -11412,7 +11413,7 @@ bool dhd_update_fw_nv_path(dhd_info_t *dhdinfo)
 	if (!fw) {
 		char var[32];
 
-		snprintf(var, sizeof(var), "firmware_path%d", dhdinfo->unit);
+		snprintf(var, sizeof(var), "firmware_path%d", dhdinfo->pub.unit);
 		fw = getvar(NULL, var);
 	}
 
@@ -11427,10 +11428,10 @@ bool dhd_update_fw_nv_path(dhd_info_t *dhdinfo)
 	if (!nv) {
 		char var[32];
 
-		snprintf(var, sizeof(var), "nvram_path%d", dhdinfo->unit);
+		snprintf(var, sizeof(var), "nvram_path%d", dhdinfo->pub.unit);
 		nv = getvar(NULL, var);
 	}
-	DHD_ERROR(("dhd:%d: fw path:%s nv path:%s\n", dhdinfo->unit, fw, nv));
+	DHD_ERROR(("dhd:%d: fw path:%s nv path:%s\n", dhdinfo->pub.unit, fw, nv));
 #endif /* BCM_ROUTER_DHD */
 
 	if (fw && fw[0] != '\0') {
@@ -13834,6 +13835,10 @@ void dhd_detach(dhd_pub_t *dhdp)
 	dhd_free_wet_info(&dhd->pub, dhd->pub.wet_info);
 #endif // endif
 
+#if defined(DHD_DPSTA) && (defined(DHD_PSTA) || defined(DHD_WET))
+	dpsta_unregister(dhd_get_instance(&dhd->pub));
+#endif
+
 #if defined(BCM_DNGL_EMBEDIMAGE) || defined(BCM_REQUEST_FW)
 #if defined(BCMDBUS)
 	if (dhd->fw_download_task) {
@@ -13914,7 +13919,7 @@ void dhd_detach(dhd_pub_t *dhdp)
 		dhd_if_t *ifp;
 
 		/* Cleanup virtual interfaces */
-		DHD_PERIM_LOCK(&dhd->pub);
+		DHD_PERIM_LOCK(dhdp);
 		dhd_net_if_lock_local(dhd);
 		for (i = 1; i < DHD_MAX_IFS; i++) {
 			if (dhd->iflist[i]) {
@@ -13926,7 +13931,7 @@ void dhd_detach(dhd_pub_t *dhdp)
 			}
 		}
 		dhd_net_if_unlock_local(dhd);
-		DHD_PERIM_UNLOCK(&dhd->pub);
+		DHD_PERIM_UNLOCK(dhdp);
 
 		/*  delete primary interface 0 */
 		ifp = dhd->iflist[0];
@@ -14207,7 +14212,7 @@ dhd_free(dhd_pub_t *dhdp)
 #ifndef BCM_PKTFWD
 			dhd_wfd_unbind(dhd->pub.wfd_idx);
 #else
-			dhd_wfd_unbind(dhd->pub.wfd_idx, dhd->unit);
+			dhd_wfd_unbind(dhd->pub.wfd_idx, dhdp->unit);
 #endif /* BCM_PKTFWD */
 #endif /* BCM_WFD */
 
@@ -14219,13 +14224,13 @@ dhd_free(dhd_pub_t *dhdp)
 #ifdef BCM_PKTFWD
 		/* BCM_PKTFWD: delete radio from pktfwd */
 		if (dhdp && dhdp->pktfwd_tbl)
-			dhd_pktfwd_radio_del(dhd->unit);
+			dhd_pktfwd_radio_del(dhdp->unit);
 #endif /* BCM_PKTFWD */
 
 		/* If pointer is allocated by dhd_os_prealloc then avoid MFREE */
 		if (dhd &&
 			dhd != (dhd_info_t *)dhd_os_prealloc(dhdp, DHD_PREALLOC_DHD_INFO, 0, FALSE))
-			MFREE(dhd->pub.osh, dhd, sizeof(*dhd));
+			MFREE(dhdp->osh, dhd, sizeof(*dhd));
 		dhd = NULL;
 	}
 }
@@ -16499,7 +16504,7 @@ bool dhd_os_check_hang(dhd_pub_t *dhdp, int ifidx, int ret)
 /* Return instance */
 int dhd_get_instance(dhd_pub_t *dhdp)
 {
-	return dhdp->info->unit;
+	return dhdp->unit;
 }
 
 #if defined(WL_CFG80211) && defined(SUPPORT_DEEP_SLEEP)
@@ -17489,7 +17494,7 @@ dhd_fwtrap_handler(void *handle, void *event_info, enum dhd_wq_event event)
 	}
 
 	DHD_ERROR(("%s: Dongle(wl%d) macreg dump scheduled with isup %d\n",
-		__FUNCTION__, dhd->unit, isup));
+		__FUNCTION__, dhdp->unit, isup));
 
 	DHD_OS_WAKE_LOCK(dhdp);
 	DHD_PERIM_LOCK(dhdp);
@@ -17553,7 +17558,7 @@ socram:
 		if (val && bcm_atoi(val)) {
 			/* watchdog enabled, so reboot */
 			DHD_ERROR(("%s: Dongle(wl%d) trap detected. Restarting the system\n",
-				__FUNCTION__, dhd->unit));
+				__FUNCTION__, dhdp->unit));
 
 			mdelay(1000);
 			emergency_restart();
@@ -17561,7 +17566,7 @@ socram:
 				cpu_relax();
 		} else {
 			DHD_ERROR(("%s: Dongle(wl%d) trap detected. No watchdog.\n",
-			   __FUNCTION__, dhd->unit));
+			   __FUNCTION__, dhdp->unit));
 		}
 
 		return;
@@ -17582,7 +17587,7 @@ socram:
 
 	/* If monitor daemon is running, let's signal the monitor for recovery */
 	DHD_ERROR(("%s: Dongle(wl%d) trap detected. Send signal to debug_monitor from %s.\n",
-		__FUNCTION__, dhd->unit, failed_if));
+		__FUNCTION__, dhdp->unit, failed_if));
 
 	/* send SIGUSR2 so that debug_monitor thinks noclk is true and jumps out macreg dump */
 	send_sig_info(SIGUSR2, (void *)1L, monitor_task);
@@ -17673,7 +17678,7 @@ dhd_hwa_event_handler(void *handle, void *event_info, enum dhd_wq_event event)
 	BCM_REFERENCE(event_info);
 
 	DHD_ERROR(("%s: Dongle(wl%d) hwa event scheduled\n",
-		__FUNCTION__, dhd->unit));
+		__FUNCTION__, dhdp->unit));
 
 	DHD_OS_WAKE_LOCK(dhdp);
 	DHD_PERIM_LOCK(dhdp);
@@ -17690,7 +17695,7 @@ void
 dhd_hwa_event(dhd_pub_t *dhdp)
 {
 	DHD_ERROR(("%s: Dongle(wl%d) schedule hwa event\n",
-		__FUNCTION__, dhdp->info->unit));
+		__FUNCTION__, dhdp->unit));
 
 	dhd_deferred_schedule_work(dhdp->info->dhd_deferred_wq, NULL,
 		DHD_WQ_WORK_HWA, dhd_hwa_event_handler, DHD_WORK_PRIORITY_HIGH);
@@ -18557,7 +18562,7 @@ dhd_dpsta_psta_register(dhd_pub_t *dhd)
 	api.psta = dhd;
 	api.bsscfg = dhd;
 	api.mode = DPSTA_MODE_PSTA;
-	(void) dpsta_register(dhd_get_instance(dhd), &api);
+	(void) dpsta_register(dhd->unit, &api);
 
 	return;
 }
@@ -18576,7 +18581,7 @@ dhd_dpsta_dwds_register(dhd_pub_t *dhd)
 	api.psta = dhd;
 	api.bsscfg = dhd;
 	api.mode = DPSTA_MODE_DWDS;
-	(void) dpsta_register(dhd_get_instance(dhd), &api);
+	(void) dpsta_register(dhd->unit, &api);
 
 	return;
 }
@@ -18729,7 +18734,7 @@ dhd_add_monitor_if(void *handle, void *event_info, enum dhd_wq_event event)
 	else
 		devname = "radiotap";
 
-	snprintf(dev->name, sizeof(dev->name), "%s%u", devname, dhd->unit);
+	snprintf(dev->name, sizeof(dev->name), "%s%u", devname, dhd->pub.unit);
 
 #ifndef ARPHRD_IEEE80211_PRISM  /* From Linux 2.4.18 */
 #define ARPHRD_IEEE80211_PRISM 802
@@ -19209,7 +19214,7 @@ dhd_client_get_info(struct net_device *dev, char *mac, int priority, wlan_client
 					info_p->type = WLAN_CLIENT_TYPE_RUNNER;
 					info_p->rnr.is_wfd = 0;
 					info_p->rnr.is_tx_hw_acc_en = 1;
-					info_p->rnr.radio_idx = (ifp->info->unit)-instance_base;
+					info_p->rnr.radio_idx = ifp->info->pub.unit - instance_base;
 					info_p->rnr.priority = priority;
 					info_p->rnr.ssid = sta->ifidx;
 					info_p->rnr.flowring_idx = sta->flowid[priority];

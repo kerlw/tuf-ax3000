@@ -7843,23 +7843,19 @@ static int is_re_node(char *client_mac, int check_path) {
 	int i;
 	int ret = 0;
 	int shm_client_tbl_id;
-	int lock;
 	P_CM_CLIENT_TABLE p_client_tbl;
 	void *shared_client_info=(void *) 0;
 	unsigned char mac_buf[6] = {0};
 
-	lock = file_lock(CFG_FILE_LOCK);
 	shm_client_tbl_id = shmget((key_t)KEY_SHM_CFG, sizeof(CM_CLIENT_TABLE), 0666|IPC_CREAT);
 	if (shm_client_tbl_id == -1){
 		fprintf(stderr, "shmget failed\n");
-		file_unlock(lock);
 		return 0;
 	}
 
 	shared_client_info = shmat(shm_client_tbl_id,(void *) 0,0);
 	if (shared_client_info == (void *)-1){
 		fprintf(stderr, "shmat failed\n");
-		file_unlock(lock);
 		return 0;
 	}
 
@@ -7878,15 +7874,12 @@ static int is_re_node(char *client_mac, int check_path) {
 
 	shmdt(shared_client_info);
 
-	file_unlock(lock);
-
 	return ret;
 }
 
 static int get_amas_client_mac(json_object *allClientList, char *ip, char *mac, int macBufSize) {
 	int i;
 	int shm_client_tbl_id;
-	int lock;
 	P_CM_CLIENT_TABLE p_client_tbl;
 	void *shared_client_info=(void *) 0;
 	unsigned char mac_buf[6] = {0};
@@ -7921,18 +7914,15 @@ static int get_amas_client_mac(json_object *allClientList, char *ip, char *mac, 
 
 	/* check sta2g and sta5g, replace real mac for RE if client is RE */
 	if (strlen(mac)) {
-		lock = file_lock(CFG_FILE_LOCK);
 		shm_client_tbl_id = shmget((key_t)KEY_SHM_CFG, sizeof(CM_CLIENT_TABLE), 0666|IPC_CREAT);
 		if (shm_client_tbl_id == -1){
 			fprintf(stderr, "shmget failed\n");
-			file_unlock(lock);
 			return 0;
 		}
 
 		shared_client_info = shmat(shm_client_tbl_id,(void *) 0,0);
 		if (shared_client_info == (void *)-1){
 			fprintf(stderr, "shmat failed\n");
-			file_unlock(lock);
 			return 0;
 		}
 
@@ -7955,7 +7945,6 @@ static int get_amas_client_mac(json_object *allClientList, char *ip, char *mac, 
 		}
 
 		shmdt(shared_client_info);
-		file_unlock(lock);
 	}
 
 	return strlen(mac);
@@ -7995,7 +7984,6 @@ static int get_client_detail_info(struct json_object *clients, struct json_objec
 	struct json_object *amasList = NULL, *amasReClientList = NULL, *amasReClientDetailList = NULL, *amasWiredClientList = NULL;
 	struct json_object *allClientList = NULL;
 	int amasList_status = 0, amasReClientList_status = 0, amasReClientDetailList_status = 0, amasWiredClientList_status = 0;
-	char clientMac[18] = {0};
 	struct json_object *amasPAP_attr_get = NULL;
 #endif
 
@@ -8111,12 +8099,9 @@ static int get_client_detail_info(struct json_object *clients, struct json_objec
 			);
 #ifdef RTCONFIG_AMAS
 			/* replace client mac if needed */
-			memset(clientMac, 0, sizeof(clientMac));
-			snprintf(clientMac, sizeof(clientMac), "%s", mac_buf);
-			if (allClientList && get_amas_client_mac(allClientList, ipaddr, clientMac, sizeof(clientMac))) {
-				memset(mac_buf, 0, sizeof(mac_buf));
-				snprintf(mac_buf, sizeof(mac_buf), "%s", clientMac);
-			}
+			if (allClientList)
+				get_amas_client_mac(allClientList, ipaddr, mac_buf, sizeof(mac_buf));
+
 			if (is_re_node(mac_buf, 1))
 				continue;
 #endif

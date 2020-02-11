@@ -1568,7 +1568,7 @@ void nat_setting(char *wan_if, char *wan_ip, char *wanx_if, char *wanx_ip, char 
 		":VSERVER - [0:0]\n"
 		":LOCALSRV - [0:0]\n"
 		":VUPNP - [0:0]\n");
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 	fprintf(fp,
 		":GAME_VSERVER - [0:0]\n");
 #endif
@@ -1623,7 +1623,7 @@ void nat_setting(char *wan_if, char *wan_ip, char *wanx_if, char *wanx_ip, char 
 
 	/* VSERVER chain */
 	if (inet_addr_(wan_ip)) {
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 		fprintf(fp, "-A PREROUTING -d %s -j GAME_VSERVER\n", wan_ip);
 #endif
 		fprintf(fp, "-A PREROUTING -d %s -j VSERVER\n", wan_ip);
@@ -1633,7 +1633,7 @@ void nat_setting(char *wan_if, char *wan_ip, char *wanx_if, char *wanx_ip, char 
 #ifdef RTCONFIG_MULTIWAN_CFG
 		wanx_rules = 1;
 #endif
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 		fprintf(fp, "-A PREROUTING -d %s -j GAME_VSERVER\n", wan_ip);
 #endif
 		fprintf(fp, "-A PREROUTING -d %s -j VSERVER\n", wanx_ip);
@@ -1701,7 +1701,7 @@ void nat_setting(char *wan_if, char *wan_ip, char *wanx_if, char *wanx_ip, char 
 #endif
 	// Port forwarding or Virtual Server
 	write_port_forwarding(fp, "vts_rulelist", lan_ip, lan_if);
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 	write_port_forwarding(fp, "game_vts_rulelist", lan_ip, lan_if);
 #endif
 
@@ -1901,7 +1901,7 @@ void nat_setting2(char *lan_if, char *lan_ip, char *logaccept, char *logdrop)	//
 				":VSERVER - [0:0]\n"
 				":LOCALSRV - [0:0]\n"
 				":VUPNP - [0:0]\n");
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 			fprintf(fp,
 				":GAME_VSERVER - [0:0]\n");
 #endif
@@ -1936,7 +1936,7 @@ void nat_setting2(char *lan_if, char *lan_ip, char *logaccept, char *logdrop)	//
 
 		/* VSERVER chain */
 		if(inet_addr_(wan_ip)) {
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 			fprintf(fp, "-A PREROUTING -d %s -j GAME_VSERVER\n", wan_ip);
 #endif
 			fprintf(fp, "-A PREROUTING -d %s -j VSERVER\n", wan_ip);
@@ -1944,7 +1944,7 @@ void nat_setting2(char *lan_if, char *lan_ip, char *logaccept, char *logdrop)	//
 
 		// wanx_if != wan_if means DHCP+PPP exist?
 		if (dualwan_unit__nonusbif(unit) && strcmp(wan_if, wanx_if) && inet_addr_(wanx_ip)) {
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 			fprintf(fp, "-A PREROUTING -d %s -j GAME_VSERVER\n", wanx_ip);
 #endif
 			fprintf(fp, "-A PREROUTING -d %s -j VSERVER\n", wanx_ip);
@@ -1999,7 +1999,7 @@ void nat_setting2(char *lan_if, char *lan_ip, char *logaccept, char *logdrop)	//
 				":VSERVER - [0:0]\n"
 				":LOCALSRV - [0:0]\n"
 				":VUPNP - [0:0]\n");
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 		fprintf(fp,
 				":GAME_VSERVER - [0:0]\n");
 #endif
@@ -2044,7 +2044,7 @@ void nat_setting2(char *lan_if, char *lan_ip, char *logaccept, char *logdrop)	//
 #endif
 	// Port forwarding or Virtual Server
 	write_port_forwarding(fp, "vts_rulelist", lan_ip, lan_if);
-#ifdef SUPPORT_GAME_PROFILE
+#ifdef RTCONFIG_OPEN_NAT
 	write_port_forwarding(fp, "game_vts_rulelist", lan_ip, lan_if);
 #endif
 
@@ -5611,6 +5611,7 @@ add_samba_rules(void)
 }
 #endif
 #endif
+
 //int start_firewall(char *wan_if, char *wan_ip, char *lan_if, char *lan_ip)
 int start_firewall(int wanunit, int lanunit)
 {
@@ -5626,7 +5627,6 @@ int start_firewall(int wanunit, int lanunit)
 	char wanx_if[IFNAMSIZ+1], wanx_ip[32], wan_proto[16];
 	char prefix[] = "wanXXXXXXXXXX_", tmp[100];
 	int lock;
-	int restart_upnp = 0;
 
 	if (!is_routing_enabled())
 		return -1;
@@ -5637,11 +5637,6 @@ int start_firewall(int wanunit, int lanunit)
 	}
 
 	lock = file_lock("firewall");
-
-	if (pidof("miniupnpd") != -1) {
-		stop_upnp();
-		restart_upnp = 1;
-	}
 
 	snprintf(prefix, sizeof(prefix), "wan%d_", wanunit);
 
@@ -5976,14 +5971,14 @@ int start_firewall(int wanunit, int lanunit)
 	run_le_fw_script();
 #endif
 
-leave:
-	if (restart_upnp) start_upnp();
+	/* Assuming wan interface doesn't change */
+	reload_upnp();
 
+leave:
 	file_unlock(lock);
 
 	return 0;
 }
-
 
 void enable_ip_forward(void)
 {

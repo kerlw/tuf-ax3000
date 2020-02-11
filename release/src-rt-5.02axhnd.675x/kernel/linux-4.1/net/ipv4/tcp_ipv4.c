@@ -2888,7 +2888,10 @@ static int __net_init tcp_sk_init(struct net *net)
 	}
 	net->ipv4.sysctl_tcp_ecn = 2;
 	net->ipv4.sysctl_tcp_base_mss = TCP_BASE_MSS;
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11479*/
 	net->ipv4.sysctl_tcp_min_snd_mss = TCP_MIN_SND_MSS;
+#endif
 	net->ipv4.sysctl_tcp_probe_threshold = TCP_PROBE_THRESHOLD;
 	net->ipv4.sysctl_tcp_probe_interval = TCP_PROBE_INTERVAL;
 	return 0;

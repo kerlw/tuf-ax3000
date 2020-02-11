@@ -5714,6 +5714,10 @@ static void preboot_init(void)
     return;
 }
 
+#if defined(RTAX95Q)
+void PowerCLEDRescueOn(void);
+#endif
+
 void bcm63xx_run_ex(int breakIntoCfe, int skip_check_memcfg, int autorun)
 {
     int ret = 0, i = 0;
@@ -5832,15 +5836,19 @@ void bcm63xx_run_ex(int breakIntoCfe, int skip_check_memcfg, int autorun)
 #elif defined(RTAX58U) || defined(TUFAX3000)
             gpio = 23 | BP_ACTIVE_LOW;	// use WPS LED instead
 #elif defined(RTAX56U)
-            gpio = 38 | BP_ACTIVE_LOW;
+            gpio = 16 | BP_ACTIVE_LOW;
 #endif
 
         /* Wait forever for an image */
         while ((ret = ui_docommand("w 255.255.255.255:ASUSSPACELINK")) == CFE_ERR_TIMEOUT) {
+#if defined(RTAX95Q)
+			PowerCLEDRescueOn();
+#else
             if (i%2 == 0)
                 setLed(gpio, LED_OFF);
             else
                 setLed(gpio, LED_ON);
+#endif
 
             i++;
             if (i==0xffffff)

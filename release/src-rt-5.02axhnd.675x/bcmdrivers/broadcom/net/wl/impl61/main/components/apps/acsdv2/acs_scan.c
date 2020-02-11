@@ -45,7 +45,7 @@
  *	OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *	NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_scan.c 776843 2019-07-11 07:41:32Z $
+ *	$Id: acs_scan.c 777836 2019-08-13 06:27:19Z $
  */
 
 #include <stdio.h>
@@ -325,16 +325,14 @@ int acs_allow_scan(acs_chaninfo_t *c_info, uint8 type)
 	uint32 diff = now - c_info->timestamp_acs_scan;
 	uint8 tx_score = c_info->txrx_score + ACS_CHANIM_DELTA;
 	/* Before allowing CI scan verifying the txrx_score(tx+inbss), and txop value.
-	 * If txrx_score is less than threshold(ACS_CHANIM_TXRX_PER) and channel_free(txop)
-	 * is greater than txrx_score then only allowing the ci scan else rejecting it
-	 * txrx_score and channel_free stats will update for every 1 minute.
+	 * If combination of tx_score and txop is greater than threshold(ACS_CHANIM_TX_AVAIL)
+	 * then don't initiate scan else proceed for CI scan.
 	 */
-	if (!(tx_score < ACS_CHANIM_TXRX_PER &&
-			c_info->channel_free > tx_score)) {
-		ACSD_DEBUG("%s: Don't initiate CI scan if tx_score %d is greater than"
-				"threshold %d or channel free is %d less than tx_score %d\n",
-				c_info->name,
-				tx_score, ACS_CHANIM_TXRX_PER, c_info->channel_free, tx_score);
+	if ((type == ACS_SCAN_TYPE_CI) &&
+			(tx_score + c_info->channel_free) > c_info->acs_chanim_tx_avail) {
+		ACSD_DEBUG("%s: Don't initiate CI scan if tx_score %d plus channel free is %d"
+			       "greater than threshold %d\n", c_info->name, tx_score,
+			       c_info->channel_free, c_info->acs_chanim_tx_avail);
 		return FALSE;
 	}
 	if ((type == ACS_SCAN_TYPE_CI) && diff >= c_info->acs_ci_scan_timeout) {
@@ -349,7 +347,10 @@ int acs_allow_scan(acs_chaninfo_t *c_info, uint8 type)
 				c_info->name);
 			return FALSE;
 		}
-		return (c_info->last_scan_type != ACS_SCAN_TYPE_CS);
+		/* Allow cs scan when acsd is on non-dfs channel and there are no associations */
+		if (!c_info->cur_is_dfs && !acs_check_assoc_scb(c_info)) {
+			return TRUE;
+		}
 	} else if (!(type == ACS_SCAN_TYPE_CS || type == ACS_SCAN_TYPE_CI)) {
 		ACSD_DEBUG("%s: Invalid scan type \n", c_info->name);
 		return FALSE;
@@ -426,7 +427,8 @@ int acs_ci_scan_finish_check(acs_chaninfo_t * c_info)
 	return 0;
 }
 
-void acs_normalize_chanim_stats_after_ci_scan(acs_chaninfo_t * c_info) {
+void acs_normalize_chanim_stats_after_ci_scan(acs_chaninfo_t * c_info)
+{
 	wl_chanim_stats_t *chstats = c_info->chanim_stats;
 	chanim_stats_v2_t *statsv2 = NULL;
 	chanim_stats_t *stats = NULL;
@@ -438,19 +440,25 @@ void acs_normalize_chanim_stats_after_ci_scan(acs_chaninfo_t * c_info) {
 			stats->ccastats[CCASTATS_TXOP] = MIN(stats->ccastats[CCASTATS_TXOP] +
 					ACS_NORMALIZE_CHANIM_STATS_LIMIT, ACS_MAX_TXOP);
 			stats->ccastats[CCASTATS_INBSS] = MAX(stats->ccastats[CCASTATS_INBSS] -
-					 ACS_NORMALIZE_CHANIM_STATS_LIMIT, 0);
+					ACS_NORMALIZE_CHANIM_STATS_LIMIT, 0);
 			stats->ccastats[CCASTATS_TXDUR] = MAX(stats->ccastats[CCASTATS_TXDUR] -
-					ACS_NORMALIZE_CHANIM_STATS_LIMIT , 0);
+					ACS_NORMALIZE_CHANIM_STATS_LIMIT, 0);
+			c_info->ch_avail[i] = stats->ccastats[CCASTATS_TXOP] +
+			       stats->ccastats[CCASTATS_INBSS] + stats->ccastats[CCASTATS_TXDUR];
 		} else if (chstats->version == WL_CHANIM_STATS_V2) {
 			statsv2 = (chanim_stats_v2_t *)&chstats->stats[i];
 			statsv2->ccastats[CCASTATS_TXOP] = MIN(statsv2->ccastats[CCASTATS_TXOP] +
 					ACS_NORMALIZE_CHANIM_STATS_LIMIT, ACS_MAX_TXOP);
 			statsv2->ccastats[CCASTATS_INBSS] = MAX(statsv2->ccastats[CCASTATS_INBSS] -
-					 ACS_NORMALIZE_CHANIM_STATS_LIMIT, 0);
+					ACS_NORMALIZE_CHANIM_STATS_LIMIT, 0);
 			statsv2->ccastats[CCASTATS_TXDUR] = MAX(statsv2->ccastats[CCASTATS_TXDUR] -
-					ACS_NORMALIZE_CHANIM_STATS_LIMIT , 0);
+					ACS_NORMALIZE_CHANIM_STATS_LIMIT, 0);
+			c_info->ch_avail[i] = statsv2->ccastats[CCASTATS_TXOP] +
+			       statsv2->ccastats[CCASTATS_INBSS] +
+			       statsv2->ccastats[CCASTATS_TXDUR];
 		}
 	}
+	acsd_segmentize_chanim(c_info);
 }
 
 int
@@ -475,17 +483,14 @@ acs_do_ci_update(uint ticks, acs_chaninfo_t * c_info)
 			c_info->name);
 		return ret;
 	/* Before allowing CI scan verifying the txrx_score(tx+inbss), and txop value.
-	 * If txrx_score is less than threshold(ACS_CHANIM_TXRX_PER) and channel_free(txop)
-	 * is greater than txrx_score then only allowing the ci scan else rejecting it
-	 * txrx_score and channel_free stats will update for every 1 minute.
+	 * If combination of tx_score and txop is greater than threshold(ACS_CHANIM_TX_AVAIL)
+	 * then don't initiate scan else proceed for CI scan.
 	 */
-	} else if (!(tx_score < ACS_CHANIM_TXRX_PER &&
-			c_info->channel_free > tx_score)) {
-		ACSD_DEBUG("%s: Don't initiate CI scan if tx_score %d is greater than"
-			"threshold %d or channel free is %d less than tx_score %d\n",
-			c_info->name, tx_score, ACS_CHANIM_TXRX_PER, c_info->channel_free,
-			tx_score);
-		return ret;
+	} else if ((tx_score + c_info->channel_free) > c_info->acs_chanim_tx_avail) {
+		ACSD_DEBUG("%s: Don't initiate CI scan if tx_score %d plus channel free is %d"
+			       "greater than threshold %d\n", c_info->name, tx_score,
+			       c_info->channel_free, c_info->acs_chanim_tx_avail);
+		return FALSE;
 	} else {
 		ACSD_DEBUG("%s: continue and allow acsd to initiate CI scan"
 			"when not in lockout_period\n", c_info->name);

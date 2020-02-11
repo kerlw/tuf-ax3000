@@ -1180,7 +1180,7 @@ const uint16 chan_tune_20709_rev0_length = ARRAYSIZE(chan_tune_20709_rev0);
 /* ******     6878 - 2g/iLNA    ****** */
 /* 2G LNA1 and Gm Gain dB table for 6878 */
 int8 BCMATTACHDATA(lna12_gain_tbl_2g_20709r0_ilna)[2][N_LNA12_GAINS] = {
-	{ -8, -2,  4, 10, 15, 22, -18}, /* LNA1 Table */
+	{ -8, -2,  4, 10, 15, 22, -15}, /* LNA1 Table */
 	{ 0, 0, 0, 0}          /* Gm Table */
 };
 /* 2G LNA1 and Gm Gain bits table for 6878 */
@@ -1192,7 +1192,7 @@ int8 BCMATTACHDATA(lna12_gainbits_tbl_2g_20709r0_ilna)[2][N_LNA12_GAINS] = {
 /* ******     6878 - 2g/eLNA    ****** */
 /* 2G LNA1 and Gm Gain dB table for 6878 */
 int8 BCMATTACHDATA(lna12_gain_tbl_2g_20709r0_elna)[2][N_LNA12_GAINS] = {
-	{ -8, -2,  4, 10, 15, 15, -18}, /* LNA1 Table */
+	{ -8, -2,  4, 10, 15, 15, -15}, /* LNA1 Table */
 	{ 0, 0, 0, 0}          /* Gm Table */
 };
 /* 2G LNA1 and Gm Gain bits table for 6878 */
@@ -1204,7 +1204,7 @@ int8 BCMATTACHDATA(lna12_gainbits_tbl_2g_20709r0_elna)[2][N_LNA12_GAINS] = {
 /* ******     6878 - 5g/iLNA    ****** */
 /* 5G LNA1 and Gm Gain dB table for 6878 */
 int8 BCMATTACHDATA(lna12_gain_tbl_5g_20709r0_ilna)[2][N_LNA12_GAINS] = {
-	{-7, -2,  4,  10, 16, 22, -18}, /* LNA1 Table */
+	{-7, -2,  4,  10, 16, 22, -10}, /* LNA1 Table */
 	{0, 0, 0, 0}          /* Gm Table */
 };
 /* 5G LNA1 and Gm Gain bits table for 6878 */
@@ -1216,7 +1216,7 @@ int8 BCMATTACHDATA(lna12_gainbits_tbl_5g_20709r0_ilna)[2][N_LNA12_GAINS] = {
 /* ******     6878 - 5g/eLNA    ****** */
 /* 5G LNA1 and Gm Gain dB table for 6878 */
 int8 BCMATTACHDATA(lna12_gain_tbl_5g_20709r0_elna)[2][N_LNA12_GAINS] = {
-	{-7, -2,  4,  10, 16, 16, -18}, /* LNA1 Table */
+	{-7, -2,  4,  10, 16, 16, -10}, /* LNA1 Table */
 	{0, 0, 0, 0}          /* Gm Table */
 };
 /* 5G LNA1 and Gm Gain bits table for 6878 */
@@ -1228,7 +1228,7 @@ int8 BCMATTACHDATA(lna12_gainbits_tbl_5g_20709r0_elna)[2][N_LNA12_GAINS] = {
 /* LNA1 gm and rout mapping table for 6878 */
 uint8 BCMATTACHDATA(lna1_rout_map_2g_20709r0)[N_LNA12_GAINS] = {  6,  6,  6,  6,  7, 0, 10};
 uint8 BCMATTACHDATA(lna1_gain_map_2g_20709r0)[N_LNA12_GAINS] = {  3,  4,  5,  6,  7, 7,  6};
-uint8 BCMATTACHDATA(lna1_rout_map_5g_20709r0)[N_LNA12_GAINS] = { 11, 11, 10, 10, 10, 0, 10};
+uint8 BCMATTACHDATA(lna1_rout_map_5g_20709r0)[N_LNA12_GAINS] = { 11, 11, 10, 10, 10, 0, 11};
 uint8 BCMATTACHDATA(lna1_gain_map_5g_20709r0)[N_LNA12_GAINS] = {  3,  4,  5,  6,  7, 7,  6};
 
 /* TIA Gain table for 6878

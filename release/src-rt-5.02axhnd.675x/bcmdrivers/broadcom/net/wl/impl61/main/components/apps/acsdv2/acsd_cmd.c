@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: acsd_cmd.c 775469 2019-05-31 05:36:39Z $
+ * $Id: acsd_cmd.c 777835 2019-08-13 06:26:04Z $
  */
 
 #include "acsd_svr.h"
@@ -327,12 +327,27 @@ acsd_proc_cmd(acsd_wksp_t* d_info, char* buf, uint rcount, uint* r_size)
 		}
 
 		err = acs_run_cs_scan(c_info);
+		if (err) {
+			ACSD_ERROR("ifname: %s scan is failed due to: %d\n", c_info->name, err);
+			return err;
+		}
 
 		acs_cleanup_scan_entry(c_info);
 		err = acs_request_data(c_info);
 
 		if (pick) {
+			c_info->autochannel_through_cli = TRUE;
 			acs_select_chspec(c_info);
+			if (c_info->acs_use_csa) {
+				err = acs_csa_handle_request(c_info);
+			} else {
+				err = acs_set_chanspec(c_info, c_info->selected_chspec);
+			}
+			c_info->autochannel_through_cli = FALSE;
+			if (!err) {
+				chanim_upd_acs_record(c_info->chanim_info,
+						c_info->selected_chspec, APCS_IOCTL);
+			}
 		}
 
 		*r_size = sprintf(buf, "Request finished");

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_misc.c 775501 2019-06-02 00:18:19Z $
+ * $Id: phy_ac_misc.c 778060 2019-08-21 18:50:19Z $
  */
 
 #include <phy_cfg.h>
@@ -1893,6 +1893,17 @@ void
 wlc_phy_cts2self(phy_info_t *pi, uint16 duration)
 {
 	int mac_depth = 0;
+	int carrier_depth = 0;
+	phy_info_acphy_t *pi_ac = (phy_info_acphy_t *)pi->u.pi_acphy;
+
+	/* phycrs would get stuck when phy is in deaf and mac tries to transmit pkt
+	 * disable phy deaf before mac is unsuspended
+	 */
+	while ((carrier_depth < 100) && (phy_ac_rxgcrs_get_deaf_count(pi_ac->rxgcrsi) > 0)) {
+		/* Re-enable classifier/detection */
+		phy_rxgcrs_stay_in_carriersearch(pi->rxgcrsi, FALSE);
+		carrier_depth++;
+	}
 	while ((mac_depth < 100) && !(R_REG(pi->sh->osh, D11_MACCONTROL(pi)) & MCTL_EN_MAC)) {
 		/* Unsuspend mac */
 		wlapi_enable_mac(pi->sh->physhim);
@@ -1909,6 +1920,13 @@ wlc_phy_cts2self(phy_info_t *pi, uint16 duration)
 
 	/* Make sure mac is suspended when this function is called and over */
 	ASSERT((R_REG(pi->sh->osh, D11_MACCONTROL(pi)) & MCTL_EN_MAC) == 0);
+
+	while (carrier_depth) {
+		/* Leave the stay in carrier status as original */
+		phy_rxgcrs_stay_in_carriersearch(pi->rxgcrsi, TRUE);
+		carrier_depth--;
+	}
+	wlc_phy_resetcca_acphy(pi);
 
 	/* Disable Power control */
 	wlc_phy_txpwrctrl_enable_acphy(pi, PHY_TPC_HW_OFF);

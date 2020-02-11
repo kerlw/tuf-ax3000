@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_master_com_hdlr.c 775450 2019-05-30 10:39:19Z $
+ * $Id: wbd_master_com_hdlr.c 777334 2019-07-29 08:58:01Z $
  */
 
 #include "wbd.h"
@@ -57,6 +57,7 @@
 #include "wbd_master_control.h"
 #ifdef BCM_APPEVENTD
 #include "wbd_appeventd.h"
+#include "appeventd_wbd.h"
 #endif /* BCM_APPEVENTD */
 
 #include "ieee1905_tlv.h"
@@ -1472,7 +1473,7 @@ end:
 #ifdef BCM_APPEVENTD
 	/* Send MAP Init Start event to appeventd. */
 	wbd_appeventd_map_init(APP_E_WBD_MASTER_MAP_INIT_END,
-		(struct ether_addr*)ieee1905_get_al_mac(), 2); /* End = 2 */
+		(struct ether_addr*)ieee1905_get_al_mac(), MAP_INIT_END, MAP_APPTYPE_MASTER);
 #endif /* BCM_APPEVENTD */
 
 	WBD_EXIT();
@@ -3119,7 +3120,7 @@ wbd_master_retrieve_prefix_nvram_config(wbd_master_info_t *master, uint8 band)
 #ifdef BCM_APPEVENTD
 		/* Send MAP Init Start event to appeventd. */
 		wbd_appeventd_map_init(APP_E_WBD_MASTER_MAP_INIT_START,
-			(struct ether_addr*)ieee1905_get_al_mac(), 1); /* Start = 1 */
+			(struct ether_addr*)ieee1905_get_al_mac(), MAP_INIT_START, MAP_APPTYPE_MASTER);
 #endif /* BCM_APPEVENTD */
 		map_init_start++;
 	}

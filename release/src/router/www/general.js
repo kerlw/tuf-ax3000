@@ -1436,6 +1436,22 @@ function wl_auth_mode_change(isload){
 	else{
 		algos = new Array("1", "2", "3", "4");
 	}
+	
+	if(mode == 'sae' && document.form.wl_mfp.value != '2'){
+		$('#mbo_notice_combo').hide();
+		$('#mbo_notice_wpa3').show();
+		$('#mbo_notice').hide();
+	}
+	else if(mode == 'psk2sae' && document.form.wl_mfp.value == '0'){
+		$('#mbo_notice_wpa3').hide();
+		$('#mbo_notice_combo').show();
+		$('#mbo_notice').hide();
+	}
+	else{
+		$('#mbo_notice_wpa3').hide();
+		$('#mbo_notice_combo').hide();
+		$('#mbo_notice').hide();
+	}
 
 	/* Reconstruct network key indices array from new network key indices */
 	free_options(document.form.wl_key);

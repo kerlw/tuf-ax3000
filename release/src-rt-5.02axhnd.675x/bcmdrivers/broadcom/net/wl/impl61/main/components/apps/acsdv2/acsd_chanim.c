@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: acsd_chanim.c 775476 2019-05-31 11:00:28Z $
+ * $Id: acsd_chanim.c 777524 2019-08-05 08:28:05Z $
  */
 
 #include "acsd_svr.h"
@@ -777,7 +777,7 @@ static uint8 acsd_get_segment_rep(acs_chaninfo_t * c_info, uint8 val)
 /** takes c_info->ch_avail, divides the values into segments and replaces
  * original ch_avail values with segment representatives instead
  */
-static int acsd_segmentize_chanim(acs_chaninfo_t * c_info)
+int acsd_segmentize_chanim(acs_chaninfo_t * c_info)
 {
 	int i;
 

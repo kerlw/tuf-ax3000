@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_alloc.c 774133 2019-04-11 09:15:54Z $
+ * $Id: wlc_alloc.c 777731 2019-08-07 19:37:44Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds

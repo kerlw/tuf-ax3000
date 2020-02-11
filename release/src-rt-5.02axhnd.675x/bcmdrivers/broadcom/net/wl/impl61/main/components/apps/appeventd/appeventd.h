@@ -83,4 +83,5 @@ extern int appeventd_debug_level;
 #define APP_E_WBD_MASTER_STEER_END   10  /* status: SUCC */
 #define APP_E_WBD_MASTER_MAP_INIT_START   11  /* status: SUCC */
 #define APP_E_WBD_MASTER_MAP_INIT_END   12  /* status: SUCC */
+#define APP_E_WBD_SLAVE_MAP_INIT_END 13  /* status: SUCC */
 #endif /* _appeventd_h_ */

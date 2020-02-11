@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wluc_rrm.c 774769 2019-05-07 08:46:22Z $
+ * $Id: wluc_rrm.c 777286 2019-07-25 19:43:30Z $
  */
 
 /* WL_BCN_RPT_SUPPORT is a precommit hook and shall be cleanned up after complete
@@ -82,6 +82,11 @@ static cmd_func_t wl_rrm_lci_req;
 static cmd_func_t wl_rrm_civic_req;
 static cmd_func_t wl_rrm_locid_req;
 static cmd_func_t wl_rrm_config;
+static cmd_func_t wl_rrm_nbr_ssid;
+static cmd_func_t wl_rrm_nbr_lci;
+static cmd_func_t wl_rrm_nbr_civic;
+static cmd_func_t wl_rrm_nbr;
+static cmd_func_t wl_rrm_frng;
 
 typedef struct wl_bcn_report_cfg wl_bcn_report_cfg_t;
 static cmd_func_t wl_bcn_report;
@@ -162,6 +167,27 @@ static cmd_t wl_rrm_cmds[] = {
 	"Send 802.11k Transmit Stream/Category measurement request frame\n"
 	"\tUsage: wl rrm_txstrm_req [da] [random int] [duration] "
 	"[repetitions] [peer mac] [tid] [bin0_range]"},
+	{ "rrm_nbr", wl_rrm_nbr, -1, WLC_SET_VAR,
+	"add Civic/LCI/SSID subelement to 11k neighbor report list element\n"
+	"\tUsage: wl rrm_nbr civic <bssid> <civic_subelement>\n"
+	"\tUsage: wl rrm_nbr lci <bssid> <lci_subelement>\n"
+	"\tUsage: wl rrm_nbr chanspec <bssid> <chanspec>\n"
+	"\tUsage: wl rrm_nbr ssid <bssid> <ssid>"},
+	{ "rrm_frng", wl_rrm_frng, -1, WLC_SET_VAR,
+	"send RRM FTM Range request/report frame\n"
+	"\tUsage: wl rrm_frng send_req <da> <init delay> <min_ap_count> <num_aps> <max age>"
+	" [<bssid> <channel> <regulatory> <phytype> <bssid_info>...]\n"
+	"\tUsage: wl rrm_frng send_rep <da> <range entry count> <error entry count>"
+	" <measurement start time> <bssid> <range> <max range error> <error code>\n"
+	"\tUsage: wl rrm_frng direct <0|1>\n"},
+#ifdef WL_PROXDETECT
+	{ "rrm_lci_req", wl_rrm_lci_req, -1, WLC_SET_VAR,
+	"send 11k LCI measurement request\n"
+	"\tUsage: wl rrm_lci_req <da> <subject>"},
+	{ "rrm_civic_req", wl_rrm_civic_req, -1, WLC_SET_VAR,
+	"send 11k civic location measurement request\n"
+	"\tUsage: wl rrm_civic_req <da> <subject> <type> <service intvl> <siu>"},
+#else
 	{ "rrm_lci_req", wl_rrm_lci_req, -1, WLC_SET_VAR,
 	"Send 802.11k Location Configuration Information (LCI) request frame\n"
 	"\tUsage: wl rrm_lci_req [da] [repetitions] [locaton sbj] "
@@ -170,6 +196,7 @@ static cmd_t wl_rrm_cmds[] = {
 	"Send 802.11k Location Civic request frame\n"
 	"\tUsage: wl rrm_civic_req [da] [repetitions] [locaton sbj] "
 	"[location type] [siu] [si]"},
+#endif /* WL_PROXDETECT */
 	{ "rrm_locid_req", wl_rrm_locid_req, -1, WLC_SET_VAR,
 	"Send 802.11k Location Identifier request frame\n"
 	"\tUsage: wl rrm_locid_req [da] [repetitions] [locaton sbj] "
@@ -955,7 +982,7 @@ wl_rrm_nbr_add_nbr_v1(void *wl, cmd_t *cmd, char **argv)
 	for (argc = 0; argv[argc]; argc++)
 		;
 
-	if (argc != 9) {
+	if (argc > 9) {
 		return BCME_USAGE_ERROR;
 	}
 
@@ -978,14 +1005,20 @@ wl_rrm_nbr_add_nbr_v1(void *wl, cmd_t *cmd, char **argv)
 	nbr_elt.phytype = htod32(strtoul(argv[5], NULL, 0));
 
 	/* ssid */
-	nbr_elt.ssid.SSID_len = strlen(argv[6]);
-	memcpy(&(nbr_elt.ssid.SSID), argv[6], nbr_elt.ssid.SSID_len);
+	if (argc >= 7 && argv[6]) {
+		nbr_elt.ssid.SSID_len = strlen(argv[6]);
+		memcpy(&(nbr_elt.ssid.SSID), argv[6], nbr_elt.ssid.SSID_len);
+	}
 
 	/* chanspec */
-	nbr_elt.chanspec = htod32(strtoul(argv[7], NULL, 0));
+	if (argc >= 8 && argv[7]) {
+		nbr_elt.chanspec = htod32(strtoul(argv[7], NULL, 0));
+	}
 
 	/* bss_trans_preference */
-	nbr_elt.bss_trans_preference = htod32(strtoul(argv[8], NULL, 0));
+	if (argc >= 9 && argv[8]) {
+		nbr_elt.bss_trans_preference = htod32(strtoul(argv[8], NULL, 0));
+	}
 
 	nbr_elt.version = WL_RRM_NBR_RPT_VER;
 	nbr_elt.id = DOT11_MNG_NEIGHBOR_REP_ID;
@@ -1069,6 +1102,96 @@ wl_rrm_txstrm_req(void *wl, cmd_t *cmd, char **argv)
 	return err;
 }
 
+#ifdef WL_PROXDETECT
+static int
+wl_rrm_lci_req(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	int argc;
+	const char *cmdname = "rrm_lci_req";
+	lci_req_t lcireq_buf;
+
+	UNUSED_PARAMETER(cmd);
+	memset(&lcireq_buf, 0, sizeof(lcireq_buf));
+
+	for (argc = 0; argv[argc]; argc++)
+		;
+
+	if (argc < 3) {
+		return BCME_USAGE_ERROR;
+	}
+
+	if (argv[1]) {
+		/* da */
+		if (!wl_ether_atoe(argv[1], &lcireq_buf.da)) {
+			printf("wl_rrm_lci_req parsing da failed\n");
+			return BCME_USAGE_ERROR;
+		}
+	}
+
+	/* subject */
+	if (argv[2]) {
+		lcireq_buf.subject = (uint8)strtoul(argv[2], NULL, 0);
+	}
+
+	/* Max Age, 0 = reserved, 0xffff = any time is acceptable */
+	if (argv[3]) {
+		lcireq_buf.max_age = htod16((uint16) strtoul(argv[3], NULL, 0));
+	}
+
+	lcireq_buf.version = WL_RRM_LCI_REQ_VER;
+	err = wlu_iovar_set(wl, cmdname, &lcireq_buf, sizeof(lcireq_buf));
+	return err;
+}
+
+static int
+wl_rrm_civic_req(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	int argc;
+	const char *cmdname = "rrm_civic_req";
+	civic_req_t civicreq_buf;
+
+	UNUSED_PARAMETER(cmd);
+	memset(&civicreq_buf, 0, sizeof(civicreq_buf));
+
+	for (argc = 0; argv[argc]; argc++)
+		;
+
+	if (argc != 6) {
+		return BCME_USAGE_ERROR;
+	}
+
+	if (argv[1]) {
+		/* da */
+		if (!wl_ether_atoe(argv[1], &civicreq_buf.da)) {
+			printf("wl_rrm_civic_req parsing da failed\n");
+			return BCME_USAGE_ERROR;
+		}
+	}
+	/* subject */
+	if (argv[2]) {
+		civicreq_buf.subject = (uint8)strtoul(argv[2], NULL, 0);
+	}
+	/* type */
+	if (argv[3]) {
+		civicreq_buf.type = (uint8)strtoul(argv[3], NULL, 0);
+	}
+	/* service_interval */
+	if (argv[4]) {
+		civicreq_buf.service_interval = htod16(strtoul(argv[4], NULL, 0));
+	}
+	/* si_units */
+	if (argv[5]) {
+		civicreq_buf.si_units = (uint8)strtoul(argv[5], NULL, 0);
+	}
+
+	civicreq_buf.version = WL_RRM_CIVIC_REQ_VER;
+	err = wlu_iovar_set(wl, cmdname, &civicreq_buf, sizeof(civicreq_buf));
+	return err;
+}
+
+#else
 static int
 wl_rrm_lci_req(void *wl, cmd_t *cmd, char **argv)
 {
@@ -1148,6 +1271,7 @@ wl_rrm_civic_req(void *wl, cmd_t *cmd, char **argv)
 	err = wlu_iovar_set(wl, cmd->name, &civic_buf, sizeof(civic_buf));
 	return err;
 }
+#endif /* WL_PROXDETECT */
 
 static int
 wl_rrm_locid_req(void *wl, cmd_t *cmd, char **argv)
@@ -1704,4 +1828,622 @@ wl_bcn_report(void *wl, cmd_t *cmd, char **argv)
 	}
 
 	return ret;
+}
+
+static int
+wl_rrm_frng_req(void *wl, cmd_t *cmd, char **argv, int argc, int cmd_id)
+{
+	int err = 0, i, buflen = WL_RRM_FRNG_MIN_LENGTH;
+	frngreq_t *frng_buf;
+	wl_rrm_frng_ioc_t *rrm_frng_cmd = NULL;
+	int min_args = 7; /* can leave off target params to indicate using current neighbor list */
+	int target_args = 6;
+	int malloc_len = sizeof(*rrm_frng_cmd) + sizeof(frngreq_t) +
+		(sizeof(frngreq_target_t) * (DOT11_FTM_RANGE_ENTRY_MAX_COUNT-1));
+
+	rrm_frng_cmd = (wl_rrm_frng_ioc_t *) calloc(1, malloc_len);
+	if (rrm_frng_cmd == NULL) {
+		printf("Failed to allocate buffer of %d bytes\n", malloc_len);
+		err = BCME_NOMEM;
+		goto done;
+	}
+
+	rrm_frng_cmd->id = cmd_id;
+
+	if (argc < min_args) {
+		printf("%s: too few arguments %d\n", __FUNCTION__, argc);
+		err = BCME_USAGE_ERROR;
+		goto done;
+	}
+
+	frng_buf = (frngreq_t *) &rrm_frng_cmd->data[0];
+	frng_buf->reps = 0; /* Only one repetition of a range request */
+	frng_buf->event = WL_RRM_EVENT_NONE; /* Receive processing should set this */
+
+	if (argv[1]) {
+		/* da */
+		if (!wl_ether_atoe(argv[1], &frng_buf->da)) {
+			printf("%s: parsing da failed\n", __FUNCTION__);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+	}
+
+	/* max initialization delay */
+	if (argv[2]) {
+		frng_buf->max_init_delay = htod16((uint16)(strtoul(argv[2], NULL, 0)));
+	}
+
+	/* min AP count (1-DOT11_FTM_RANGE_ENTRY_MAX_COUNT) */
+	if (argv[3]) {
+		frng_buf->min_ap_count = (uint8) strtoul(argv[3], NULL, 0);
+		if (frng_buf->min_ap_count < 1 ||
+			frng_buf->min_ap_count > DOT11_FTM_RANGE_ENTRY_MAX_COUNT) {
+			printf("%s: min AP count must be between 1 and 15\n", __FUNCTION__);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+	}
+
+	/* num APs */
+	if (argv[4]) {
+		frng_buf->num_aps = (uint8) strtoul(argv[4], NULL, 0);
+		if (frng_buf->num_aps < frng_buf->min_ap_count)
+		{
+			printf("%s: num_aps %d must be >= min_ap_count %d\n",
+				__FUNCTION__, frng_buf->num_aps, frng_buf->min_ap_count);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+	}
+
+	/* 6 arguments for each target */
+	if (argc > (min_args + (frng_buf->num_aps * target_args))) {
+		printf("%s: incorrect # of arguments: %d\n", __FUNCTION__, argc);
+		err = BCME_USAGE_ERROR;
+		goto done;
+	}
+
+	/* Max Age, 0 = unused, 0xffff = any time is acceptable */
+	if (argv[5]) {
+		frng_buf->max_age = htod16((uint16) strtoul(argv[5], NULL, 0));
+	}
+
+	buflen += OFFSETOF(frngreq_t, targets);
+
+	for (i = 0; i < frng_buf->num_aps && i < DOT11_FTM_RANGE_ENTRY_MAX_COUNT; i++) {
+		if (argv[6+(i*target_args)]) {
+			if (!wl_ether_atoe(argv[6+(i*target_args)], &frng_buf->targets[i].bssid)) {
+				printf("%s: parsing bssid %d failed\n", __FUNCTION__, i);
+				err = BCME_USAGE_ERROR;
+				goto done;
+			}
+		} else {
+			/* try to use current neighbor list */
+			buflen += sizeof(frngreq_target_t);
+			break;
+		}
+
+		if (argv[7+(i*target_args)]) {
+			frng_buf->targets[i].channel = (uint8) strtoul(argv[7+(i*target_args)],
+				NULL, 0);
+		} else {
+			printf("%s: not enough arguments: %d\n", __FUNCTION__, argc);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+
+		if (argv[8+(i*target_args)]) {
+			frng_buf->targets[i].reg = (uint8) strtoul(argv[8+(i*target_args)],
+				NULL, 0);
+		} else {
+			printf("%s: not enough arguments: %d\n", __FUNCTION__, argc);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+
+		if (argv[9+(i*target_args)]) {
+			frng_buf->targets[i].phytype = (uint8) strtoul(argv[9+(i*target_args)],
+				NULL, 0);
+		} else {
+			printf("%s: not enough arguments: %d\n", __FUNCTION__, argc);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+
+		if (argv[10+(i*target_args)]) {
+			frng_buf->targets[i].bssid_info = (uint32)strtoul(argv[10+(i*target_args)],
+				NULL, 0);
+		} else {
+			printf("%s: not enough arguments: %d\n", __FUNCTION__, argc);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+
+		if (argv[11+(i*target_args)]) {
+			chanspec_t chanspec = wf_chspec_aton(argv[11+(i*target_args)]);
+			frng_buf->targets[i].chanspec = wl_chspec_to_driver(chanspec);
+		} else {
+			printf("%s: not enough arguments: %d\n", __FUNCTION__, argc);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+
+		buflen += sizeof(frngreq_target_t);
+	}
+
+	rrm_frng_cmd->len = buflen - WL_RRM_FRNG_MIN_LENGTH;
+
+	err = wlu_iovar_set(wl, cmd->name, (void *)rrm_frng_cmd, buflen);
+
+	if (err != BCME_OK) {
+		printf("%s: err %d returned from wlu_iovar_set\n", __FUNCTION__, err);
+	}
+
+done:
+	if (rrm_frng_cmd) {
+		free(rrm_frng_cmd);
+	}
+
+	return err;
+}
+
+static int
+wl_rrm_frng_rep(void *wl, cmd_t *cmd, char **argv, int argc, int cmd_id)
+{
+	int err = 0;
+	int buflen = 0;
+	frngrep_t *frng_buf;
+	wl_rrm_frng_ioc_t *rrm_frng_cmd = NULL;
+	int malloc_len = sizeof(*rrm_frng_cmd) + sizeof(*frng_buf);
+
+	rrm_frng_cmd = (wl_rrm_frng_ioc_t *) calloc(1, malloc_len);
+
+	if (rrm_frng_cmd == NULL) {
+		printf("Failed to allocate buffer of %d bytes\n", malloc_len);
+		err = BCME_NOMEM;
+		goto done;
+	}
+
+	rrm_frng_cmd->id = (uint16)cmd_id;
+
+	/*
+	 * Currently, this function allows only the sending of one
+	 * range entry report with optionally one error report --
+	 * defining all the fields for multiple entries of both
+	 * range entry cound and error entry count is too unwieldy
+	 * for use in a wl command
+	 */
+
+	if (argc < 9) {
+		printf("%s: incorrect # of arguments %d\n", __FUNCTION__, argc);
+		err = BCME_USAGE_ERROR;
+		goto done;
+	}
+
+	frng_buf = (frngrep_t *)rrm_frng_cmd->data;
+	buflen += OFFSETOF(frngrep_t, range_entries);
+
+	frng_buf->dialog_token = 0; /* token should be input and match with request token */
+	frng_buf->event = WL_RRM_EVENT_NONE; /* Receive processing should set this */
+
+	/* da */
+	if (argv[1]) {
+		if (!wl_ether_atoe(argv[1], &frng_buf->da)) {
+			printf("%s: parsing da failed\n", __FUNCTION__);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+	}
+
+	/*
+	 * Range entry count, currently only one allowed in wl command, however
+	 * keeping the paramter allows for easier future expansion
+	*/
+	if (argv[2]) {
+		frng_buf->range_entry_count = (uint8)(strtoul(argv[2], NULL, 0));
+		if (frng_buf->range_entry_count != 1) {
+			printf("%s: range entry count can be only 1\n", __FUNCTION__);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+	}
+
+	/* Error entry count, 0-1 */
+	if (argv[3]) {
+		frng_buf->error_entry_count = (uint8)(strtoul(argv[3], NULL, 0));
+		if (frng_buf->error_entry_count > 1) {
+			printf("%s: error entry count can be only 0 or 1\n", __FUNCTION__);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+		if (frng_buf->error_entry_count == 1 && argc < 10) {
+			printf("%s: incorrect # of arguments %d\n", __FUNCTION__, argc);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+	}
+
+	/* Measurement start time */
+	if (argv[4]) {
+		frng_buf->range_entries[0].start_tsf = htod32((uint32)(strtoul(argv[4], NULL, 0)));
+		if (frng_buf->error_entry_count != 0) {
+			frng_buf->error_entries[0].start_tsf = htod32((uint32)(strtoul(argv[4],
+				NULL, 0)));
+		}
+	}
+
+	/* BSSID whose range is being reported */
+	if (argv[5]) {
+		if (!wl_ether_atoe(argv[5], &frng_buf->range_entries[0].bssid)) {
+			printf("%s: parsing bssid failed\n", __FUNCTION__);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+		if (frng_buf->error_entry_count != 0) {
+			(void) wl_ether_atoe(argv[5], &frng_buf->error_entries[0].bssid);
+		}
+	}
+
+	/* Range */
+	if (argv[6]) {
+		frng_buf->range_entries[0].range = htod16((uint16)(strtoul(argv[6], NULL, 0)));
+	}
+
+	/* Max range error */
+	if (argv[7]) {
+		frng_buf->range_entries[0].max_err = htod16((uint16)(strtoul(argv[7], NULL, 0)));
+	}
+
+	/* Error code */
+	if (argv[8]) {
+		frng_buf->error_entries[0].code = (uint8)(strtoul(argv[8], NULL, 0));
+
+		if ((frng_buf->error_entries[0].code != DOT11_FTM_RANGE_ERROR_AP_INCAPABLE) &&
+			(frng_buf->error_entries[0].code != DOT11_FTM_RANGE_ERROR_AP_FAILED) &&
+			(frng_buf->error_entries[0].code != DOT11_FTM_RANGE_ERROR_TX_FAILED))
+		{
+			printf("%s: error code %d incorrect, should be %d, %d, or %d\n",
+				__FUNCTION__, frng_buf->error_entries[0].code,
+				DOT11_FTM_RANGE_ERROR_AP_INCAPABLE,
+				DOT11_FTM_RANGE_ERROR_AP_FAILED,
+				DOT11_FTM_RANGE_ERROR_TX_FAILED);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+	}
+
+	buflen += DOT11_FTM_RANGE_ENTRY_MAX_COUNT * sizeof(frngrep_range_t);
+	buflen += frng_buf->error_entry_count * sizeof(frngrep_error_t);
+	rrm_frng_cmd->len = buflen;
+	buflen += WL_RRM_FRNG_MIN_LENGTH;
+
+	err = wlu_iovar_set(wl, cmd->name, (void *)rrm_frng_cmd, buflen);
+
+	if (err != BCME_OK) {
+		printf("%s: err %d returned from wlu_iovar_set\n", __FUNCTION__, err);
+	}
+
+done:
+	if (rrm_frng_cmd) {
+		free(rrm_frng_cmd);
+	}
+
+	return err;
+}
+
+static int
+wl_rrm_frng_dir(void *wl, cmd_t *cmd, char **argv, int argc, int cmd_id)
+{
+	int err = 0;
+	int buflen = 0;
+	wl_rrm_frng_ioc_t *rrm_frng_cmd = NULL;
+	uint8 mode = 0;
+	int malloc_len = sizeof(*rrm_frng_cmd) + sizeof(mode);
+
+	rrm_frng_cmd = (wl_rrm_frng_ioc_t *) calloc(1, malloc_len);
+
+	if (rrm_frng_cmd == NULL) {
+		printf("Failed to allocate buffer of %d bytes\n", malloc_len);
+		err = BCME_NOMEM;
+		goto done;
+	}
+
+	rrm_frng_cmd->id = (uint16)cmd_id;
+
+	if (argc != 3) {
+		printf("%s: incorrect # of arguments %d\n", __FUNCTION__, argc);
+		err = BCME_USAGE_ERROR;
+		goto done;
+	}
+
+	/* input is 1 or 0 */
+	if (argv[1]) {
+		mode = (uint8)(strtoul(argv[1], NULL, 0));
+		if (mode != 1 && mode != 0) {
+			printf("%s: expected 0|1 value\n", __FUNCTION__);
+			err = BCME_USAGE_ERROR;
+			goto done;
+		}
+	}
+	rrm_frng_cmd->data[0] = mode;
+	buflen = sizeof(mode);
+	rrm_frng_cmd->len = buflen;
+	buflen += WL_RRM_FRNG_MIN_LENGTH;
+
+	err = wlu_iovar_set(wl, cmd->name, (void *)rrm_frng_cmd, buflen);
+
+	if (err != BCME_OK) {
+		printf("%s: err %d returned from wlu_iovar_set\n", __FUNCTION__, err);
+	}
+
+done:
+	if (rrm_frng_cmd) {
+		free(rrm_frng_cmd);
+	}
+
+	return err;
+}
+
+static int
+wl_rrm_frng(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+	int argc;
+
+	if (!argv[1]) {
+		printf("%s: no subcommand given, must be send_req|send_rep|direct\n", __FUNCTION__);
+		return BCME_USAGE_ERROR;
+	}
+
+	for (argc = 0; argv[argc]; argc++)
+		;
+
+	if (strcmp(argv[1], "send_req") == 0) {
+		argv++;
+		err = wl_rrm_frng_req(wl, cmd, argv, argc, WL_RRM_FRNG_SET_REQ);
+	} else if (strcmp(argv[1], "send_rep") == 0) {
+		argv++;
+		err = wl_rrm_frng_rep(wl, cmd, argv, argc, WL_RRM_FRNG_SET_REP);
+	} else if (strcmp(argv[1], "direct") == 0) {
+		argv++;
+		err = wl_rrm_frng_dir(wl, cmd, argv, argc, WL_RRM_FRNG_SET_DIR);
+	} else {
+		printf("%s: incorrect command, not send_req|send_rep|direct\n", __FUNCTION__);
+		return BCME_USAGE_ERROR;
+	}
+
+	return err;
+}
+
+static int
+wl_rrm_nbr_ssid(void *wl, cmd_t *cmd, char **argv)
+{
+	int argc;
+	int err = 0;
+	nbr_rpt_elem_t *nbr_elt;
+	const char *cmdname = "ssid";
+	char smbuf[WLC_IOCTL_SMLEN];
+	int buflen = 0;
+
+	memset(smbuf, 0, sizeof(smbuf));
+	strncpy(&smbuf[buflen], cmdname, strlen(cmdname));
+	buflen += strlen(cmdname) + 1;
+	nbr_elt = (nbr_rpt_elem_t *) &smbuf[buflen];
+	buflen += sizeof(*nbr_elt);
+
+	for (argc = 0; argv[argc]; argc++)
+		;
+
+	if (argc != 3) {
+		return BCME_USAGE_ERROR;
+	}
+
+	/* bssid */
+	if (!wl_ether_atoe(argv[1], &nbr_elt->bssid)) {
+		printf("wl_rrm_nbr_ssid parsing bssid failed\n");
+		return BCME_USAGE_ERROR;
+	}
+
+	/* SSID */
+	if (argc == 3 && argv[2]) {
+		uint32 len;
+		wlc_ssid_t ssid;
+
+		len = strlen(argv[2]);
+		if (len > DOT11_MAX_SSID_LEN) {
+			printf("ssid too long\n");
+			return (-1);
+		}
+		memset(&ssid, 0, sizeof(wlc_ssid_t));
+		memcpy(ssid.SSID, argv[2], len);
+		ssid.SSID_len = len;
+		memcpy(&nbr_elt->ssid, &ssid, sizeof(wlc_ssid_t));
+	} else {
+		memset(&nbr_elt->ssid, 0, sizeof(wlc_ssid_t));
+	}
+
+	nbr_elt->id = DOT11_MNG_NEIGHBOR_REP_ID;
+
+	/*
+	Note that nbr_elt.len will be the size of the neighbor element
+	itself, as this structure does not go out on the wire
+	*/
+	nbr_elt->len = sizeof(nbr_elt);
+	/*
+	printf("wl_rrm_nbr_add_nbr element len %d\n", nbr_elt->len);
+	*/
+
+	nbr_elt->version = WL_RRM_NBR_RPT_VER;
+
+	err = wlu_iovar_set(wl, cmd->name, smbuf, buflen);
+
+	return err;
+}
+
+static int
+wl_rrm_nbr_chanspec(void *wl, cmd_t *cmd, char **argv)
+{
+	int argc;
+	int err = 0;
+	nbr_rpt_elem_t *nbr_elt;
+	const char *cmdname = "chanspec";
+	char smbuf[WLC_IOCTL_SMLEN];
+	int buflen = 0;
+
+	memset(smbuf, 0, sizeof(smbuf));
+	strncpy(&smbuf[buflen], cmdname, strlen(cmdname));
+	buflen += strlen(cmdname) + 1;
+	nbr_elt = (nbr_rpt_elem_t *) &smbuf[buflen];
+	buflen += sizeof(*nbr_elt);
+
+	for (argc = 0; argv[argc]; argc++)
+		;
+
+	if (argc != 3) {
+		return BCME_USAGE_ERROR;
+	}
+
+	/* bssid */
+	if (!wl_ether_atoe(argv[1], &nbr_elt->bssid)) {
+		printf("wl_rrm_nbr_chanspec parsing bssid failed\n");
+		return BCME_USAGE_ERROR;
+	}
+
+	/* chanspec */
+	if (argc == 3 && argv[2]) {
+		chanspec_t chanspec = wf_chspec_aton(argv[2]);
+		if (chanspec == 0 || !(wf_chspec_valid(chanspec))) {
+			return BCME_BADCHAN;
+		}
+		nbr_elt->chanspec = wl_chspec_to_driver(chanspec);
+	}
+
+	nbr_elt->id = DOT11_MNG_NEIGHBOR_REP_ID;
+	nbr_elt->len = sizeof(nbr_elt);
+	nbr_elt->version = WL_RRM_NBR_RPT_VER;
+
+	err = wlu_iovar_set(wl, cmd->name, smbuf, buflen);
+
+	return err;
+}
+
+static int
+wl_rrm_nbr_lci(void *wl, cmd_t *cmd, char **argv)
+{
+	int argc;
+	int err = 0;
+	int len = 0;
+	char smbuf[WLC_IOCTL_SMLEN*2];
+	char *bufptr = &smbuf[0];
+	const char *cmdname = "lci";
+	int buflen = 0;
+
+	memset(smbuf, 0, sizeof(smbuf));
+	strncpy(&smbuf[buflen], cmdname, strlen(cmdname));
+	buflen += strlen(cmdname) + 1;
+	bufptr += buflen;
+
+	for (argc = 0; argv[argc]; argc++)
+		;
+
+	if (argc != 3) {
+		return BCME_USAGE_ERROR;
+	}
+
+	/* bssid */
+	if (!wl_ether_atoe(argv[1], (struct ether_addr *)bufptr)) {
+		printf("%s: parsing bssid failed\n", __FUNCTION__);
+		return BCME_USAGE_ERROR;
+	}
+
+	bufptr += ETHER_ADDR_LEN;
+	buflen += ETHER_ADDR_LEN;
+
+	len = wl_rrm_parse_location(argv[2], bufptr, sizeof(smbuf));
+	buflen += len;
+
+	if (len < 0) {
+		printf("%s: parsing LCI location arguments failed\n", __FUNCTION__);
+		return -1;
+	}
+
+	err = wlu_iovar_set(wl, cmd->name, smbuf, buflen);
+
+	return err;
+}
+
+static int
+wl_rrm_nbr_civic(void *wl, cmd_t *cmd, char **argv)
+{
+	int argc;
+	int err = 0;
+	int len = 0;
+	char smbuf[WLC_IOCTL_SMLEN*2];
+	char *bufptr = &smbuf[0];
+	const char *cmdname = "civic";
+	int buflen = 0;
+
+	memset(smbuf, 0, sizeof(smbuf));
+	strncpy(&smbuf[buflen], cmdname, strlen(cmdname));
+	buflen += strlen(cmdname) + 1;
+	bufptr += buflen;
+
+	for (argc = 0; argv[argc]; argc++)
+		;
+
+	if (argc != 3) {
+		return BCME_USAGE_ERROR;
+	}
+
+	/* bssid */
+	if (!wl_ether_atoe(argv[1], (struct ether_addr *) bufptr)) {
+		printf("%s: parsing bssid failed\n", __FUNCTION__);
+		return BCME_USAGE_ERROR;
+	}
+
+	bufptr += ETHER_ADDR_LEN;
+	buflen += ETHER_ADDR_LEN;
+
+	len = wl_rrm_parse_location(argv[2], bufptr, sizeof(smbuf));
+	buflen += len;
+
+	if (len < 0) {
+		printf("%s: parsing Civic location arguments failed\n", __FUNCTION__);
+		return -1;
+	}
+
+	err = wlu_iovar_set(wl, cmd->name, smbuf, buflen);
+
+	return err;
+}
+
+static int
+wl_rrm_nbr(void *wl, cmd_t *cmd, char **argv)
+{
+	int err = 0;
+
+	if (!argv[1]) {
+		printf("%s: no element type given, must be ssid, lci, or civic\n", __FUNCTION__);
+		return BCME_USAGE_ERROR;
+	}
+
+	if (strcmp(argv[1], "ssid") == 0) {
+		argv++;
+		err = wl_rrm_nbr_ssid(wl, cmd, argv);
+	} else if (strcmp(argv[1], "lci") == 0) {
+		argv++;
+		err = wl_rrm_nbr_lci(wl, cmd, argv);
+	} else if (strcmp(argv[1], "civic") == 0) {
+		argv++;
+		err = wl_rrm_nbr_civic(wl, cmd, argv);
+	} else if (strcmp(argv[1], "chanspec") == 0) {
+		argv++;
+		err = wl_rrm_nbr_chanspec(wl, cmd, argv);
+	} else {
+		printf("%s: incorrect element type, not ssid, lci, or civic\n", __FUNCTION__);
+		return BCME_USAGE_ERROR;
+	}
+
+	return err;
 }

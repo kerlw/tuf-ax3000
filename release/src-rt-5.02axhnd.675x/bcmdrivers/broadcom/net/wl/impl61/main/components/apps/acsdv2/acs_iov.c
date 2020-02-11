@@ -44,7 +44,7 @@
  *	OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *	NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_iov.c 775468 2019-05-31 05:30:04Z $
+ *	$Id: acs_iov.c 777838 2019-08-13 06:42:07Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,7 +74,7 @@ acs_get_chanspec_info(acs_chaninfo_t *c_info, chanspec_t chspec)
 	uint32 chinfo = 0, max_inactive = 0, sub_chinfo;
 
 	FOREACH_20_SB(chspec, sub_channel) {
-		sub_chspec = (uint16) sub_channel;
+		sub_chspec = CH20MHZ_CHSPEC(sub_channel);
 		ret = acs_get_per_chan_info(c_info, sub_chspec, resbuf, ACS_PER_CHAN_INFO_BUF_LEN);
 		if (ret != BCME_OK) {
 			ACSD_ERROR("%s Failed to get channel (0x%02x) info: %d\n",

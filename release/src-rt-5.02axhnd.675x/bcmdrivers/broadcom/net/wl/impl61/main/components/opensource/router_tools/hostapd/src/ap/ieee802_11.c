@@ -2297,6 +2297,14 @@ static void handle_auth(struct hostapd_data *hapd,
 
 		sta->added_unassoc = 1;
 	}
+#ifdef CONFIG_DRIVER_BRCM
+	/* XXX Added this WAR for now, need to revisit this once we have
+	 * more clarity about NL80211_FEATURE_FULL_AP_CLIENT_STATE feature
+	 */
+	else {
+		sta->added_unassoc = 1;
+	}
+#endif /* CONFIG_DRIVER_BRCM */
 
 	switch (auth_alg) {
 	case WLAN_AUTH_OPEN:
@@ -3778,6 +3786,29 @@ static void handle_assoc(struct hostapd_data *hapd,
 			wpa_auth_sm_event(sta->wpa_sm, WPA_AUTH);
 			sta->auth_alg = WLAN_AUTH_OPEN;
 		} else {
+#ifdef CONFIG_DRIVER_BRCM
+			sta = ap_sta_add(hapd, mgmt->sa);
+			if (!sta) {
+				hostapd_logger(hapd, mgmt->sa,
+					       HOSTAPD_MODULE_IEEE80211,
+					       HOSTAPD_LEVEL_INFO,
+					       "Failed to add STA");
+				resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
+				goto fail;
+			}
+			hostapd_logger(hapd, sta->addr,
+				       HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_DEBUG,
+				       "Skip authentication for DMG/IEEE 802.11ad");
+			sta->flags |= WLAN_STA_AUTH;
+			wpa_auth_sm_event(sta->wpa_sm, WPA_AUTH);
+			sta->auth_alg = WLAN_AUTH_OPEN;
+			/* It comes here only when STA is already authenticated by the driver
+			 * and association request is getting handled by hostapd.
+			 * So set added_unassoc flag here.
+			 */
+			sta->added_unassoc = 1;
+#else
 			hostapd_logger(hapd, mgmt->sa,
 				       HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_INFO,
@@ -3787,6 +3818,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 			send_deauth(hapd, mgmt->sa,
 				    WLAN_REASON_CLASS2_FRAME_FROM_NONAUTH_STA);
 			return;
+#endif /* CONFIG_DRIVER_BRCM */
 		}
 	}
 

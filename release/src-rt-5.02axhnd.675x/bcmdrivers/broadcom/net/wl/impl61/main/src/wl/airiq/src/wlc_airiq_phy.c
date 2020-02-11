@@ -211,15 +211,6 @@ const uint8 airiq_43465mc_femctrl_lut_2ghz[4][2] =
 const uint8 airiq_43465mc_femctrl_lut_5ghz[4][2] =
 	{ { 0x3, 0x1 }, { 0x3, 0x1 }, { 0x15, 0x11 }, { 0xb, 0x9 } };
 #endif // endif
-const uint8 airiq_43684mc_femctrl_lut_2ghz[4][2] =
-	{ { 0x9, 0x9 }, { 0x9, 0x9 }, { 0x9, 0x9 }, { 0x9, 0x9 } };
-const uint8 airiq_43684mc_femctrl_lut_5ghz[4][2] =
-	{ { 0x9, 0xd }, { 0x9, 0xd }, { 0x9, 0xd }, { 0x9, 0xd } };
-
-const uint8 airiq_43694mc_femctrl_lut_2ghz[4][2] =
-	{ { 0x9, 0x9 }, { 0x9, 0x9 }, { 0x9, 0x9 }, { 0x9, 0x9 } };
-const uint8 airiq_43694mc_femctrl_lut_5ghz[4][2] =
-	{ { 0xd, 0xd }, { 0xd, 0xd }, { 0xd, 0xd }, { 0xd, 0xd } };
 
 /* Scale factors {20MHz, 40MHz, 80MHz} */
 const int8 lte_u_rev64_scale_3plus1[3] = {50, 52, 50};
@@ -435,7 +426,7 @@ wlc_airiq_phy_init(airiq_info_t *airiqh)
 		airiqh->svmp_smpl_seq_num_addr= SVMP_SMPL_SEQ_NUM_ADDR;
 		airiqh->svmp_smpl_chanspec_addr= SVMP_SMPL_CHANSPEC_ADDR;
 		airiqh->svmp_smpl_chanspec_3x3_addr= SVMP_SMPL_CHANSPEC_3X3_ADDR;
-
+		airiqh->svmp_smpl_coex_gpio_mask_addr= SVMP_SMPL_COEX_GPIO_MASK_ADDR;
 		break;
 	case 128:
 	case 129:
@@ -476,7 +467,7 @@ wlc_airiq_phy_init(airiq_info_t *airiqh)
 		airiqh->svmp_smpl_seq_num_addr= SVMP_AX_SMPL_SEQ_NUM_ADDR;
 		airiqh->svmp_smpl_chanspec_addr= SVMP_AX_SMPL_CHANSPEC_ADDR;
 		airiqh->svmp_smpl_chanspec_3x3_addr= SVMP_AX_SMPL_CHANSPEC_3X3_ADDR;
-
+		airiqh->svmp_smpl_coex_gpio_mask_addr= SVMP_AX_SMPL_COEX_GPIO_MASK_ADDR;
 		break;
 	default:
 		memcpy(&airiqh->gaintbl_24ghz, &airiq_gaintbl_rev65_24ghz,
@@ -535,6 +526,7 @@ wlc_airiq_phy_override_fem(airiq_info_t *airiqh, phy_info_t *pi, uint8 core,
 	uint8 elna, uint8 is5g, uint8 restore)
 {
 	uint8 lna2g,lna5g;
+	acphy_swctrlmap4_t *swctrl = pi->u.pi_acphy->sromi->swctrlmap4;
 
 	if (elna > 1) {
 		WL_ERROR(("%s: Invalid elna setting %d\n", __FUNCTION__, elna));
@@ -542,17 +534,14 @@ wlc_airiq_phy_override_fem(airiq_info_t *airiqh, phy_info_t *pi, uint8 core,
 	}
 	if (D11REV_GE(airiqh->wlc->pub->corerev, 128)) {
 
-		if(SI_CHIPID(airiqh->wlc->pub->sih) == BCM43684_CHIP_ID){
-			lna2g = airiq_43684mc_femctrl_lut_2ghz[core][elna];
-			lna5g = airiq_43684mc_femctrl_lut_5ghz[core][elna];
-		} else if(SI_CHIPID(airiqh->wlc->pub->sih) == BCM43694_CHIP_ID){
-			lna2g = airiq_43694mc_femctrl_lut_2ghz[core][elna];
-			lna5g = airiq_43694mc_femctrl_lut_5ghz[core][elna];
-		}
-		else {
-			WL_ERROR(("%s: Unknown CHIP ID %d\n", __FUNCTION__, SI_CHIPID(airiqh->wlc->pub->sih)));
-			lna2g = airiq_43684mc_femctrl_lut_2ghz[core][elna];
-			lna5g = airiq_43684mc_femctrl_lut_5ghz[core][elna];
+		/* use the FEM ctrol values as loaded from srom. We need to shift and
+		 OR with 0x1 since the FemOutputOvrCtrl register bit 0 is the override bit*/
+		if(elna) {
+			lna2g= ((swctrl->rx2g[core]) << 1) | 0x1;
+			lna5g= ((swctrl->rx5g[core]) << 1) | 0x1;
+		} else {
+			lna2g= ((swctrl->rxbyp2g[core]) << 1) & 0x1;
+			lna5g= ((swctrl->rxbyp5g[core]) << 1) & 0x1;
 		}
 
 		if (restore) {
@@ -860,14 +849,23 @@ wlc_airiq_phy_enable_fft_capture(airiq_info_t* airiqh,
 
 		/* Reinitialize VASIP FFT handshake */
 		wlc_airiq_phy_clear_svmp_status(airiqh);
-		/* Check if AIRIQ is offloaded */
+		/* Check if coex_gpio_mask is set */
+		if ((airiqh->coex_gpio_mask_5g ) && CHSPEC_IS5G(chanspec)) {
+			wlc_svmp_mem_set_axi(airiqh->wlc->hw, airiqh->svmp_smpl_coex_gpio_mask_addr, 1,
+				airiqh->coex_gpio_mask_5g);
+		} else  if ((airiqh->coex_gpio_mask_2g ) && CHSPEC_IS2G(chanspec)) {
+			wlc_svmp_mem_set_axi(airiqh->wlc->hw, airiqh->svmp_smpl_coex_gpio_mask_addr, 1,
+				airiqh->coex_gpio_mask_2g);
+		} else {
+			wlc_svmp_mem_set_axi(airiqh->wlc->hw, airiqh->svmp_smpl_coex_gpio_mask_addr, 1, 0x0);
+		}
 		wlc_svmp_mem_set_axi(airiqh->wlc->hw, airiqh->svmp_smpl_enable_addr, 1,
-		SVMP_SMPL_ENABLE_NON_OFFLOAD_FLAG);
+			SVMP_SMPL_ENABLE_NON_OFFLOAD_FLAG);
 		airiqh->iq_capture_enable = TRUE;
 	} else {
 		wlc_write_shm(wlc, M_FFT_SMPL_INTERVAL(wlc), fft_interval);
-		wlc_write_shm(wlc, M_FFT_SMPL_TIMER_TIMESTAMP(wlc), 0);
-		wlc_write_shm(wlc, M_FFT_SMPL_RX_CHAIN(wlc), airiqh->core);
+		// hardcode core to 0
+		wlc_write_shm(wlc, M_FFT_SMPL_RX_CHAIN(wlc), 0);
 		wlc_write_shm(wlc, M_FFT_SMPL_SEQUENCE_NUM(wlc), 0x0);
 		wlc_write_shm(wlc, M_FFT_SMPL_FFT_GAIN_RX0(wlc), gaindb );
 		wlc_write_shm(wlc, M_FFT_SMPL_CHANNEL(wlc), pi->radio_chanspec);
@@ -881,7 +879,6 @@ wlc_airiq_phy_enable_fft_capture(airiq_info_t* airiqh,
 			wlc_write_shm(wlc, M_FFT_SMPL_ENABLE(wlc), 4);
 		}
 #endif // endif
-		airiqh->fft_capture_enable = TRUE;
 	}
 }
 
@@ -899,7 +896,6 @@ wlc_airiq_phy_disable_fft_capture(airiq_info_t *airiqh)
 		wlc_write_shm(wlc, M_FFT_SMPL_ENABLE(wlc), 0);
 		wlc_write_shm(wlc, M_FFT_SMPL_CTRL(wlc), 0);
 
-		airiqh->fft_capture_enable = FALSE;
 	}
 	/* restore old settings */
 	wlc_airiq_phy_rfctrl_override_rxgain_acphy(airiqh, pi, (uint8)airiqh->core,

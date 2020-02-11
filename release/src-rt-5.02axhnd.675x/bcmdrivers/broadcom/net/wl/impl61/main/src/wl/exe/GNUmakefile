@@ -45,7 +45,7 @@
 #
 #  <<Broadcom-WL-IPTag/Proprietary:>>
 #
-# $Id: GNUmakefile 775206 2019-05-22 16:36:15Z $
+# $Id: GNUmakefile 777912 2019-08-14 18:14:51Z $
 
 # Work out the directory of this file.
 MWD := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
@@ -115,6 +115,11 @@ CFLAGS += -DSR_DEBUG
 
 ifeq ($(WLTEST),1)
     CFLAGS += -DSERDOWNLOAD
+    CFLAGS += -DWLTEST
+endif
+
+# binary compatible to mfgtest firmware
+ifneq ($(strip $(BCA_CPEROUTER)),)
     CFLAGS += -DWLTEST
 endif
 
@@ -282,6 +287,7 @@ ifeq ($(CONFIG_EAP),y)
   CFLAGS += -DWL_EAP_STATS -DWLPROPRIETARY_11N_RATES
   CFLAGS += -DWL_EAP_DROP_RX_MGMT_RSSI
   CFLAGS += -DWL_EAP_PER_VAP_CONFIG_RATESET
+  CFLAGS += -DWL_EAP_FIPS_LOOPBACK
   CFLAGS += -DWL_EAP_SNR
   CFLAGS += -DWL_EAP_POLL_IDLE_STA
 endif

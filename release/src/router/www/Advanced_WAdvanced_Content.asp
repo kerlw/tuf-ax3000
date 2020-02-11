@@ -621,6 +621,7 @@ function initial(){
 					document.form.wl_ofdma.value = 0;
 					document.getElementsByName('wl_ofdma')[0].style.backgroundColor = "#4C4C4C";
 					document.form.wl_ofdma.disabled = true;
+					$('#ofdma_hint').show();
 				}
 			}
 		}
@@ -630,6 +631,7 @@ function initial(){
 				document.form.wl_ofdma.value = 0;
 				document.getElementsByName('wl_ofdma')[0].style.backgroundColor = "#4C4C4C";
 				document.form.wl_ofdma.disabled = true;
+				$('#ofdma_hint').show();
 			}
 		}
 	}
@@ -1834,6 +1836,7 @@ function setOFDMA(){
 									<option value="0" <% nvram_match("wl_ofdma", "0","selected"); %>><#WLANConfig11b_WirelessCtrl_buttonname#></option>
 									<option value="1" <% nvram_match("wl_ofdma", "1","selected"); %>><#WLANConfig11b_WirelessCtrl_button1name#></option>
 								</select>
+								<span id="ofdma_hint" style="margin-left:4px;display:none">*Need to enable <a href="Advanced_Wireless_Content.asp" style="color:#FC0;text-decoration:underline;">802.11ax / Wi-Fi 6 mode</a></span>
 							</div>
 						</td>
 					</tr>

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_appeventd.c 764064 2018-05-23 13:09:46Z $
+ * $Id: wbd_appeventd.c 777334 2019-07-29 08:58:01Z $
  */
 
 #include "wbd.h"
@@ -56,7 +56,8 @@
 
 /* Copy device_id, init status, into buf and send as event data. */
 void
-wbd_appeventd_map_init(int evt, struct ether_addr *device_id, int status)
+wbd_appeventd_map_init(int evt, struct ether_addr *device_id, map_init_status_t status,
+	map_apptype_t app_id)
 {
 	unsigned char app_data[WBD_APPEVENT_BUFSIZE] = {0};
 	app_event_wbd_map_init_t *map_init = NULL;
@@ -65,6 +66,7 @@ wbd_appeventd_map_init(int evt, struct ether_addr *device_id, int status)
 	map_init = (app_event_wbd_map_init_t*)app_data;
 	eacopy(device_id, &(map_init->device_id));
 	map_init->status = status; /* Start = 1, end = 2 */
+	map_init->app_id = app_id; /* Master = 1, Slave = 2 */
 
 	app_event_sendup(evt, APP_E_WBD_STATUS_SUCCESS,
 		app_data, sizeof(*map_init));

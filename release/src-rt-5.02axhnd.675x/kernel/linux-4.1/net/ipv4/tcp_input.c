@@ -1376,7 +1376,12 @@ static bool tcp_shifted_skb(struct sock *sk, struct sk_buff *prev,
 	TCP_SKB_CB(skb)->seq += shifted;
 
 	tcp_skb_pcount_add(prev, pcount);
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11477*/
 	WARN_ON_ONCE(tcp_skb_pcount(skb) < pcount);
+#else
+	BUG_ON(tcp_skb_pcount(skb) < pcount);
+#endif //#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
 	tcp_skb_pcount_add(skb, -pcount);
 
 	/* When we're adding to gso_segs == 1, gso_size will be zero,
@@ -1442,6 +1447,8 @@ static int skb_can_shift(const struct sk_buff *skb)
 	return !skb_headlen(skb) && skb_is_nonlinear(skb);
 }
 
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11477*/
 int tcp_skb_shift(struct sk_buff *to, struct sk_buff *from,
 		  int pcount, int shiftlen)
 {
@@ -1456,6 +1463,7 @@ int tcp_skb_shift(struct sk_buff *to, struct sk_buff *from,
 		return 0;
 	return skb_shift(to, from, shiftlen);
 }
+#endif //#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
 
 /* Try collapsing SACK blocks spanning across multiple skbs to a single
  * skb.
@@ -1468,7 +1476,10 @@ static struct sk_buff *tcp_shift_skb_data(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *prev;
 	int mss;
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11477*/
 	int next_pcount;
+#endif //#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
 	int pcount = 0;
 	int len;
 	int in_sack;
@@ -1571,7 +1582,12 @@ static struct sk_buff *tcp_shift_skb_data(struct sock *sk, struct sk_buff *skb,
 	if (!after(TCP_SKB_CB(skb)->seq + len, tp->snd_una))
 		goto fallback;
 
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11477*/
 	if (!tcp_skb_shift(prev, skb, pcount, len))
+#else
+	if (!skb_shift(prev, skb, len))
+#endif //#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
 		goto fallback;
 	if (!tcp_shifted_skb(sk, prev, skb, state, pcount, len, mss, dup_sack))
 		goto out;
@@ -1590,11 +1606,19 @@ static struct sk_buff *tcp_shift_skb_data(struct sock *sk, struct sk_buff *skb,
 		goto out;
 
 	len = skb->len;
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11477*/
 	next_pcount = tcp_skb_pcount(skb);
 	if (tcp_skb_shift(prev, skb, next_pcount, len)) {
 		pcount += next_pcount;
 		tcp_shifted_skb(sk, prev, skb, state, next_pcount, len, mss, 0);
 	}
+#else
+	if (skb_shift(prev, skb, len)) {
+		pcount += tcp_skb_pcount(skb);
+		tcp_shifted_skb(sk, skb, state, tcp_skb_pcount(skb), len, mss, 0);
+	}
+#endif //#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
 
 out:
 	state->fack_count += pcount;

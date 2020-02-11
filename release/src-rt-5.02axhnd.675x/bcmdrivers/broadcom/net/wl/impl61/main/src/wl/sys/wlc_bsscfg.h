@@ -460,9 +460,10 @@ struct wlc_bsscfg {
 #endif /* DWDS */
 	int8 far_sta_rssi;	/* far_sta_rssi value */
 	uint8 edca_update_count; /* edca update counter, shared between HE muedca and QoS cfg */
-	uint8 block_as_retry; /* block assoc retry in wlc_watchdog */
 
 	uint32 mem_bytes; /* bytes of memory allocated for this bsscfg */
+
+	uint8 block_as_retry; /* block assoc retry in wlc_watchdog */
 
 #ifdef BCMDBG
 	/* ====== LEAVE THESE AT THE END ====== */

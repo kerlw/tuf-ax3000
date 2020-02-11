@@ -62,132 +62,159 @@ extern uint32_t gpio_read(void);
 extern void gpio_write(uint32_t bitvalue, int en);
 
 #if defined(RTCONFIG_BCM_CLED)
-int _bcm_cled_steady(uint32_t rgb)
+
+typedef struct {
+	/* config[0]: path, config[1]: value */
+	char config0_path[3][40];
+	char config0_val[3][20];
+	char config1_path[3][40];
+	char config1_val[3][20];
+	char config2_path[3][40];
+	char config2_val[3][20];
+	char config3_path[3][40];
+	char config3_val[3][20];
+}bcm_cled_rgb_led_s;
+
+int read_cled_value(bcm_cled_rgb_led_s *cur_led)
+{
+	int i = 0;
+
+	for(i = 0; i < 3; i++){
+		f_read_string(cur_led->config0_path[i], cur_led->config0_val[i], sizeof(cur_led->config0_val[i]));
+		f_read_string(cur_led->config1_path[i], cur_led->config1_val[i], sizeof(cur_led->config1_val[i]));
+		f_read_string(cur_led->config2_path[i], cur_led->config2_val[i], sizeof(cur_led->config2_val[i]));
+		f_read_string(cur_led->config3_path[i], cur_led->config3_val[i], sizeof(cur_led->config3_val[i]));
+	}
+}
+
+int is_cled_value_correct(bcm_cled_rgb_led_s *cur_led, int rgb_id, char *val0, char *val1, char *val2, char *val3)
+{
+	if(strcmp(cur_led->config0_val[rgb_id], val0) != 0 ||
+		strcmp(cur_led->config1_val[rgb_id], val1) != 0 ||
+		strcmp(cur_led->config2_val[rgb_id], val2) != 0 ||
+		strcmp(cur_led->config3_val[rgb_id], val3) != 0){
+		return 0;
+	}else{
+		return 1;
+	}
+}
+
+int set_cled_value(bcm_cled_rgb_led_s *cur_led, int rgb_id, char *val0, char *val1, char *val2, char *val3)
+{
+	f_write_string(cur_led->config0_path[rgb_id], val0, 0, 0);
+	f_write_string(cur_led->config1_path[rgb_id], val1, 0, 0);
+	f_write_string(cur_led->config2_path[rgb_id], val2, 0, 0);
+	f_write_string(cur_led->config3_path[rgb_id], val3, 0, 0);
+}
+
+int _bcm_cled_ctrl(int rgb, int cled_mode)
 {
 	int state_changed = 0;
-	char led_name[3][10] = {"led14", "led15", "led16"};
-	char config_val[4][20] = {"0", "0", "0", "0"};
-	char config_path[4][100] = {"0", "0", "0", "0"};
+	char LED_BEHAVIOR_WRITE[BCM_CLED_MODE_END][20] =
+			{"0x0003e000", "0x0003e018", "0x0003e002", ""};
+	char LED_BEHAVIOR_READ[BCM_CLED_MODE_END][20] =
+			{"3e000\n", "3e018\n", "3e002\n", ""};
 
-	snprintf(config_path[0], sizeof(config_path[0]),
-				"/proc/bcm_cled/%s/config0", led_name[rgb]);
-	f_read_string(config_path[0], config_val[0], sizeof(config_val[0]));
-	snprintf(config_path[1], sizeof(config_path[1]),
-				"/proc/bcm_cled/%s/config1", led_name[rgb]);
-	f_read_string(config_path[1], config_val[1], sizeof(config_val[1]));
-	snprintf(config_path[2], sizeof(config_path[2]),
-				"/proc/bcm_cled/%s/config2", led_name[rgb]);
-	f_read_string(config_path[2], config_val[2], sizeof(config_val[2]));
-	snprintf(config_path[3], sizeof(config_path[3]),
-				"/proc/bcm_cled/%s/config3", led_name[rgb]);
-	f_read_string(config_path[3], config_val[3], sizeof(config_val[3]));
+	bcm_cled_rgb_led_s led1 =
+		{ {"/proc/bcm_cled/led14/config0", "/proc/bcm_cled/led15/config0", "/proc/bcm_cled/led16/config0"},
+		 {"0x00000000", "0x00000000", "0x00000000"},
+		 {"/proc/bcm_cled/led14/config1", "/proc/bcm_cled/led15/config1", "/proc/bcm_cled/led16/config1"},
+		 {"0x00000000", "0x00000000", "0x00000000"},
+		 {"/proc/bcm_cled/led14/config2", "/proc/bcm_cled/led15/config2", "/proc/bcm_cled/led16/config2"},
+		 {"0x00000000", "0x00000000", "0x00000000"},
+		 {"/proc/bcm_cled/led14/config3", "/proc/bcm_cled/led15/config3", "/proc/bcm_cled/led16/config3"},
+		 {"0x00000000", "0x00000000", "0x00000000"}};
 
-	if(strcmp(config_val[0], "3e000\n") != 0 ||
-		strcmp(config_val[1], "a34a32\n") != 0 ||
-		strcmp(config_val[2], "c34\n") != 0 ||
-		strcmp(config_val[3], "0\n") != 0){
+	read_cled_value(&led1);
 
-		f_write_string(config_path[0], "0x0003e000", 0, 0);
-		f_write_string(config_path[1], "0x00a34a32", 0, 0);
-		f_write_string(config_path[2], "0x00000c34", 0, 0);
-		f_write_string(config_path[3], "0x00000000", 0, 0);
+	if(rgb == BCM_CLED_RED ){
+		if(is_cled_value_correct(&led1, BCM_CLED_RED, LED_BEHAVIOR_READ[cled_mode], "a34a32\n", "c34\n", "0\n") == 0 ||
+			strcmp(led1.config0_val[BCM_CLED_GREEN], "0\n") != 0 ||
+			strcmp(led1.config0_val[BCM_CLED_BLUE], "0\n") != 0){
 
-		state_changed = 1;
+			set_cled_value(&led1, BCM_CLED_RED, LED_BEHAVIOR_WRITE[cled_mode], "0x00a34a32", "0x00000c34", "0x00000000");
+
+			f_write_string(led1.config0_path[BCM_CLED_GREEN], "0x00000000", 0, 0);
+			f_write_string(led1.config0_path[BCM_CLED_BLUE], "0x00000000", 0, 0);
+
+			state_changed = 1;
+		}
+	}else if(rgb == BCM_CLED_GREEN){
+		if(is_cled_value_correct(&led1, BCM_CLED_GREEN, LED_BEHAVIOR_READ[cled_mode], "a34a32\n", "c34\n", "0\n") == 0 ||
+			strcmp(led1.config0_val[BCM_CLED_RED], "0\n") != 0 ||
+			strcmp(led1.config0_val[BCM_CLED_BLUE], "0\n") != 0){
+
+			set_cled_value(&led1, BCM_CLED_GREEN, LED_BEHAVIOR_WRITE[cled_mode], "0x00a34a32", "0x00000c34", "0x00000000");
+
+			f_write_string(led1.config0_path[BCM_CLED_RED], "0x00000000", 0, 0);
+			f_write_string(led1.config0_path[BCM_CLED_BLUE], "0x00000000", 0, 0);
+
+			state_changed = 1;
+		}
+	}else if(rgb == BCM_CLED_BLUE){
+		if(is_cled_value_correct(&led1, BCM_CLED_BLUE, LED_BEHAVIOR_READ[cled_mode], "a34a32\n", "c34\n", "0\n") == 0 ||
+			strcmp(led1.config0_val[BCM_CLED_RED], "0\n") != 0 ||
+			strcmp(led1.config0_val[BCM_CLED_GREEN], "0\n") != 0){
+
+			set_cled_value(&led1, BCM_CLED_BLUE, LED_BEHAVIOR_WRITE[cled_mode], "0x00a34a32", "0x00000c34", "0x00000000");
+
+			f_write_string(led1.config0_path[BCM_CLED_RED], "0x00000000", 0, 0);
+			f_write_string(led1.config0_path[BCM_CLED_GREEN], "0x00000000", 0, 0);
+
+			state_changed = 1;
+		}
+	}else if(rgb == BCM_CLED_YELLOW){
+		if(is_cled_value_correct(&led1, BCM_CLED_RED, LED_BEHAVIOR_READ[cled_mode], "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_RED, LED_BEHAVIOR_WRITE[cled_mode], "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
+		if(is_cled_value_correct(&led1, BCM_CLED_GREEN, LED_BEHAVIOR_READ[cled_mode], "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_GREEN, LED_BEHAVIOR_WRITE[cled_mode], "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
+		if(is_cled_value_correct(&led1, BCM_CLED_BLUE, "0\n", "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_BLUE, "0x00000000", "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
+	}else if(rgb == BCM_CLED_WHITE){
+		if(is_cled_value_correct(&led1, BCM_CLED_RED, LED_BEHAVIOR_READ[cled_mode], "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_RED, LED_BEHAVIOR_WRITE[cled_mode], "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
+		if(is_cled_value_correct(&led1, BCM_CLED_GREEN, LED_BEHAVIOR_READ[cled_mode], "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_GREEN, LED_BEHAVIOR_WRITE[cled_mode], "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
+		if(is_cled_value_correct(&led1, BCM_CLED_BLUE, LED_BEHAVIOR_READ[cled_mode], "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_BLUE, LED_BEHAVIOR_WRITE[cled_mode], "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
+	}else if(rgb == BCM_CLED_OFF){
+		if(is_cled_value_correct(&led1, BCM_CLED_RED, "0\n", "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_RED, "0x00000000", "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
+		if(is_cled_value_correct(&led1, BCM_CLED_GREEN, "0\n", "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_GREEN, "0x00000000", "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
+		if(is_cled_value_correct(&led1, BCM_CLED_BLUE, "0\n", "a34a32\n", "c34\n", "0\n") == 0){
+			set_cled_value(&led1, BCM_CLED_BLUE, "0x00000000", "0x00a34a32", "0x00000c34", "0x00000000");
+			state_changed = 1;
+		}
 	}
+
 	return state_changed;
 }
 
 /* rgb: 0:red, 1:green, 2:blue, 3:white */
-int bcm_cled_steady(uint32_t rgb)
+int bcm_cled_ctrl(int rgb, int cled_mode)
 {
 	int state_changed = 0;
 #if defined(RTAX95Q)
-	char led_active[4][20] = {"0x00004000", "0x00008000", "0x00010000", "0x0001C000"};
-
-	if(rgb == 0 || rgb == 1 || rgb == 2){
-		state_changed = _bcm_cled_steady(rgb);
-	}else if(rgb == 3){
-		state_changed = _bcm_cled_steady(0);
-		state_changed = _bcm_cled_steady(1);
-		state_changed = _bcm_cled_steady(2);
-	}
-
+	state_changed = _bcm_cled_ctrl(rgb, cled_mode);
 	if(state_changed == 1){
-		if(rgb == 0){
-			f_write_string("/proc/bcm_cled/led15/config0", "0x00000000", 0, 0);
-			f_write_string("/proc/bcm_cled/led16/config0", "0x00000000", 0, 0);
-		}else if(rgb == 1){
-			f_write_string("/proc/bcm_cled/led14/config0", "0x00000000", 0, 0);
-			f_write_string("/proc/bcm_cled/led16/config0", "0x00000000", 0, 0);
-		}else if (rgb == 2){
-			f_write_string("/proc/bcm_cled/led15/config0", "0x00000000", 0, 0);
-			f_write_string("/proc/bcm_cled/led16/config0", "0x00000000", 0, 0);
-		}
-		f_write_string("/proc/bcm_cled/activate", led_active[3], 0, 0);
-	}
-#endif
-	return state_changed;
-}
-#endif
-
-#if defined(RTCONFIG_BCM_CLED)
-int _bcm_cled_pulsating(uint32_t rgb)
-{
-	char led_name[3][10] = {"led14", "led15", "led16"};
-	char config_val[4][20] = {"0", "0", "0", "0"};
-	char config_path[4][100] = {"0", "0", "0", "0"};
-	int state_changed = 0;
-
-	snprintf(config_path[0], sizeof(config_path[0]), "/proc/bcm_cled/%s/config0", led_name[rgb]);
-	f_read_string(config_path[0], config_val[0], sizeof(config_val[0]));
-	snprintf(config_path[1], sizeof(config_path[1]), "/proc/bcm_cled/%s/config1", led_name[rgb]);
-	f_read_string(config_path[1], config_val[1], sizeof(config_val[1]));
-	snprintf(config_path[2], sizeof(config_path[2]), "/proc/bcm_cled/%s/config2", led_name[rgb]);
-	f_read_string(config_path[2], config_val[2], sizeof(config_val[2]));
-	snprintf(config_path[3], sizeof(config_path[3]), "/proc/bcm_cled/%s/config3", led_name[rgb]);
-	f_read_string(config_path[3], config_val[3], sizeof(config_val[3]));
-
-	if(strcmp(config_val[0], "3e002\n") != 0 ||
-		strcmp(config_val[1], "a34a32\n") != 0 ||
-		strcmp(config_val[2], "c34\n") != 0 ||
-		strcmp(config_val[3], "0\n") != 0){
-
-		f_write_string(config_path[0], "0x0003e002", 0, 0);
-		f_write_string(config_path[1], "0x00a34a32", 0, 0);
-		f_write_string(config_path[2], "0x00000c34", 0, 0);
-		f_write_string(config_path[3], "0x00000000", 0, 0);
-
-		state_changed = 1;
-	}
-	return state_changed;
-}
-
-/* rgb: 0:red, 1:green, 2:blue, 3:white */
-int bcm_cled_pulsating(uint32_t rgb)
-{
-	int state_changed = 0;
-#if defined(RTAX95Q)
-	char led_active[4][20] = {"0x00004000", "0x00008000", "0x00010000", "0x0001C000"};
-
-	if(rgb == 0 || rgb == 1 || rgb == 2){
-		state_changed = _bcm_cled_pulsating(rgb);
-	}else if(rgb == 3){
-		state_changed = _bcm_cled_pulsating(0);
-		state_changed = _bcm_cled_pulsating(1);
-		state_changed = _bcm_cled_pulsating(2);
-	}
-	if(state_changed == 1){
-		if(rgb == 0){
-			f_write_string("/proc/bcm_cled/led15/config0", "0x00000000", 0, 0);
-			f_write_string("/proc/bcm_cled/led16/config0", "0x00000000", 0, 0);
-		}else if(rgb == 1){
-			f_write_string("/proc/bcm_cled/led14/config0", "0x00000000", 0, 0);
-			f_write_string("/proc/bcm_cled/led16/config0", "0x00000000", 0, 0);
-		}else if (rgb == 2){
-			f_write_string("/proc/bcm_cled/led15/config0", "0x00000000", 0, 0);
-			f_write_string("/proc/bcm_cled/led16/config0", "0x00000000", 0, 0);
-		}
-		f_write_string("/proc/bcm_cled/activate", led_active[3], 0, 0);
+		f_write_string("/proc/bcm_cled/activate", "0x0001C000", 0, 0);
 	}
 #endif
 	return state_changed;

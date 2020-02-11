@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_assoc.c 776543 2019-07-02 09:19:04Z $
+ * $Id: wlc_assoc.c 778094 2019-08-22 09:42:45Z $
  */
 
 /**
@@ -7699,6 +7699,9 @@ wlc_assocresp_client(wlc_bsscfg_t *cfg, struct scb *scb,
 				target_bss->bss_type);
 		}
 		return;
+	} else if (status == DOT11_SC_INVALID_PMKID) {
+			wlc_assoc_abort(cfg);
+			return;
 	} else if (status != DOT11_SC_SUCCESS) {
 #ifdef WL_OCE
 		if (OCE_ENAB(wlc->pub) &&
@@ -9380,7 +9383,11 @@ wlc_set_ssid_complete(wlc_bsscfg_t *cfg, uint status, struct ether_addr *addr, u
 					wlc_bsscfg_assoc_params(cfg));
 					retry = TRUE;
 				}
-			} else if (wlc->as->cmn->sta_retry_time > 0) {
+			} else if ((wlc->as->cmn->sta_retry_time > 0) &&
+				(cfg->auth != WL_AUTH_SAE_KEY)) {
+				/* Sae Auth Start is handled by external supplicant
+				 * So auth retry have to be initiated by upper layer
+				 */
 				wl_del_timer(wlc->wl, as->timer);
 				wl_add_timer(wlc->wl, as->timer,
 					wlc->as->cmn->sta_retry_time*1000, 0);

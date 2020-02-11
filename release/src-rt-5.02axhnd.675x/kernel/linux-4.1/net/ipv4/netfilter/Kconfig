@@ -246,12 +246,12 @@ config IP_NF_MATCH_IPP2P
 	  If you want to compile it as a module, say M here and read
 	  <file:Documentation/modules.txt>.  If unsure, say `N'.
 
-config IP_NF_MATCH_WEB
-	tristate  'web match'
-	depends on IP_NF_IPTABLES
-
 config IP_NF_MATCH_WEBMON
 	tristate  'Web Monitor match'
+	depends on IP_NF_IPTABLES
+
+config IP_NF_MATCH_WEB
+	tristate  'web match'
 	depends on IP_NF_IPTABLES
 
 # `filter', generic and specific targets

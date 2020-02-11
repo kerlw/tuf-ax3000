@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_csa.c 776954 2019-07-15 05:10:52Z $
+ * $Id: wlc_csa.c 777151 2019-07-22 06:45:16Z $
  */
 
 /**
@@ -508,15 +508,31 @@ wlc_csa_doiovar(void *ctx, uint32 actionid,
 			break;
 		}
 
-		/* if STA and ssociated break to avoid loss of uplink connection */
-		if (BSSCFG_STA(bsscfg) && bsscfg->up) {
-			err = BCME_ASSOCIATED;
-			break;
+		/* Check for STA or APSTA in primary cfg */
+		if (BSSCFG_STA(wlc->cfg) && (wlc->cfg->associated)) {
+			if (BSSCFG_STA(bsscfg)) {
+				/* if STA and associated, send client csa and break to maintain
+				 * uplink connection.
+				 * If not associated WBD is interested to propogate the csa to
+				 * AP interfaces due to backhaul ethernet connection, assuming
+				 * "keep_ap_up" configuration is updated correctly.
+				 */
+				wlc_send_action_switch_channel_ex(csam, bsscfg, &bsscfg->BSSID,
+					csa, DOT11_SM_ACTION_CHANNEL_SWITCH);
+				break;
+			} else if (BSSCFG_AP(bsscfg)) {
+				/* If AP in APSTA and STA interface is associated,
+				 * CSA is not supported
+				 */
+				err = BCME_UNSUPPORTED;
+				break;
+			}
 		}
 		/* issue CSA on each AP sub-interface */
 		FOREACH_UP_AP(wlc, idx, apcfg) {
 			err = wlc_csa_do_channel_switch(csam, apcfg,
-			  csa->chspec, csa->mode, csa->count, csa->reg, csa->frame_type);
+				csa->chspec, csa->mode, csa->count,
+				csa->reg, csa->frame_type);
 		}
 
 		break;
@@ -939,6 +955,7 @@ wlc_csa_timeout(void *arg)
 		if (!wlc_dfs_test_mode(wlc->dfs))
 #endif /* WL_DFS_TEST_MODE */
 		{
+			BSSCFG_CLR_CSA_IN_PROGRESS(cfg);
 			wlc_do_chanswitch(cfg, csa->csa.chspec);
 		}
 		/* Restore quite state of the channel from where we switched and unmute tx */
@@ -1235,6 +1252,10 @@ wlc_csa_process_channel_switch(wlc_csa_info_t *csam, wlc_bsscfg_t *cfg)
 	wl_add_timer(wlc->wl, csa->csa_timer, chanswitch_time, 0);
 
 	csa->channel_sw.csa_status = CSA_STATUS_INPROGRESS;
+	if (BSSCFG_STA(cfg) && BSSCFG_IS_PRIMARY(cfg) && APSTA_ENAB(wlc->pub)) {
+		/* mark csa in progress for apsta */
+		BSSCFG_SET_CSA_IN_PROGRESS(cfg);
+	}
 
 #ifdef AP
 	/* If this STA connected to up-stream AP and has an overlaping chanspec
@@ -1382,7 +1403,7 @@ wlc_recv_public_csa_action(wlc_csa_info_t *csam, struct dot11_management_header 
 			               "(Wide Bandwidth Channel Switch IE)\n",
 			               wlc->pub->unit, __FUNCTION__));
 			WLCNTINCR(wlc->pub->_cnt->rxbadproto);
-			wlc_send_action_err(wlc, hdr, body, body_len);
+			wlc_send_action_err(wlc, cfg, hdr, body, body_len);
 			return;
 		}
 		WL_REGULATORY(("wl%d: %s: channel width %d, control channel %d\n", wlc->pub->unit,
@@ -1999,7 +2020,7 @@ wlc_recv_csa_action(wlc_csa_info_t *csam, wlc_bsscfg_t *cfg,
 		WL_REGULATORY(("wl%d:%s: Bad CSA Spectrum Mngmt Action frame\n",
 		               wlc->pub->unit, __FUNCTION__));
 		WLCNTINCR(wlc->pub->_cnt->rxbadproto);
-		wlc_send_action_err(wlc, hdr, body, body_len);
+		wlc_send_action_err(wlc, cfg, hdr, body, body_len);
 		return;
 	}
 
@@ -2170,6 +2191,12 @@ wlc_csa_send_rrm_report_and_csa_to_upstream_ap(wlc_csa_info_t *csam, wlc_bsscfg_
 	wl_chan_switch_t *csa)
 {
 	wlc_info_t *wlc = csam->wlc;
+	if (BSSCFG_IS_CSA_IN_PROGRESS(cfg)) {
+		WL_INFORM(("wl%d: Already CSA is in progress for cfg index[%d], no need of"
+			" sending client csa and rrm report to upstream AP, return\n",
+			wlc->pub->unit, WLC_BSSCFG_IDX(cfg)));
+		return BCME_BUSY;
+	}
 
 	WL_INFORM(("FWD rrm report and client CSA from cfg index[%d] BSSID["MACF"] \n",
 		WLC_BSSCFG_IDX(cfg), ETHERP_TO_MACF(&cfg->BSSID)));

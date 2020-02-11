@@ -66,6 +66,7 @@
 #include <bcmwpa.h>
 #include <shutils.h>
 #include <wlif_utils.h>
+#include <stdint.h>
 
 #include <radius.h>
 

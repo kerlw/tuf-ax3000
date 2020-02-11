@@ -62,7 +62,6 @@
 
 /* hard code openvswtich ovs-vsctl and openvswitch bridge */
 #define OVS_VSCTL         "/bin/ovs-vsctl"
-#define OVS_OFCTL         "/bin/ovs-ofctl"
 #define OVS_BRIDGE        "brsdn"
 #define OVS_START_SCRIPT  "/etc/openvswitch/scripts/startopenVS.sh > /dev/null 2>&1"
 #define OVS_STOP_SCRIPT   "/etc/openvswitch/scripts/stopopenVS.sh > /dev/null 2>&1"
@@ -211,18 +210,12 @@ CmsRet rutOpenVS_startOpenvswitch(void)
    snprintf(cmdStr, sizeof(cmdStr), "insmod /lib/modules/%s/kernel/net/ipv4/gre.ko > /dev/null 2>&1", kernel.release);   
    rut_doSystemAction("rut", cmdStr);
    rut_doSystemAction("rut", OVS_START_SCRIPT);
-   snprintf(cmdStr, sizeof(cmdStr), "ifconfig br0 down");
-   rut_doSystemAction("rut", cmdStr);
    return CMSRET_SUCCESS;
 }
 
 CmsRet rutOpenVS_stopOpenvswitch(void)
 {
-   char cmdStr[CMS_MAX_FULLPATH_LENGTH];
-
    rut_doSystemAction("rut", OVS_STOP_SCRIPT);
-   snprintf(cmdStr, sizeof(cmdStr), "ifconfig br0 up");
-   rut_doSystemAction("rut", cmdStr);
    return CMSRET_SUCCESS;
 }
 
@@ -330,8 +323,6 @@ CmsRet rutOpenVS_deleteOpenVSport_igd(const char *ifName)
     2. add the port back to linux default bridge
    */
    /* this function should be called when openswitch is running*/
-   snprintf(cmdLine, sizeof(cmdLine), "%s mod-port %s %s down", OVS_OFCTL,OVS_BRIDGE,ifName);
-   rut_doSystemAction("rut", cmdLine);
    snprintf(cmdLine, sizeof(cmdLine), "%s --if-exists del-port %s %s", OVS_VSCTL,OVS_BRIDGE,ifName);
    rut_doSystemAction("rut", cmdLine);
  
@@ -455,8 +446,6 @@ CmsRet rutOpenVS_addOpenVSport_igd(const char *ifName)
    {
       snprintf(cmdLine, sizeof(cmdLine), "%s --may-exist add-port %s %s", OVS_VSCTL,OVS_BRIDGE,ifName);
       rut_doSystemAction("rut", cmdLine);
-      snprintf(cmdLine, sizeof(cmdLine), "%s mod-port %s %s up", OVS_OFCTL,OVS_BRIDGE,ifName);
-      rut_doSystemAction("rut", cmdLine);
    }
    cmsLog_debug("ifName=%s ", ifName);
    return ret;
@@ -497,8 +486,6 @@ CmsRet rutOpenVS_deleteOpenVSport_dev2(const char *ifName)
    InstanceIdStack ipIntfIidStack = EMPTY_INSTANCE_ID_STACK;
 
    /* this function should be called when openswitch is running*/
-   snprintf(cmdLine, sizeof(cmdLine), "%s mod-port %s %s down", OVS_OFCTL,OVS_BRIDGE,ifName);
-   rut_doSystemAction("rut", cmdLine);
    snprintf(cmdLine, sizeof(cmdLine), "%s --if-exists del-port %s %s", OVS_VSCTL,OVS_BRIDGE,ifName);
    rut_doSystemAction("rut", cmdLine);
    ret =  rutBridge_addIntfNameToBridge_dev2(ifName,"br0");
@@ -566,8 +553,6 @@ CmsRet rutOpenVS_addOpenVSport_dev2(const char *ifName)
       {
          snprintf(cmdLine, sizeof(cmdLine), "%s --may-exist add-port %s %s", OVS_VSCTL,OVS_BRIDGE,ifName);
          rut_doSystemAction("rut", cmdLine);
-         snprintf(cmdLine, sizeof(cmdLine), "%s mod-port %s %s up", OVS_OFCTL,OVS_BRIDGE,ifName);
-         rut_doSystemAction("rut", cmdLine);
       }
    }
  
@@ -581,8 +566,6 @@ void rutOpenVS_startupOpenVSport(const char *ifName)
    char cmdLine[BUFLEN_128];
    snprintf(cmdLine, sizeof(cmdLine), "%s --may-exist add-port %s %s", OVS_VSCTL,OVS_BRIDGE,ifName);
    rut_doSystemAction("rut", cmdLine);
-   snprintf(cmdLine, sizeof(cmdLine), "%s mod-port %s %s up", OVS_OFCTL,OVS_BRIDGE,ifName);
-   rut_doSystemAction("rut", cmdLine);
    return;
 }
 
@@ -590,8 +573,6 @@ void rutOpenVS_shutdownOpenVSport(const char *ifName)
 {
    char cmdLine[BUFLEN_128];
    snprintf(cmdLine, sizeof(cmdLine), "%s --if-exists del-port %s %s", OVS_VSCTL,OVS_BRIDGE,ifName);
-   rut_doSystemAction("rut", cmdLine);
-   snprintf(cmdLine, sizeof(cmdLine), "%s mod-port %s %s down", OVS_OFCTL,OVS_BRIDGE,ifName);
    rut_doSystemAction("rut", cmdLine);
    return;
 }

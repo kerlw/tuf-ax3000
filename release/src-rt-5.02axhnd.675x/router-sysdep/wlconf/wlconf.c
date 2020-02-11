@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: wlconf.c 776914 2019-07-12 17:13:18Z $
+ * $Id: wlconf.c 777961 2019-08-16 12:32:59Z $
  */
 
 #include <typedefs.h>
@@ -2058,6 +2058,229 @@ trf_mgmt_rssi_policy(char *prefix)
 }
 #endif /* TRAFFIC_MGMT_RSSI_POLICY */
 
+#ifdef WL_PROXDETECT
+static wl_proxd_iov_t *
+wlconf_ftm_alloc_getset_buf(wl_proxd_method_t method, wl_proxd_session_id_t session_id,
+	wl_proxd_cmd_t cmdid, uint16 tlvs_bufsize, uint16 *p_out_bufsize)
+{
+	wl_proxd_iov_t *p_proxd_iov = (wl_proxd_iov_t *) NULL;
+	*p_out_bufsize = 0;
+
+	/* calculate the whole buffer size, including one reserve-tlv entry in the header */
+	uint16 proxd_iovsize = sizeof(wl_proxd_iov_t) + tlvs_bufsize;
+
+	p_proxd_iov = calloc(1, proxd_iovsize);
+	if (p_proxd_iov == NULL) {
+		printf("error: failed to allocate %d bytes of memory\n", proxd_iovsize);
+		return NULL;
+	}
+
+	/* setup proxd-FTM-method iovar header */
+	p_proxd_iov->version = (WL_PROXD_API_VERSION);
+	p_proxd_iov->len = (proxd_iovsize); /* caller may adjust it based on #of TLVs */
+	p_proxd_iov->cmd = (cmdid);
+	p_proxd_iov->method = (method);
+	p_proxd_iov->sid = (session_id);
+
+	/* initialize the reserved/dummy-TLV in iovar header */
+	wl_proxd_tlv_t *p_tlv = p_proxd_iov->tlvs;
+	p_tlv->id = (WL_PROXD_TLV_ID_NONE);
+	p_tlv->len = (0);
+
+	*p_out_bufsize = proxd_iovsize;	/* for caller's reference */
+
+	return p_proxd_iov;
+}
+
+/* 'wl proxd ftm config' handler */
+static int
+wlconf_ftm_subcmd_config_tlv(char *name, struct bsscfg_info *bsscfg,
+	uint16 cmdid, wl_proxd_method_t method,
+	wl_proxd_session_id_t session_id, uint32 tlvdata, uint16 tlvid)
+{
+	uint16 proxd_iovsize = 0;
+	wl_proxd_iov_t *p_proxd_iov = NULL;
+	int ret = BCME_OK;
+	uint16 bufsize;
+	wl_proxd_tlv_t *p_tlv;
+	uint16	buf_space_left;
+	uint16 all_tlvsize;
+
+	/* allocate a buffer for proxd-ftm config via 'set' iovar */
+	p_proxd_iov = wlconf_ftm_alloc_getset_buf(method, session_id,
+		cmdid, WLC_IOCTL_MEDLEN, &proxd_iovsize);
+	if (p_proxd_iov == NULL || proxd_iovsize == 0) {
+		ret = BCME_NOMEM;
+		goto done;
+	}
+
+	/* setup TLVs */
+	bufsize = proxd_iovsize - WL_PROXD_IOV_HDR_SIZE;	/* adjust available size for TLVs */
+	p_tlv = &p_proxd_iov->tlvs[0];
+
+	/* TLV buffer starts with a full size, will decrement for each packed TLV */
+	buf_space_left = bufsize;
+
+	if (tlvid == WL_PROXD_TLV_ID_FLAGS) {
+		/* setup flags_mask TLV to go along with the flags,
+		 * this will add flags instead of replacing the current flags
+		 */
+		ret = bcm_pack_xtlv_entry((uint8 **)&p_tlv, &buf_space_left,
+			WL_PROXD_TLV_ID_FLAGS_MASK,
+			sizeof(uint32), (uint8 *)&tlvdata, BCM_XTLV_OPTION_ALIGN32);
+		if (ret != BCME_OK) {
+			printf("%s: bcm_pack_xltv_entry() for flags_mask failed, status=%d\n",
+				__FUNCTION__, ret);
+			goto done;
+		}
+	}
+	/* setup TLV */
+	ret = bcm_pack_xtlv_entry((uint8 **)&p_tlv, &buf_space_left, tlvid,
+		sizeof(uint32), (uint8 *)&tlvdata, BCM_XTLV_OPTION_ALIGN32);
+	if (ret != BCME_OK) {
+		printf("%s: bcm_pack_xltv_entry() for flags_mask failed, status=%d\n",
+			__FUNCTION__, ret);
+		goto done;
+	}
+
+	if (ret == BCME_OK) {
+		/* update the iov header, set len to include all TLVs + header */
+		all_tlvsize = (bufsize - buf_space_left);
+		p_proxd_iov->len = (all_tlvsize + WL_PROXD_IOV_HDR_SIZE);
+		WL_BSSIOVAR_SET(name, "proxd", bsscfg->idx, p_proxd_iov,
+			all_tlvsize + WL_PROXD_IOV_HDR_SIZE);
+	}
+
+done:
+	/* clean up */
+	if (p_proxd_iov != NULL) {
+		free(p_proxd_iov);
+	}
+	return ret;
+}
+
+/* does not accept any parameters */
+static int
+wlconf_ftm_setiov_no_tlv(char *name, struct bsscfg_info *bsscfg,
+	uint16 cmdid, wl_proxd_method_t method, wl_proxd_session_id_t session_id)
+{
+	/* allocate and initialize a temp buffer for 'set proxd' iovar */
+	uint16 proxd_iovsize = 0;
+	int ret = 0;
+	wl_proxd_iov_t *p_proxd_iov = wlconf_ftm_alloc_getset_buf(method, session_id,
+		cmdid, 0, &proxd_iovsize);
+	if (p_proxd_iov == NULL || proxd_iovsize == 0) {
+		ret = BCME_NOMEM;
+		goto done;
+	}
+
+	/* no TLV to pack, simply issue a set-proxd iovar */
+	WL_BSSIOVAR_SET(name, "proxd", bsscfg->idx, p_proxd_iov, proxd_iovsize);
+
+done:
+	/* clean up */
+	if (p_proxd_iov != NULL) {
+		free(p_proxd_iov);
+	}
+	return ret;
+}
+
+/*
+* enable FTM method
+*/
+static int
+wlconf_ftm_enable(char *name, struct bsscfg_info *bsscfg, int enable)
+{
+	/* issue an iovar call */
+	return wlconf_ftm_setiov_no_tlv(name, bsscfg,
+		(enable ? WL_PROXD_CMD_ENABLE : WL_PROXD_CMD_DISABLE),
+		WL_PROXD_METHOD_FTM, WL_PROXD_SESSION_ID_GLOBAL);
+}
+
+/*
+* config FTM LCI tx
+*/
+static int
+wlconf_ftm_flags(char *name, struct bsscfg_info *bsscfg, uint32 flags)
+{
+	/* issue an iovar call */
+	return wlconf_ftm_subcmd_config_tlv(name, bsscfg, WL_PROXD_CMD_CONFIG,
+		WL_PROXD_METHOD_FTM, WL_PROXD_SESSION_ID_GLOBAL, flags, WL_PROXD_TLV_ID_FLAGS);
+}
+
+static int
+wlconf_rrm_parse_location(char *loc_arg, char *bufptr, int buflen)
+{
+	int len = 0;
+	char *ptr = loc_arg;
+	char hex[] = "XX";
+
+	if (!loc_arg) {
+		printf("%s: Location data is missing\n", __FUNCTION__);
+		len = -1;
+		goto done;
+	}
+
+	len = strlen(loc_arg)/2;
+	if ((len <= 0) || (len > buflen)) {
+		len = -1;
+		goto done;
+	}
+
+	if ((uint16)strlen(ptr) != len*2) {
+		printf("%s: Invalid length. Even number of characters expected.\n",
+			__FUNCTION__);
+		len = -1;
+		goto done;
+	}
+
+	while (*ptr) {
+		strncpy(hex, ptr, 2);
+		*bufptr++ = (char) strtoul(hex, NULL, 16);
+		ptr += 2;
+	}
+done:
+	return len;
+}
+
+static int
+wlconf_rrm_self_lci_civic(char *name, struct bsscfg_info *bsscfg, int cmd_id, char *loc)
+{
+	int ret = BCME_OK;
+	int len = 0;
+	char *bufptr;
+	wl_rrm_config_ioc_t *rrm_config_cmd = NULL;
+	int malloc_len = sizeof(*rrm_config_cmd) + TLV_BODY_LEN_MAX -
+		DOT11_MNG_IE_MREP_FIXED_LEN;
+
+	rrm_config_cmd = (wl_rrm_config_ioc_t *) calloc(1, malloc_len);
+	if (rrm_config_cmd == NULL) {
+		printf("Failed to allocate buffer of %d bytes\n", malloc_len);
+		ret = BCME_NOMEM;
+		goto done;
+	}
+
+	rrm_config_cmd->id = (uint16)cmd_id;
+	bufptr = (char *)&rrm_config_cmd->data[0];
+	len = wlconf_rrm_parse_location(loc, bufptr, TLV_BODY_LEN_MAX -
+			DOT11_MNG_IE_MREP_FIXED_LEN);
+	if (len <= 0) {
+		printf("%s: parsing location arguments failed\n", __FUNCTION__);
+		ret = BCME_USAGE_ERROR;
+		goto done;
+	}
+
+	rrm_config_cmd->len = (uint16)len;
+	WL_BSSIOVAR_SET(name, WL_RRM_CONFIG_NAME, bsscfg->idx, (void *)rrm_config_cmd,
+		WL_RRM_CONFIG_MIN_LENGTH + len);
+done:
+	if (rrm_config_cmd != NULL) {
+		free(rrm_config_cmd);
+	}
+	return ret;
+}
+#endif /* WL_PROXDETECT */
+
 static int
 wlconf_del_brcm_syscap_ie(char *name, int bsscfg_idx, char *oui)
 {
@@ -2555,10 +2778,6 @@ wlconf_set_fbt(struct bsscfg_list *bclist)
 		/* FBT should be enabled only if the akm contains psk2ft type */
 		strnvval = nvram_safe_get(strcat_r(bsscfg->prefix, "akm", tmp));
 		if (find_in_list(strnvval, "psk2ft") == NULL) {
-			/* Set here fbt to 0 to ensure FBT is disabled
-			 * on rc restart if psk2ft is not present in akm
-			 */
-			WL_IOVAR_SETINT(bsscfg->ifname, WLCONF_IOVAR_FBT, 0);
 			WLCONF_DBG("i[%d] name[%s] prefix[%s] %sakm[%s]. akm is not psk2ft\n",
 				i, bsscfg->ifname, bsscfg->prefix, bsscfg->prefix, strnvval);
 			continue;
@@ -2697,8 +2916,13 @@ wlconf_overwrite_txbf_cap_nvram(char *name, char *prefix)
 		snprintf(val, sizeof(val), "%d", TXBF_SU_MU_BFE_CAP | TXBF_HE_SU_MU_BFE_CAP);
 		nvram_set(strcat_r(prefix, "txbf_bfe_cap", tmp), val);
 
-		/* Enable MUTX by default iso AUTO (=switch SU/MU) for 11ax devices */
-		snprintf(val, sizeof(val), "%d", MU_FEATURES_MUTX);
+		if (EMBEDDED_2x2AX_CORE(rev.chipnum)) {
+			/* Disable MUTX by default */
+			snprintf(val, sizeof(val), "%d", MU_FEATURES_OFF);
+		} else {
+			/* Enable MUTX by default iso AUTO (=switch SU/MU) for other 11ax devices */
+			snprintf(val, sizeof(val), "%d", MU_FEATURES_MUTX);
+		}
 		nvram_set(strcat_r(prefix, "mu_features", tmp), val);
 	}
 
@@ -2744,7 +2968,6 @@ wlconf_ge_bw80(chanspec_t chanspec, uint8 bw_cap)
 		return ((bw_cap == WLC_BW_CAP_160MHZ) ||
 			(bw_cap == WLC_BW_CAP_80MHZ));
 	}
-	return FALSE;
 }
 
 /* configure the specified wireless interface */
@@ -2808,7 +3031,6 @@ wlconf(char *name)
 #ifdef MULTIAP
 	int map_reonboard = atoi(nvram_safe_get("map_reonboard"));
 #endif // endif
-	uint8 block_as_retry = 0;
 
 	/* wlconf doesn't work for virtual i/f, so if we are given a
 	 * virtual i/f return 0 if that interface is in it's parent's "vifs"
@@ -4678,6 +4900,17 @@ wlconf(char *name)
 	/* Set up TxBF timer */
 	wlconf_set_txbf_timer(name, prefix);
 
+	/* Set dynamic ED */
+	strcat_r(prefix, "dy_ed_thresh", tmp);
+	if (nvram_match(tmp, "1")) {
+		if (phytype == PHY_TYPE_AC) {
+			WL_IOVAR_SETINT(name, "dy_ed_thresh", 1);
+			WL_IOVAR_SETINT(name, "dy_ed_thresh_acphy", 1);
+		} else {
+			printf("wl%d: phytype %d not support dy-ed", unit, phytype);
+		}
+	}
+
 	/* Auto Channel Selection:
 	 * 1. When channel # is 0 in AP mode, this determines our channel and 20Mhz vs. 40Mhz
 	 * 2. If we're running OBSS Coex and the user specified a channel, Autochannel runs to
@@ -4938,6 +5171,18 @@ wlconf_down(char *name)
 	}
 
 	if (wl_ap_build) {
+#ifdef CONFIG_HOSTAPD
+		if (!nvram_match("hapd_enable", "0")) {
+			/* For STA interface set NULL SSID */
+			if (strcmp(str, "sta") == 0) {
+				/* Nuke SSID */
+				ssid.SSID_len = 0;
+				ssid.SSID[0] = '\0';
+				WL_IOCTL(name, WLC_SET_SSID, &ssid, sizeof(ssid));
+			}
+		}
+#endif	/* CONFIG_HOSTAPD */
+
 		/* Bring down the interface */
 		WL_IOCTL(name, WLC_DOWN, NULL, 0);
 
@@ -5213,6 +5458,64 @@ wlconf_start(char *name)
 		trf_mgmt_rssi_policy(prefix);
 	}
 #endif /* TRAFFIC_MGMT_RSSI_POLICY */
+
+#ifdef WL_PROXDETECT
+	/* proxd ftm configuration */
+	if (ap || apsta) {
+		uint32 flags = 0;
+		char lci_str[WLC_IOCTL_SMLEN*2];
+		char civic_str[WLC_IOCTL_SMLEN*2];
+		char ftm_flags[WLC_IOCTL_SMLEN];
+		char ftm_mode[WLC_IOCTL_SMLEN];
+
+		char *ftm_flagsp = NULL;
+		char *ftm_modep = NULL;
+		char *lcip = NULL;
+		char *civicp = NULL;
+
+		memset(lci_str, 0, sizeof(lci_str));
+		memset(civic_str, 0, sizeof(civic_str));
+		memset(ftm_flags, 0, sizeof(ftm_flags));
+		memset(ftm_mode, 0, sizeof(ftm_mode));
+
+		ftm_flagsp = nvram_get(strcat_r(prefix, "ftm_flags", ftm_flags));
+		ftm_modep = nvram_get(strcat_r(prefix, "ftm_mode", ftm_mode));
+		lcip = nvram_get(strcat_r(prefix, "ftm_lci", lci_str));
+		civicp = nvram_get(strcat_r(prefix, "ftm_civic", civic_str));
+
+		/* set ftm enable/disable */
+		if (ftm_modep) {
+			val = atoi(ftm_modep);
+		}
+		else {
+			val = 0;
+		}
+
+		/* set ftm config flags */
+		if (ftm_flagsp) {
+			flags = (uint32)strtoul(ftm_flagsp, NULL, 16);
+		}
+		else {
+			flags = 0;
+		}
+
+		for (i = 0; i < bclist->count; i++) {
+			bsscfg = &bclist->bsscfgs[i];
+			if (wlconf_ftm_enable(name, bsscfg, val) == BCME_OK) {
+				wlconf_ftm_flags(name, bsscfg, flags);
+			}
+
+			if (lcip != NULL) {
+				wlconf_rrm_self_lci_civic(name, bsscfg,
+					WL_RRM_CONFIG_SET_LCI, lcip);
+			}
+			if (civicp != NULL) {
+				wlconf_rrm_self_lci_civic(name, bsscfg,
+					WL_RRM_CONFIG_SET_CIVIC, civicp);
+			}
+		}
+	}
+#endif /* WL_PROXDETECT */
 
 #ifdef __CONFIG_EMF__
 #ifdef __CONFIG_DHDAP__

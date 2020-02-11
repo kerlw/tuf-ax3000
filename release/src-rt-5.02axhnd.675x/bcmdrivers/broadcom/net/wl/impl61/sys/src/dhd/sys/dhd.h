@@ -21,7 +21,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: dhd.h 775274 2019-05-24 20:31:57Z $
+ * $Id: dhd.h 778092 2019-08-22 09:22:49Z $
  */
 
 /****************
@@ -401,6 +401,7 @@ typedef struct dhd_pub {
 	uint32 dhd_console_ms; /** interval for polling the dongle for console (log) messages */
 
 	/* Internal dhd items */
+	uint unit;              /* Radio Unit */
 	bool up;		/* Driver up/down (to OS) */
 	bool txoff;		/* Transmit flow-controlled */
 	bool dongle_reset;  /* TRUE = DEVRESET put dongle into reset */
@@ -656,9 +657,6 @@ typedef struct dhd_pub {
 	void *runner_hlp;      /* Opaque pointer to a dhd runner helper object */
 	uint32 rnr_offl;       /* offload status */
 #endif /* BCM_DHD_RUNNER */
-#if defined(BCM_DHD_RUNNER) || defined(BCA_HNDROUTER)
-	int unit;              /* Radio Unit */
-#endif /* BCM_DHD_RUNNER || BCA_HNDROUTER */
 #if defined(BCM_BUZZZ_STREAMING_BUILD)
 	void * bcm_buzzz_va[BCM_BUZZZ_SEGMENTS]; /* virtual addresses */
 	uint32 bcm_buzzz_pa[BCM_BUZZZ_SEGMENTS]; /* lo 32bit physical address */
@@ -670,7 +668,8 @@ typedef struct dhd_pub {
 #if defined(BCM_AWL)
 	void *awl_cb;
 #endif /* BCM_AWL */
-
+	int wl_ioctl_version;
+	int wl_ioctl_magic;
 } dhd_pub_t;
 
 #if defined(PCIE_FULL_DONGLE)

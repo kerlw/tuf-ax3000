@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_txs.c 776916 2019-07-12 18:10:00Z $
+ * $Id: wlc_txs.c 777554 2019-08-06 03:06:15Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -116,6 +116,10 @@
 #ifdef WL_LEAKY_AP_STATS
 #include <wlc_leakyapstats.h>
 #endif /* WL_LEAKY_AP_STATS */
+#ifdef WL_PROXDETECT
+#include <wlc_ftm.h>
+#include <wlc_pdsvc.h>
+#endif // endif
 #include <wlc_ratelinkmem.h>
 #include <wlc_musched.h>
 
@@ -1077,9 +1081,9 @@ wlc_dotxstatus(wlc_info_t *wlc, tx_status_t *txs, uint32 frm_tx2)
 	scb_orig = WLPKTTAGSCBGET(p);
 	wlc_pkttag_scb_restore_ex(wlc, p, &txh_info, &bsscfg, &scb);
 	if (!WLPKTFLAG_AMPDU(pkttag)) {
-		if (SCB_INTERNAL(scb_orig)) {
+		if (scb_orig != NULL && SCB_INTERNAL(scb_orig)) {
 			SCB_PKTS_INFLT_FIFOCNT_DECR(scb_orig, PKTPRIO(p));
-		} else if ((scb != NULL) && (scb == scb_orig)) {
+		} else if ((scb != NULL) && (scb_orig != NULL) && (scb == scb_orig)) {
 			SCB_PKTS_INFLT_FIFOCNT_DECR(scb, PKTPRIO(p));
 		}
 	}
@@ -1279,6 +1283,14 @@ wlc_dotxstatus(wlc_info_t *wlc, tx_status_t *txs, uint32 frm_tx2)
 	}
 
 #endif /* WLAMPDU */
+
+#if defined(WL_PROXDETECT) && defined(WL_PROXD_UCODE_TSYNC)
+	if (PROXD_ENAB(wlc->pub) && wlc_proxd_frame(wlc, pkttag)) {
+		if (PROXD_ENAB_UCODE_TSYNC(wlc->pub)) {
+			wlc_proxd_process_tx_rx_status(wlc, txs, NULL, &(h->a1));
+		}
+	}
+#endif // endif
 
 #ifdef PROP_TXSTATUS
 	from_host = WL_TXSTATUS_GET_FLAGS(pkttag->wl_hdr_information) & WLFC_PKTFLAG_PKTFROMHOST;
@@ -2243,9 +2255,9 @@ wlc_pkttag_scb_restore(void *ctxt, void* p)
 	}
 
 	scb = WLPKTTAGSCBGET(p);
-	if (SCB_INTERNAL(scb_orig)) {
+	if (scb_orig != NULL && SCB_INTERNAL(scb_orig)) {
 		SCB_PKTS_INFLT_FIFOCNT_DECR(scb_orig, PKTPRIO(p));
-	} else if ((scb != NULL) && (scb == scb_orig)) {
+	} else if ((scb != NULL) && (scb_orig != NULL) && (scb == scb_orig)) {
 		SCB_PKTS_INFLT_FIFOCNT_DECR(scb, PKTPRIO(p));
 	}
 }

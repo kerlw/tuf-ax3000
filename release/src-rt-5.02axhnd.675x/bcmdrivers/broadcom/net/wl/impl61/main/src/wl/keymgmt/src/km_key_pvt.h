@@ -43,7 +43,7 @@
  *
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
- * $Id: km_key_pvt.h 774180 2019-04-15 07:45:12Z $
+ * $Id: km_key_pvt.h 777731 2019-08-07 19:37:44Z $
  */
 
 #ifndef _km_key_pvt_h_
@@ -211,7 +211,6 @@ struct wlc_key {
 #define KEY_COREREV_GE40(_key) (D11REV_GE(KEY_COREREV(_key), 40))
 #define KEY_COREREV_LT128(_key) (D11REV_LT(KEY_COREREV(_key), 128))
 #define KEY_COREREV_GE128(_key) (D11REV_GE(KEY_COREREV(_key), 128))
-
 #define KEY_ERR(args) WL_ERROR(args)
 #define KEY_LOG(args) KM_LOG(args)
 #define KEY_PRINTF(args) KM_PRINTF(args)

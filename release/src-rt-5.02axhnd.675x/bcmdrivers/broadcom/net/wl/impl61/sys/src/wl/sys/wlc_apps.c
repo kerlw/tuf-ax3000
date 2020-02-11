@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_apps.c 776673 2019-07-05 08:50:07Z $
+ * $Id: wlc_apps.c 777531 2019-08-05 09:51:10Z $
  */
 
 /**
@@ -4310,6 +4310,7 @@ wlc_apps_bss_wd_ps_check(void *handle)
 	wlc_info_t *wlc = (wlc_info_t *)handle;
 	struct scb *bcmc_scb;
 	wlc_bsscfg_t *bsscfg;
+	apps_bss_info_t *bss_info;
 	uint i;
 
 	FOREACH_AP(wlc, i, bsscfg) {
@@ -4318,7 +4319,10 @@ wlc_apps_bss_wd_ps_check(void *handle)
 			ASSERT(bcmc_scb != NULL);
 			ASSERT(bcmc_scb->bsscfg == bsscfg);
 
-			if ((SCB_PS(bcmc_scb) == TRUE) && (TXPKTPENDGET(wlc, TX_BCMC_FIFO) == 0)) {
+			bss_info = APPS_BSSCFG_CUBBY(wlc->psinfo, bsscfg);
+			ASSERT(bss_info);
+			if ((SCB_PS(bcmc_scb) == TRUE) && (TXPKTPENDGET(wlc, TX_BCMC_FIFO) == 0) &&
+			    (!(bss_info->ps_trans_status & BSS_PS_ON_BY_TWT))) {
 				if (MBSS_ENAB(wlc->pub)) {
 					if (bsscfg->bcmc_fid_shm != INVALIDFID) {
 						WL_ERROR(("wl%d.%d: %s cfg(%p) bcmc_fid = 0x%x"

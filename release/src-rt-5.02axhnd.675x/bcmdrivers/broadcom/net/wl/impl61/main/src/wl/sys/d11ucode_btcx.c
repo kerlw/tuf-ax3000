@@ -3,12 +3,12 @@
  * Networking Adapter Device Drivers.
  *
  * THIS IS A GENERATED FILE - DO NOT EDIT
- * Generated on Mon Jul 15 05:41:32 PM PDT 2019
+ * Generated on Tue Aug 27 21:15:12 PDT 2019
  *
  * FILE-CSTYLED
  *
- * Ucode directory: /tmp/ucrelease_FkGisc/ucode_checkout/build/btcx_main
- * Derived from major_rev = 1518, minor_rev = 105.
+ * Ucode directory: /tmp/ucrelease_pjjYOs/ucode_checkout/build/btcx_main
+ * Derived from major_rev = 1518, minor_rev = 123.
  *
  * Copyright 2019 Broadcom
  *
@@ -63,4 +63,4 @@
 #include "d11ucode.h"
 
 CONST uint32 d11ucode_btcx_bommajor = 1518;
-CONST uint32 d11ucode_btcx_bomminor = 105;
+CONST uint32 d11ucode_btcx_bomminor = 123;

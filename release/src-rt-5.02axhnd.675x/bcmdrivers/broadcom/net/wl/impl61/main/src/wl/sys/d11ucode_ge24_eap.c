@@ -3,12 +3,12 @@
  * Networking Adapter Device Drivers.
  *
  * THIS IS A GENERATED FILE - DO NOT EDIT
- * Generated on Mon Jul 15 05:41:51 PM PDT 2019
+ * Generated on Tue Aug 27 21:15:26 PDT 2019
  *
  * FILE-CSTYLED
  *
- * Ucode directory: /tmp/ucrelease_FkGisc/ucode_checkout/build/main_eap
- * Derived from major_rev = 1518, minor_rev = 105.
+ * Ucode directory: /tmp/ucrelease_pjjYOs/ucode_checkout/build/main_eap
+ * Derived from major_rev = 1518, minor_rev = 123.
  *
  * Copyright 2019 Broadcom
  *
@@ -63,7 +63,7 @@
 #include "d11ucode.h"
 
 CONST uint32 d11ucode_ge24_eap_bommajor = 1518;
-CONST uint32 d11ucode_ge24_eap_bomminor = 105;
+CONST uint32 d11ucode_ge24_eap_bomminor = 123;
 
 #if NCONF && D11CONF_HAS(30)
 CONST d11init_t BCMINITDATA(d11n16initvals30)[] = {
@@ -1470,8 +1470,8 @@ CONST uint32 BCMPREATTACHDATA(d11ucode30_mimo)[] = {
  0x030017a7, 0x0001bc60, 0x030017a8, 0x0001bc60, 0x030017a9, 0x0001bc60,
  0x030017ac, 0x0001bc60, 0x030017ad, 0x0001bc60, 0x060f1078, 0x000182e0,
  0xe3000d3b, 0x000206c1, 0xa7000d3e, 0x00006880, 0x02f00d3f, 0x0003bfde,
- 0xa7008d3f, 0x00006880, 0x171dc000, 0x0001bc60, 0x030d2001, 0x0001bc60,
- 0x5b1a4002, 0x0001bc62, 0x03000003, 0x0001bc60, 0x03000004, 0x0001bc60,
+ 0xa7008d3f, 0x00006880, 0x171dc000, 0x0001bc60, 0x030f6001, 0x0001bc60,
+ 0x5f152002, 0x0001bc62, 0x03000003, 0x0001bc60, 0x03000004, 0x0001bc60,
  0x5309c005, 0x0001bc60, 0x1f021061, 0x0001bc60, 0x13195060, 0x0001bc60,
  0x03000799, 0x0001bc60, 0x0f001785, 0x0000b05e, 0xb6f07145, 0x0000a044,
  0x02f00bb8, 0x0003bfde, 0x060f1078, 0x000183e0, 0x5ced876c, 0x0001885e,

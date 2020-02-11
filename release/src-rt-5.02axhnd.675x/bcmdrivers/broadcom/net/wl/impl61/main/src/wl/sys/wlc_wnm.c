@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_wnm.c 774516 2019-04-26 10:46:14Z $
+ * $Id: wlc_wnm.c 777999 2019-08-20 06:39:01Z $
  */
 
 /**
@@ -3985,14 +3985,18 @@ wlc_wnm_doiovar(void *hdl, uint32 actionid,
 				return BCME_EPERM;
 			}
 
-			WLC_WNM_UPDATE_TOKEN(wnm->req_token);
-			wnm_scb->bsstrans_token = wnm->req_token;
+			if (wl_bsstrans_req->token) {
+				wnm_scb->bsstrans_token = wl_bsstrans_req->token;
+			} else {
+				WLC_WNM_UPDATE_TOKEN(wnm->req_token);
+				wnm_scb->bsstrans_token = wnm->req_token;
+			}
 #if defined(WL_MBO) && !defined(WL_MBO_DISABLED) && defined(MBO_AP)
 			retry_delay = wl_bsstrans_req->retry_delay;
 			reason = wl_bsstrans_req->reason;
 #endif /* WL_MBO && WL_MBO_DISABLED && MBO_AP */
 			/* Per bsstrans-capable STA, send unicast req frame */
-			wlc_wnm_send_bsstrans_request(wnm, bsscfg, scb, wnm->req_token,
+			wlc_wnm_send_bsstrans_request(wnm, bsscfg, scb, wnm_scb->bsstrans_token,
 				bsstrans->reqmode, retry_delay, reason, FALSE);
 			if (bsstrans->reqmode & DOT11_BSSTRANS_REQMODE_DISASSOC_IMMINENT) {
 				uint msec;

@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_amsdu.c 776928 2019-07-13 03:29:43Z $
+ * $Id: wlc_amsdu.c 777412 2019-08-01 00:36:17Z $
  */
 
 /**
@@ -1666,10 +1666,10 @@ done:
 	return max_agg;
 }
 
-#define MAX_AMSDU_AGGSF_RELEASE	8   /**< max num of MSDUs in one A-MSDU */
+#define MAX_AMSDU_AGGSF_RELEASE        8   /**< max num of MSDUs in one A-MSDU */
 /**
- * To achieve a better throughput, driver need to aggregate more msdu in one mpdu.
- * amsdu_aggsf will be used on release function of fast path.
+ * Dynamic adjust amsdu_aggsf based on STA's bandwidth
+ * XXX:Disable it on EAP NIC. EAP will use amsdu_aggsf for all bandwidth.
  */
 static void
 wlc_amsdu_scb_aggsf_upd(amsdu_info_t *ami, struct scb *scb)
@@ -4074,6 +4074,11 @@ wlc_amsdu_dump(void *ctx, struct bcmstrbuf *b)
 			i, ami->txpolicy.amsdu_agg_enable[i],
 			ami->txpolicy.amsdu_max_agg_bytes[i],
 			ami->txpolicy.amsdu_max_sframes);
+#if defined(WLCFP)
+		bcm_bprintf(b, " agg_sf_limit_cfp %d",
+			CHSPEC_IS160(ami->wlc->chanspec) ?
+			MAX_AMSDU_AGGSF_RELEASE : ami->txpolicy.amsdu_max_sframes);
+#endif // endif
 		bcm_bprintf(b, " fifo_lowm %d fifo_hiwm %d",
 			ami->txpolicy.fifo_lowm, ami->txpolicy.fifo_hiwm);
 		bcm_bprintf(b, "\n");
@@ -4211,8 +4216,11 @@ wlc_amsdu_dump_scb(void *ctx, struct scb *scb, struct bcmstrbuf *b)
 		bcm_bprintf(b, "\tamsdu_agg_sframes %u amsdu_agg_bytes %u amsdu_agg_txpending %u\n",
 			aggstate->amsdu_agg_sframes, aggstate->amsdu_agg_bytes,
 			aggstate->amsdu_agg_txpending);
-
-		bcm_bprintf(b, "\tamsdu_ht_agg_bytes_max %d vht_agg_max %d amsdu_agg_enable %d\n",
+#if defined(WLCFP)
+		bcm_bprintf(b, "\tamsdu_aggsf_max_cfp %d", amsdupolicy->amsdu_aggsf);
+#endif // endif
+		bcm_bprintf(b, " amsdu_aggsf_max %d", amsdupolicy->pub.amsdu_max_sframes);
+		bcm_bprintf(b, " amsdu_ht_agg_bytes_max %d vht_agg_max %d amsdu_agg_enable %d\n",
 			amsdupolicy->amsdu_ht_agg_bytes_max, amsdupolicy->amsdu_vht_agg_bytes_max,
 			amsdupolicy->pub.amsdu_agg_enable);
 

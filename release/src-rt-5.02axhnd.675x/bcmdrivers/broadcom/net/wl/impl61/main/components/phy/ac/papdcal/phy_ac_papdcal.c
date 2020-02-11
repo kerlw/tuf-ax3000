@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_papdcal.c 776743 2019-07-08 15:00:28Z $
+ * $Id: phy_ac_papdcal.c 777337 2019-07-29 09:22:40Z $
  */
 #include <phy_cfg.h>
 #include <typedefs.h>
@@ -783,7 +783,7 @@ phy_ac_populate_papd_params(phy_ac_papdcal_info_t *papd_info)
 		papd_params->papd_calidx_5g = (((uint16)PHY_GETINTVAR_DEFAULT(pi,
 			rstr_nb_papd_calidx, 30 << PAPD_CAL_IDX_5G_SHIFT)) &
 			PAPD_CAL_IDX_5G) >> PAPD_CAL_IDX_5G_SHIFT;
-		papd_params->papd_iter = 64;
+		papd_params->papd_iter = 128;
 		papd_params->tia_mode_2g = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
 				rstr_nb_tia_gain_mode, 2)) & TIA_GAIN_MODE_2G;
 		papd_params->tia_mode_5g = (((uint16)PHY_GETINTVAR_DEFAULT(pi,

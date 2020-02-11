@@ -1215,6 +1215,10 @@ define RouterOptions
 		sed -i "/RTCONFIG_BCM_CLED/d" $(1); \
 		echo "RTCONFIG_BCM_CLED=y" >>$(1); \
 	fi; \
+	if [ "$(SINGLE_LED)" = "y" ] ; then \
+		sed -i "/RTCONFIG_SINGLE_LED/d" $(1); \
+		echo "RTCONFIG_SINGLE_LED=y" >>$(1); \
+	fi; \
 	if [ "$(AURASYNC)" = "y" ]; then \
 		sed -i "/RTCONFIG_AURASYNC/d" $(1); \
 		echo "RTCONFIG_AURASYNC=y" >>$(1); \
@@ -1463,6 +1467,12 @@ define RouterOptions
 	if [ "$(EMAIL)" = "y" ]; then \
 		sed -i "/RTCONFIG_PUSH_EMAIL/d" $(1); \
 		echo "RTCONFIG_PUSH_EMAIL=y" >>$(1); \
+	fi; \
+	if [ "$(AHS)" = "y" ]; then \
+		sed -i "/RTCONFIG_AHS/d" $(1); \
+		echo "RTCONFIG_AHS=y" >>$(1); \
+		sed -i "/RTCONFIG_HTTPS/d" $(1); \
+		echo "RTCONFIG_HTTPS=y" >>$(1); \
 	fi; \
 	if [ "$(RSYSLOGD)" = "y" ]; then \
 		sed -i "/RTCONFIG_RSYSLOGD/d" $(1); \
@@ -2064,6 +2074,8 @@ define RouterOptions
 	sed -i "/RTCONFIG_ROG_UI/d" $(1); \
 	if [ "$(ROG_UI)" = "y" ]; then \
 		echo "RTCONFIG_ROG_UI=y" >>$(1); \
+		sed -i "/RTCONFIG_OPEN_NAT/d" $(1); \
+		echo "RTCONFIG_OPEN_NAT=y" >>$(1); \
 	else \
 		echo "# RTCONFIG_ROG_UI is not set" >>$(1); \
 	fi; \
@@ -2834,9 +2846,9 @@ define RouterOptions
 		sed -i "/RTCONFIG_DWB/d" $(1); \
 		echo "RTCONFIG_DWB=y" >>$(1); \
 	fi; \
-	if [ "$(GAME_PROFILE)" = "y" ]; then \
-		sed -i "/RTCONFIG_GAME_PROFILE/d" $(1); \
-		echo "RTCONFIG_GAME_PROFILE=y" >>$(1); \
+	if [ "$(OPEN_NAT)" = "y" ]; then \
+		sed -i "/RTCONFIG_OPEN_NAT/d" $(1); \
+		echo "RTCONFIG_OPEN_NAT=y" >>$(1); \
 	fi; \
 	if [ "$(BRCM_HOSTAPD)" = "y" ]; then \
 		sed -i "/RTCONFIG_BRCM_HOSTAPD/d" $(1); \

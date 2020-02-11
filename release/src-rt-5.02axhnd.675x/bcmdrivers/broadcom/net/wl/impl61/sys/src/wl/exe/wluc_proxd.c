@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wluc_proxd.c 774769 2019-05-07 08:46:22Z $
+ * $Id: wluc_proxd.c 777979 2019-08-19 23:14:13Z $
  */
 
 #include <wlioctl.h>
@@ -59,6 +59,7 @@
 #include <bcmendian.h>
 #include "wlu_common.h"
 #include "wlu.h"
+#include <bcmwifi_rspec.h>
 
 #include <unistd.h>
 #include <signal.h>
@@ -76,55 +77,15 @@
 static cmd_func_t wl_proxd;
 static cmd_func_t wl_proxd_tune;
 static cmd_func_t wl_proxd_collect;
-static cmd_func_t wl_proxd_params;
-static cmd_func_t wl_proxd_status;
-static cmd_func_t wl_proxd_payload;
 #if defined(linux)
 static cmd_func_t wl_proxd_event_check;
 #endif   /* linux */
-static cmd_func_t wl_proxd_report;
 #define WL_PROXD_PAYLOAD_LEN	1026
 #define TOF_DEFAULT_FTMCNT_SEQ		3
 
 #define WL_PROXD_TUNE_VERSION_MAJOR_1	1
 #define WL_PROXD_TUNE_VERSION_MAJOR_2	2
 #define WL_PROXD_TUNE_VERSION_MAJOR_3	3
-
-#define PROXD_PARAMS_USAGE	\
-"\tUsage: wl proxd_params method [-c channel] [-i interval] [-d duration] [-s rssi_thresh]"	\
-" [-p tx_power] [-r tx_rate] [-t timeout] [-m maxconvergetime] [-g <xx:xx:xx:xx:xx:xx>]"	\
-" [-y retrycnt]\n\n" \
-"\tMandatory args:\n"		\
-"\t\tmethod: == 1 (RSSI) or == 2 (TOF) methods are supported) \n\n"	\
-"\tOptional method specific args - for method 1: \n"	\
-"\t\t-c chanspec     : (all methods) channel to use for Proximity Detection\n"	\
-"\t\t                :  e.g: 161/80, if [/BW] omitted, driver will assume 20Mhz by default\n" \
-"\t\t-i interval     : (RSSI method) interval between neighbor finding attempts (in TU)\n"	\
-"\t\t                : (Once associated as STA mode, this value is ignored and\n"	\
-"\t\t                :  the interval follows DTIM)\n"	\
-"\t\t-d duration     : (RSSI method) duration of neighbor finding attempts (in ms)\n"		\
-"\t\t                : == dwelling time on home channel specificed by -c channel\n"	\
-"\t\t-s rssi_thresh  : RSSI threshold for Proximity Detection criteria (in dBm)\n"	\
-"\t\t                : (-99 to -1)\n"	\
-"\t\t-p tx_power     : (RSSI method) tx power of Proximity Detection frames (in dBm)\n"	\
-"\t\t-r tx_rate      : (all methods) tx rate of Proximity Detection frames (in Mbps)\n" \
-"\t\t                : (TOF) tx_rate format is {R|{hM|vM[xS]}[s][l][g]}[eT][bB]\n" \
-"\t\t                : R - legacy rate, hM - HT MCS index[0-23], " \
-"vMxS - VHT MCS index[0-9] and Nss[1-8]\n" \
-"\t\t                : s - Use STBC expansion, l - Use LDPC encoding, " \
-"g - SGI, Short Guard Interval\n" \
-"\t\t                : eT - Tx expansion, number of tx chains[0-3], " \
-"bB - tx bandwidth, MHz: 20, 40, 80\n" \
-"\t\t-t timeout      : (all methods) state machine receive timeout of Proximity Detection " \
-"frames (in ms)\n" \
-"\t\t-m maxconverge  : (RSSI method) device stays up for a whole interval to detect the peer\n"	\
-"\t\t                : when no peer found after max converge time (in ms)\n\n"	\
-"\t\t-g tgt_mac      : (TOF) proximity target mac address for a method  \n" \
-"\t\t-f ftm_cnt      : (TOF) number of ftm frames requested by initiator from target  \n" \
-"\t\t-y retry_cnt    : (TOF) number of retransmit attempts for FTM frames \n" \
-"\tExample: wl proxd_params 1 -c 36 -i 100 -d 10 -s -40 -p 12 -r 6 -t 20 -m 1000\n" \
-"\tExample: wl proxd_params 1 -s -55\n" \
-"\tExample: wl proxd_params 2 -c 11 -f 10 -g 00:90:4c:a5:01:32 -r v0"
 
 #define PROXD_TUNE_USAGE	\
 "\tUsage: wl proxd_tune method [operations]\n\n" \
@@ -150,13 +111,10 @@ static cmd_func_t wl_proxd_report;
 
 static cmd_t wl_proxd_cmds[] = {
 	{ "proxd", wl_proxd, WLC_GET_VAR, WLC_SET_VAR,
-	"Enable/Disable Proximity Detection\n"
-	"\t0 : disable\n"
-	"\t1 [initiator|target|neutral] [u/r]: enable with the specified mode and wakeup"
-	" mechanism\n"
+	"Configure Proximity Detection\n"
 	"\tftm [<session-id>] <cmd> [<param-name><param-value>...]:"
 	" enable FTM, type 'wl proxd -h ftm' for more information\n\n"
-	"\tExample: wl proxd 1 initiator"},
+	"\tExample: wl proxd ftm enable"},
 	{ "proxd_collect", wl_proxd_collect, WLC_GET_VAR, WLC_SET_VAR,
 	"collect the debugging informations of Proximity Detection \n\n"
 	"Optional parameters is:\n"
@@ -165,33 +123,9 @@ static cmd_t wl_proxd_cmds[] = {
 	"\t-l, dump local collect data and request load remote AP collect data.\n"
 	"\t-r, dump remote collect data or request load remote AP collect data.\n"
 	"\t-f File name to dump the sample buffer (default \"proxd_collect.dat\")\n"},
-	{ "proxd_params", wl_proxd_params, WLC_GET_VAR, WLC_SET_VAR,
-	"Set/Get operational parameters for a method of Proximity Detection\n\n"
-	PROXD_PARAMS_USAGE},
 	{ "proxd_tune", wl_proxd_tune, WLC_GET_VAR, WLC_SET_VAR,
 	"Set/Get tune parameters for TOF method of Proximity Detection\n\n"
 	PROXD_TUNE_USAGE},
-	{ "proxd_bssid", wl_iov_mac, WLC_GET_VAR, WLC_SET_VAR,
-	"Set/Get BSSID to be used in proximity detection frames\n\n"
-	"\tUsage: wl proxd_bssid <xx:xx:xx:xx:xx:xx>"},
-	{ "proxd_mcastaddr", wl_iov_mac, WLC_GET_VAR, WLC_SET_VAR,
-	"Set/Get Multicast MAC address of Proximity Detection Frames\n\n"
-	"\tUsage: wl proxd_mcastaddr <xx:xx:xx:xx:xx:xx>"},
-	{ "proxd_find", wl_var_void, -1, WLC_SET_VAR,
-	"Start Proximity Detection" },
-	{ "proxd_stop", wl_var_void, -1, WLC_SET_VAR,
-	"Stop Proximity Detection" },
-	{ "proxd_status", wl_proxd_status, WLC_GET_VAR, -1,
-	"Get status of Proximity Detection" },
-	{ "proxd_monitor", wl_iov_mac, -1, WLC_SET_VAR,
-	"Monitor detected peer status in proximity\n\n"
-	"\tUsage: wl proxd_monitor <xx:xx:xx:xx:xx:xx>"},
-	{ "proxd_payload", wl_proxd_payload, WLC_GET_VAR, WLC_SET_VAR,
-	"Get/Set payload content transferred between the proximity detected peers\n\n"
-	"\tUsage: wl proxd_payload [len hexstring]"},
-	{ "proxd_report", wl_proxd_report, WLC_GET_VAR, WLC_SET_VAR,
-	"Get/Set report distance results list\n\n"
-	"\tUsage: wl proxd_report [mac address list]"},
 #if defined(linux)
 	{ "proxd_event_check", wl_proxd_event_check, -1, -1,
 	"Listen and print Location Based Service events\n"
@@ -1170,154 +1104,6 @@ int proxd_method_rssi_set_param_from_opt(cmd_t *cmd,
 		return BCME_USAGE_ERROR;
 
 	return BCME_OK;
-}
-
-static int
-wl_proxd_params(void *wl, cmd_t *cmd, char **argv)
-{
-	wl_proxd_params_iovar_t proxd_params, *reply;
-	uint16 method;
-	void *ptr = NULL;
-	int ret, opt_err;
-	miniopt_t to;
-	char chspec_str[CHANSPEC_STR_LEN];
-	char rate_str[64];
-	chanspec_t chanspec;
-	uint16 interval, duration;
-	uint32 tx_rate;
-
-	/* skip the command name and check if mandatory exists */
-	if (!*++argv) {
-		fprintf(stderr, "missing mandatory parameter \'method\'\n");
-		return BCME_USAGE_ERROR;
-	}
-
-	/* parse method */
-	method = (uint16)atoi(argv[0]);
-	if (method == 0) {
-		fprintf(stderr, "invalid parameter \'method\'\n");
-		return BCME_USAGE_ERROR;
-	}
-
-	bzero(&proxd_params, sizeof(proxd_params));
-
-	/* set method to get/set */
-	proxd_params.method = htod16(method);
-
-	ret = wlu_var_getbuf_sm(wl, cmd->name, &proxd_params, sizeof(proxd_params), &ptr);
-	if (ret != BCME_OK) {
-		return ret;
-	}
-
-	if (!*++argv) {
-		/* get */
-		/* display proxd_params got */
-		reply = (wl_proxd_params_iovar_t *)ptr;
-
-		printf("bf proxd_params.method:%d\n", proxd_params.method);
-		switch (proxd_params.method) {
-
-		case PROXD_RSSI_METHOD:
-
-			chanspec = wl_chspec_from_driver(reply->u.rssi_params.chanspec);
-			tx_rate = dtoh16(reply->u.rssi_params.tx_rate);
-			wf_chspec_ntoa(chanspec, chspec_str);
-
-			printf("channel=%s\n", chspec_str);
-			printf("interval=%d TU\n", dtoh16(reply->u.rssi_params.interval));
-			printf("duration=%d ms\n", dtoh16(reply->u.rssi_params.duration));
-			printf("rssi_thresh=%d dBm\n",
-				(int16)dtoh16(reply->u.rssi_params.rssi_thresh));
-			printf("maxconvergetime=%d ms\n\n",
-				dtoh16(reply->u.rssi_params.maxconvergtmo));
-			printf("tx_power=%d dBm\n",
-				(int16)dtoh16(reply->u.rssi_params.tx_power));
-			printf("tx_rate=%d%s Mbps\n",
-				(tx_rate / 2), (tx_rate & 1) ? ".5" : "");
-			printf("timeout=%d ms\n", dtoh16(reply->u.rssi_params.timeout));
-			break;
-
-		case PROXD_TOF_METHOD:
-
-			chanspec = wl_chspec_from_driver(reply->u.tof_params.chanspec);
-			tx_rate = dtoh16(reply->u.tof_params.tx_rate) |
-				(dtoh16(reply->u.tof_params.vht_rate) << 16);
-			wf_chspec_ntoa(chanspec, chspec_str);
-			wl_rate_print(rate_str, tx_rate);
-
-			printf("tgt_mac=%s \n",
-				wl_ether_etoa(&reply->u.tof_params.tgt_mac));
-			printf("ftm_cnt= %d\n", dtoh16(reply->u.tof_params.ftm_cnt));
-			printf("channel=%s (0x%04x)\n", chspec_str, chanspec);
-			printf("tx_rate=%s (0x%08x)\n", rate_str, tx_rate);
-			printf("timeout=%d ms\n",
-				dtoh16(reply->u.tof_params.timeout));
-			printf("retry_cnt=%d \n", dtoh16(reply->u.tof_params.retry_cnt));
-			break;
-
-		default:
-			fprintf(stderr,
-				"%s: ERROR undefined method \n", cmd->name);
-			return BCME_BADARG;
-		}
-	} else {  /* set */
-		memcpy((void *)&proxd_params, (void *)ptr, sizeof(proxd_params));
-		proxd_params.method = method;
-
-		/* set */
-		miniopt_init(&to, cmd->name, NULL, FALSE);
-		while ((opt_err = miniopt(&to, argv)) != -1) {
-			int com_res, meth_res;
-
-			if (opt_err == 1) {
-				return BCME_USAGE_ERROR;
-			}
-			argv += to.consumed;
-
-			/*  process cmd opts common for all methods */
-			com_res = proxd_method_set_common_param_from_opt(cmd,
-				&to, &proxd_params.u.cmn_params);
-
-			/* method specific opts */
-			switch (method) {
-				case PROXD_RSSI_METHOD:
-					meth_res = proxd_method_rssi_set_param_from_opt(cmd,
-						&to, &proxd_params.u.rssi_params);
-				break;
-				case PROXD_TOF_METHOD:
-					meth_res = proxd_method_tof_set_param_from_opt(cmd,
-						&to, &proxd_params.u.tof_params);
-					if (meth_res == BCME_BADARG)
-						return meth_res;
-				break;
-				default:
-					printf("ERROR: unsupported method\n");
-					return BCME_USAGE_ERROR;
-			}
-
-			/*  if option is unknown to both common and meth specific */
-			if ((com_res != BCME_OK) && (meth_res != BCME_OK)) {
-				printf(">>>> Method:%d doesn't support cmd option:'%c'\n",
-					method, to.opt);
-				return BCME_USAGE_ERROR;
-			}
-		}
-
-		/* Sanity check of parameters against each other */
-		interval = dtoh16(proxd_params.u.rssi_params.interval);
-		duration = dtoh16(proxd_params.u.rssi_params.duration);
-
-		if (interval < duration) {
-			fprintf(stderr,
-				"%s: \'interval\' cannot be shorter than \'duration\'\n",
-				cmd->name);
-			return BCME_BADARG;
-		}
-
-		ret = wlu_var_setbuf(wl, cmd->name, &proxd_params, sizeof(proxd_params));
-	}
-
-	return ret;
 }
 
 /* proxd parse mixed param: <str0><val0><str1><val1>... */
@@ -2583,271 +2369,6 @@ wl_proxd_tune(void *wl, cmd_t *cmd, char **argv)
 	return ret;
 }
 
-static const char *wl_proxd_mode_str(uint8 mode)
-{
-	static const char *proxd_mode[] = {"Undetected", "Neutral", "Initiator", "Target",
-		"UNKNOWN"};
-
-	if (mode > WL_PROXD_MODE_TARGET)
-		mode = WL_PROXD_MODE_TARGET+1;
-
-	return proxd_mode[mode];
-}
-static const char *wl_proxd_state_str(uint8 state)
-{
-	static const char *proxd_state[] = {"Poll", "Pairing", "Handshake", "Detected",
-		"Pipeline", "NegMode", "Monitor", "Unknown"};
-
-	if (state == RSSI_STATE_POLL)
-		return proxd_state[0];
-	if (state == RSSI_STATE_TPAIRING || state == RSSI_STATE_IPAIRING)
-		return proxd_state[1];
-	if (state == RSSI_STATE_THANDSHAKE || state == RSSI_STATE_IHANDSHAKE)
-		return proxd_state[2];
-	if (state == RSSI_STATE_CONFIRMED)
-		return proxd_state[3];
-	if (state == RSSI_STATE_PIPELINE)
-		return proxd_state[4];
-	if (state == RSSI_STATE_NEGMODE)
-		return proxd_state[5];
-	if (state == RSSI_STATE_MONITOR)
-		return proxd_state[6];
-
-	return proxd_state[7];
-}
-
-static const char *wl_proxd_tof_state_str(uint8 state)
-{
-	static const char *tof_proxd_state[] =
-		{"Idle", "Wait", "LegacyWait", "Confirmed", "Unknown", "Report"};
-
-	if (state == TOF_STATE_IDLE)
-		return tof_proxd_state[0];
-	if (state == TOF_STATE_IWAITM || state == TOF_STATE_TWAITM ||
-		state == TOF_STATE_IWAITCL || state == TOF_STATE_TWAITCL)
-		return tof_proxd_state[1];
-	if (state == TOF_STATE_ILEGACY)
-		return tof_proxd_state[2];
-	if (state == TOF_STATE_ICONFIRM)
-		return tof_proxd_state[3];
-	if (state == TOF_STATE_IREPORT)
-		return tof_proxd_state[5];
-
-	return tof_proxd_state[4];
-}
-
-static const char *wl_proxd_tof_reason_str(uint8 reason)
-{
-	static const char *tof_proxd_reason[] = {"OK", "RxedReqEnd", "Timeout",
-		"LostACK", "InvalidAVB"};
-
-	if (reason > TOF_REASON_INVALIDAVB)
-		reason = 0;
-
-	return tof_proxd_reason[reason];
-}
-
-static const char *wl_proxd_reason_str(uint8 reason)
-{
-	static const char *proxd_reason[] = {"Unknown", "Low rssi", "State machine out of SYNC",
-		"Timeout"};
-
-	if (reason > RSSI_REASON_TIMEOUT)
-		reason = 0;
-
-	return proxd_reason[reason];
-}
-
-static int
-wl_proxd_status(void *wl, cmd_t *cmd, char **argv)
-{
-	wl_proxd_status_iovar_t status, *statusp;
-	int ret = BCME_BADARG;
-
-	if (!*++argv) {
-		/* Get */
-		bzero(&status, sizeof(wl_proxd_status_iovar_t));
-		if ((ret = wlu_iovar_get(wl, cmd->name, (void *) &status,
-			(sizeof(wl_proxd_status_iovar_t)))) < 0)
-			return (ret);
-
-		statusp = &status;
-		switch (statusp->method)
-		{
-			case PROXD_RSSI_METHOD:
-				printf("mode=%s\n", wl_proxd_mode_str(statusp->mode));
-				printf("state=%s\n", wl_proxd_state_str(statusp->state));
-				printf("peer mode=%s\n", wl_proxd_mode_str(statusp->peermode));
-				printf("peer=%s\n", wl_ether_etoa(&statusp->peer));
-				printf("lowest rssi=%d\n", statusp->low_rssi);
-				printf("highest rssi=%d\n", statusp->hi_rssi);
-				printf("tx pkts=%d\n", statusp->txcnt);
-				printf("rx pkts=%d\n", statusp->rxcnt);
-				printf("reason=%s\n\n", wl_proxd_reason_str(statusp->reason));
-				break;
-
-			case PROXD_TOF_METHOD:
-				printf("mode=%s\n", wl_proxd_mode_str(statusp->mode));
-				printf("state=%s\n", wl_proxd_tof_state_str(statusp->state));
-				if (statusp->distance == 0xffffffff)
-					printf("distance=-1\n");
-				else
-					printf("distance=%d.%04d\n", statusp->distance >> 4,
-						((statusp->distance & 0xf)*625));
-				printf("peer=%s\n", wl_ether_etoa(&statusp->peer));
-				printf("avg rssi=%d\n", statusp->avg_rssi);
-				printf("tx pkts=%d\n", statusp->txcnt);
-				printf("rx pkts=%d\n", statusp->rxcnt);
-				printf("frame types = CCK %d OFDM %d 11N %d 11AC %d\n",
-					statusp->frame_type_cnt[FRAME_TYPE_CCK],
-					statusp->frame_type_cnt[FRAME_TYPE_OFDM],
-					statusp->frame_type_cnt[FRAME_TYPE_11N],
-					statusp->frame_type_cnt[FRAME_TYPE_11AC]);
-				printf("adj types = SW %d HW %d SEQ %d NONE %d\n",
-					statusp->adj_type_cnt[TOF_ADJ_SOFTWARE],
-					statusp->adj_type_cnt[TOF_ADJ_HARDWARE],
-					statusp->adj_type_cnt[TOF_ADJ_SEQ],
-					statusp->adj_type_cnt[TOF_ADJ_NONE]);
-				printf("report status= %d\n", statusp->dbgstatus);
-				printf("reason=%s\n", wl_proxd_tof_reason_str(statusp->reason));
-				printf("frmcnt=%d\n", statusp->low_rssi);
-				if (statusp->hi_rssi == TOF_LEGACY_AP)
-					printf("measure=OneSide\n\n");
-				else
-					printf("measure=TwoSide\n\n");
-				break;
-
-			default:
-				printf("ERROR: unsupported method\n");
-				return BCME_USAGE_ERROR;
-		}
-	}
-	else
-		printf("Cannot set proxd_status\n");
-
-	return ret;
-}
-static int
-wl_proxd_payload(void *wl, cmd_t *cmd, char **argv)
-{
-	char *buf;
-	uint16 len, *reply;
-	int ret;
-
-	buf = malloc(WL_PROXD_PAYLOAD_LEN);
-	if (buf == NULL) {
-		fprintf(stderr, "Failed to allocate buffer of %d bytes\n", WL_PROXD_PAYLOAD_LEN);
-		return -1;
-	}
-	bzero(buf, WL_PROXD_PAYLOAD_LEN);
-
-	/* skip the command name and check if NULL */
-	if (!*++argv) {
-		/* Get */
-		if ((ret = wlu_iovar_get(wl, cmd->name, (void *)buf, WL_PROXD_PAYLOAD_LEN)) < 0) {
-			free(buf);
-			return (ret);
-		}
-		reply = (uint16 *)buf;
-		len = dtoh16(reply[0]);
-
-		if (len > 0) {
-			char *ptr = buf+sizeof(uint16);
-			char *endptr = ptr+len;
-			int num = 0;
-			uint8 val;
-
-			printf("Payload Length %d\n", len);
-			while (ptr < endptr)
-			{
-				val = *(uint8 *)ptr++;
-				printf("%02X", val);
-				if (++num == 40)
-				{
-					printf("\n");
-					num = 0;
-				}
-			}
-			if (num) printf("\n");
-		}
-	} else {
-		/* Set */
-		len = (uint16)atoi(argv[0]);
-		if (len > 0) {
-			if (!argv[1]) {
-				printf("Payload content is missing\n");
-				free(buf);
-				return -1;
-			}
-			else {
-				char *ptr = argv[1];
-				char *bufp = buf;
-				char hex[] = "XX";
-
-				if ((uint16)strlen(ptr) != len*2)
-				{
-					printf("Payload length mismatch %d %d\n", len,
-						((int)strlen(ptr))/2);
-					free(buf);
-					return -1;
-				}
-				while (*ptr) {
-					strncpy(hex, ptr, 2);
-					*bufp++ = (char) strtoul(hex, NULL, 16);
-					ptr += 2;
-				}
-			}
-		}
-		ret = wlu_var_setbuf(wl, cmd->name, buf, len);
-	}
-	free(buf);
-	return ret;
-}
-
-static int wl_proxd_report(void *wl, cmd_t *cmd, char **argv)
-{
-	uint16 len;
-	int i, ret;
-	struct ether_addr addrlist[WL_PROXD_MAXREPORT];
-
-	/* skip the command name and check if NULL */
-	if (!*++argv) {
-		/* Get */
-		len = sizeof(struct ether_addr) * WL_PROXD_MAXREPORT;
-		bzero(&addrlist[0], len);
-		if ((ret = wlu_iovar_get(wl, cmd->name, (void *)addrlist, len)) < 0) {
-			return (ret);
-		}
-
-		for (i = 0; i < WL_PROXD_MAXREPORT; i++)
-		{
-			if (ETHER_ISNULLADDR(&addrlist[i]))
-				break;
-			printf("%s ", wl_ether_etoa(&addrlist[i]));
-		}
-		printf("\n");
-	} else {
-		/* Set */
-		i = 0;
-		while (argv[0]) {
-			if (i >= WL_PROXD_MAXREPORT) {
-				printf("Over the maxium report number %d\n", WL_PROXD_MAXREPORT);
-				return BCME_BUFTOOLONG;
-			}
-			if (!wl_ether_atoe(argv[0], &addrlist[i])) {
-				if (i == 0)
-					return BCME_BADADDR;
-				break;
-			}
-			i++;
-			argv++;
-		}
-		ret = wlu_var_setbuf(wl, cmd->name, addrlist, ETHER_ADDR_LEN * i);
-	}
-
-	return ret;
-}
-
 /*   print or calculate & print location info   */
 void wl_proxd_tof_host_calc(wl_proxd_event_data_t* evp)
 {
@@ -3836,6 +3357,7 @@ ftm_unpack_and_display_rtt_result_v1(const uint8 *p_data, uint16 tlvid, uint16 l
 	int32 avg_dist;
 	wl_proxd_rtt_result_v1_t *p_data_info;
 	wl_proxd_rtt_sample_v1_t *p_sample;
+	wl_proxd_status_t status;
 	uint16 num_rtt;
 	char* pstatestr[] = PDFTM_BURST_STATE_NAMES;
 	char *ftm_frame_types[] =  FTM_FRAME_TYPES;
@@ -3866,8 +3388,10 @@ ftm_unpack_and_display_rtt_result_v1(const uint8 *p_data, uint16 tlvid, uint16 l
 
 	/* session state and status */
 	session_state = ltoh16_ua(&p_data_info->state);
-	printf(">\tsession state=%d(%s)",
-		session_state, ftm_session_state_value_to_logstr(session_state));
+	status = ltoh32_ua(&p_data_info->status);
+	printf(">\tsession state=%d(%s) status=%d(%s)\n",
+		session_state, ftm_session_state_value_to_logstr(session_state),
+		status, ftm_status_value_to_logstr(status));
 
 	printf(">\tburst_duration: %d%s\n",
 		ltoh32_ua(&p_data_info->u.burst_duration.intvl),
@@ -3982,6 +3506,7 @@ ftm_unpack_and_display_rtt_result_v2(const uint8 *p_data, uint16 tlvid, uint16 l
 	int32 avg_dist;
 	wl_proxd_rtt_result_v2_t *p_data_info;
 	wl_proxd_rtt_sample_v2_t *p_sample;
+	wl_proxd_status_t status;
 	uint16 version = 0;
 	uint16 length = 0;
 	uint16 num_rtt;
@@ -4018,8 +3543,10 @@ ftm_unpack_and_display_rtt_result_v2(const uint8 *p_data, uint16 tlvid, uint16 l
 
 	/* session state and status */
 	session_state = ltoh16_ua(&p_data_info->state);
-	printf(">\tsession state=%d(%s)",
-		session_state, ftm_session_state_value_to_logstr(session_state));
+	status = ltoh32_ua(&p_data_info->status);
+	printf(">\tsession state=%d(%s) status=%d(%s)\n",
+		session_state, ftm_session_state_value_to_logstr(session_state),
+		status, ftm_status_value_to_logstr(status));
 
 	printf(">\tburst_duration: %d%s\n",
 		ltoh32_ua(&p_data_info->u.burst_duration.intvl),
@@ -5107,7 +4634,9 @@ static const ftm_config_param_info_t ftm_config_param_info[] = {
 	FTM_SUBCMD_FLAG_METHOD },
 	{ "req-retries", WL_PROXD_TLV_ID_FTM_REQ_RETRIES, "number of FTM request retries",
 	FTM_SUBCMD_FLAG_ALL },
-	{ "tpk", WL_PROXD_TLV_ID_TPK, "tpk to be configured", FTM_SUBCMD_FLAG_ALL }
+	{ "tpk", WL_PROXD_TLV_ID_TPK, "tpk to be configured", FTM_SUBCMD_FLAG_ALL },
+	{ "cur-etheraddr", WL_PROXD_TLV_ID_CUR_ETHER_ADDR, "ether address for tx",
+	FTM_SUBCMD_FLAG_ALL}
 };
 
 /* map a specified text-string to a proxd time unit
@@ -5226,6 +4755,7 @@ static const ftm_config_options_info_t ftm_session_options_info[] = {
 	"Same as proxd flags above, applies to the session" },
 	{ "nan-bss",	WL_PROXD_SESSION_FLAG_NAN_BSS, "Use NAN BSS, if applicable" },
 	{ "ts1", WL_PROXD_SESSION_FLAG_TS1, "FTM1 - ASAP-capable" }, /* readonly */
+	{ "randmac", WL_PROXD_SESSION_FLAG_RANDMAC, "Use random mac on initiator" },
 #ifdef SJL_FIXME
 	{ "rpt-failure", WL_PROXD_SESSION_FLAG_REPORT_FAILURE,
 	"(target) report not rx distance to host" },
@@ -6143,6 +5673,7 @@ wl_proxd_tlv_t **p_tlv, uint16 *p_buf_space_left)
 		case WL_PROXD_TLV_ID_BSSID:		/* mac address */
 		case WL_PROXD_TLV_ID_PEER_MAC:
 		case WL_PROXD_TLV_ID_DEV_ADDR:
+		case WL_PROXD_TLV_ID_CUR_ETHER_ADDR:
 			src_data_mac = ether_null;
 			if (!wl_ether_atoe(*argv, &src_data_mac)) {
 				printf("error: invalid MAC address parameter\n");

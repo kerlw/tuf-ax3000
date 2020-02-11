@@ -54,8 +54,11 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 
 #define MAX_TCP_HEADER	(128 + MAX_HEADER)
 #define MAX_TCP_OPTION_SPACE 40
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11477*/
 #define TCP_MIN_SND_MSS		48
 #define TCP_MIN_GSO_SIZE	(TCP_MIN_SND_MSS - MAX_TCP_OPTION_SPACE)
+#endif //#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
 
 /*
  * Never offer a window over 32767 without using window scaling. Some

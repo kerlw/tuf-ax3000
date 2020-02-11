@@ -19,7 +19,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: hndpmu.c 774871 2019-05-09 09:35:43Z $
+ * $Id: hndpmu.c 777286 2019-07-25 19:43:30Z $
  */
 
 /**
@@ -1557,6 +1557,8 @@ void si_pmu_avbtimer_enable(si_t *sih, osl_t *osh, bool set_flag)
 	pmuregs_t *pmu;
 	uint origidx;
 
+	/* Block ints and save current core */
+	uint intr_val = si_introff(sih);
 	/* Remember original core before switch to chipc/pmu */
 	origidx = si_coreidx(sih);
 	if (AOB_ENAB(sih)) {
@@ -1595,8 +1597,24 @@ void si_pmu_avbtimer_enable(si_t *sih, osl_t *osh, bool set_flag)
 		}
 	}
 
+	if (((CHIPID(sih->chip) == BCM4366_CHIP_ID) &&
+		CHIPREV(sih->chiprev) >= 0x4) ||
+		CHIPID(sih->chip) == BCM43684_CHIP_ID) {
+		/*
+		For Rev C0 4365 (chiprev 0x4) and 43684 chips, bits 13:12 of chipcontrol_data
+		must be set to a value other than 0.  0 means AVB clock disabled, 01 means AVB
+		clock uses GPIOs for input, and 10 means AVB clock uses GPIOs for output
+		*/
+
+		pmu_corereg(sih, SI_CC_IDX, chipcontrol_addr,
+		           0xffffffff, 0);
+		pmu_corereg(sih, SI_CC_IDX, chipcontrol_data,
+		           0x3000, 0x2000);
+	}
+
 	/* Return to original core */
 	si_setcoreidx(sih, origidx);
+	si_intrrestore(sih, intr_val);
 }
 
 /**
@@ -4080,6 +4098,14 @@ si_pmu_fvco_pllreg(si_t *sih, uint32 *fvco, uint32 *pllreg)
 		if (pllreg) {
 			*pllreg = (si_pmu_pllcontrol(sih, PMU_PLL_CTRL_REG4, 0, 0) &
 				PMU1_PLL0_PC1_M3DIV_MASK) >> PMU1_PLL0_PC1_M3DIV_SHIFT;
+		}
+		break;
+	case BCM4366_CHIP_ID:
+	case BCM43684_CHIP_ID:
+	case BCM63178_CHIP_ID:
+		if (pllreg) {
+			*pllreg = ((si_pmu_pllcontrol(sih, PMU_PLL_CTRL_REG4, 0, 0) &
+				PMU1_PLL0_PC1_M4DIV_MASK) >> PMU1_PLL0_PC1_M4DIV_SHIFT);
 		}
 		break;
 	case BCM4347_CHIP_GRPID:

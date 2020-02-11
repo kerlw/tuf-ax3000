@@ -104,6 +104,9 @@ static const uint16 airiq_fft_latency_bins[AIRIQ_HISTOGRAM_BINCNT] =
 /* phy macros */
 /*  */
 
+static const char BCMATTACHDATA(rstr_airiq_coex_gpio_2g)[] = "airiq_coex_gpio_2g";
+static const char BCMATTACHDATA(rstr_airiq_coex_gpio_5g)[] = "airiq_coex_gpio_5g";
+
 /*
  * Initialize airiq private context. It returns a pointer to the
  * airiq private context if succeeded. Otherwise it returns NULL.
@@ -162,6 +165,8 @@ BCMATTACHFN(wlc_airiq_attach) (wlc_info_t * wlc)
 	airiqh->detector_config.detector_configured  = FALSE;
 	airiqh->lte_u_aging_interval = 10*1000*1000;   //10secs
 	airiqh->pkt_up_counter = 0;
+	airiqh->coex_gpio_mask_2g   = getintvar(wlc->pub->vars, rstr_airiq_coex_gpio_2g);
+	airiqh->coex_gpio_mask_5g   = getintvar(wlc->pub->vars, rstr_airiq_coex_gpio_5g);
 	/* get 64-bit aligned pointer */
 	airiqh->fft_buffer = (uint8*)(((uintptr)airiqh->__fft_buffer + 7) & (uintptr)(~7));
 	ASSERT(ISALIGNED(airiqh->fft_buffer, 8));
@@ -366,6 +371,25 @@ wlc_airiq_fifo_suspend_complete(airiq_info_t *airiqh)
 	airiqh->tx_suspending = FALSE;
 }
 
+/* only set in 4x4 mode */
+void
+wlc_airiq_set_scan_in_progress(airiq_info_t *airiqh, bool in_progress)
+{
+	// need to marked scan in progress only in 4x4 mode
+	if (airiqh->phy_mode == PHYMODE_3x3_1x1)
+		return;
+
+	airiqh->wlc->scan->in_progress = in_progress;
+
+	if (in_progress) {
+		ASSERT(STAY_AWAKE(airiqh->wlc));
+	} else {
+		/* note: no assert needed in this path since there could be other conditions
+		 * causing wake state to be set
+		 */
+	}
+	wlc_set_wake_ctrl(airiqh->wlc);
+}
 void
 wlc_airiq_set_enable(airiq_info_t *airiqh, bool enable)
 {

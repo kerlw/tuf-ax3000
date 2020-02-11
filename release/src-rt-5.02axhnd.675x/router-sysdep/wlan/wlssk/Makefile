@@ -89,6 +89,7 @@ scripts-clean:
 ifneq ($(strip $(HNDAPPS_IN_COMP)),)
 CFLAGS += -I$(HNDAPPS_DIR)/shared  -I$(HNDAPPS_DIR)/../wlioctl/include -I$(HNDAPPS_DIR)/../proto/include
 CFLAGS += -I$(HNDAPPS_DIR)/../math/include 
+CFLAGS += -I$(HNDAPPS_DIR)/dpsta -I$(HNDAPPS_DIR)/shared
 endif
 
 ALLOWED_INCLUDE_PATHS += -I. \

@@ -62,10 +62,11 @@
 
 #include "wlsysutil.h"
 #include "nvram_api.h"
+#include <wlif_utils.h>
+#include <dpsta_linux.h>
 
 
 extern int wl_wlif_wds_ap_ifname(char *inteface,char* name);
-extern void get_bridge_by_ifname(char *inteface,char** name);
 extern bool wl_wlif_is_psta(char *ifname);
 
 #ifdef WL_BSTREAM_IQOS
@@ -108,8 +109,6 @@ void wlssk_init(void)
 #if defined(__CONFIG_HSPOT__)
     nvram_set("wlPassPoint", "1");
 #endif
-    nvram_set("ure_disable", "1");
-    nvram_set("router_disable", "0");
     nvram_set("hide_hnd_header", "y");
 #ifdef WL_BSTREAM_IQOS
     nvram_set("wlBIQOS", "1");
@@ -361,12 +360,39 @@ static void wlconf_start(const unsigned int idx)
     bcmSystem(cmd);
 }
 
+#define DPSTA_IFNAME "dpsta"
 static void bridge_setup()
 {
     char ifname[IFNAME_LENGTH] = {0};
-    char *temp = NULL;
+    char *temp = NULL, *dpsta_ifnames = NULL, *lan_hwaddr = NULL;
     char cmd[CMD_BUF_SIZE] = {0};
     int idx, subIdx;
+	dpsta_enable_info_t info = { 0 };
+
+	if ((dpsta_ifnames = nvram_unf_get("dpsta_ifnames")) != NULL)
+    {
+		char *policy = NULL, *lan_uif = NULL;
+
+        DEBUG("%s: DPSTA mode is enabled ... bring up dpsta interface\n", __FUNCTION__);
+		if ((lan_hwaddr = nvram_unf_get("lan_hwaddr")) != NULL)
+    	{
+			snprintf(cmd, sizeof(cmd), "ifconfig %s hw ether %s 2> /dev/null", DPSTA_IFNAME, lan_hwaddr);
+			bcmSystem(cmd);
+			free(lan_hwaddr);
+		}
+		snprintf(cmd, sizeof(cmd), "ifconfig %s up 2> /dev/null", DPSTA_IFNAME);
+		bcmSystem(cmd);
+
+		policy = nvram_unf_get("dpsta_policy");
+		lan_uif = nvram_unf_get("dpsta_lan_uif");
+		info.enable = 1;
+		info.policy = policy ? atoi(policy) : 1;
+		info.lan_uif = lan_uif ? atoi(lan_uif) : 1;
+		if (policy)
+			free(policy);
+		if (lan_uif)
+			free(lan_uif);
+	}
 
     for (idx = 0 ; idx < act_wl_cnt ; idx++ )
     {
@@ -388,11 +414,23 @@ static void bridge_setup()
                     bridgeName = "br0";
                     insert_into_ifnames(ifname, 0);
                 }
+				if (dpsta_ifnames && strstr(dpsta_ifnames, ifname)) {
+					snprintf(cmd, sizeof(cmd), "brctl delif %s %s 2> /dev/null", bridgeName, ifname);
+					DEBUG("%s: %s (idx %d) was found dpsta_ifnames,"
+						"removing it from %s\n", __FUNCTION__, ifname, idx, bridgeName);
+                	bcmSystem(cmd);
+					strcpy((char *)info.upstream_if[idx], ifname);	
+					dpsta_ioctl("dpsta", &info, sizeof(dpsta_enable_info_t));
+					snprintf(ifname, sizeof(ifname), "%s", DPSTA_IFNAME);
+				}
                 snprintf(cmd, sizeof(cmd), "brctl addif %s %s 2> /dev/null", bridgeName, ifname);
                 bcmSystem(cmd);
             }
         }
     }
+
+	if (dpsta_ifnames)
+		free(dpsta_ifnames);
 
     if ((temp = nvram_unf_get("lan_ifname")) == NULL)
     {

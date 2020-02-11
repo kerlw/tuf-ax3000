@@ -510,7 +510,10 @@ static inline int fastopen_init_queue(struct sock *sk, int backlog)
 	return 0;
 }
 
+#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
+/*CVE-2019-11477*/
 int tcp_skb_shift(struct sk_buff *to, struct sk_buff *from, int pcount,
 		  int shiftlen);
+#endif //#if defined(CONFIG_BCM_KF_MISC_BACKPORTS)
 
 #endif	/* _LINUX_TCP_H */

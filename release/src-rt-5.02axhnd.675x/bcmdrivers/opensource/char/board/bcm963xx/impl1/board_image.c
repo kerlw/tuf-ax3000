@@ -1944,16 +1944,19 @@ int setup_mtd_parts(struct mtd_info* mtd)
     bcm63XX_nand_parts[2].ecclayout = mtd->ecclayout;
 #endif
 
-#if defined(CRASHLOG) && (defined(RTAX88U) || defined(GTAX11000) || defined(RTAX92U) || defined(RTAX95Q) || defined(RTAX58U) || defined(RTAX56U))
-    /* Ares hack AX-88U to adjust partition. misc2 is 64 MB, misc3 0 MB, --> modify to misc2 63MB, misc3 1 MB */
-    if (nvram.part_info[1].size == 64 && nvram.part_info[2].size == 0) {
-        nvram.part_info[1].size = 63;
+#ifdef CRASHLOG
+    /* Ares hack to adjust partition. misc2 is 48 MB, misc3 0 MB, --> modify to misc2 47MB, misc3 1 MB */
+    if (nvram.part_info[1].size == 48 && nvram.part_info[2].size == 0) {
+        nvram.part_info[1].size = 47;
         nvram.part_info[2].size = 1;
     }
 
 #endif
     // skip DATA partition
     for (i = BCM_MAX_EXTRA_PARTITIONS - 2; i >= 0; i--) {
+	printk("setup_mtd_parts: misc indx %d name %s nvram configured size %d \n"
+	, i,misc_mtd_partition_names[i], nvram.part_info[i].size);
+
         if (nvram.part_info[i].size == 0xffff)
             continue;
 
@@ -1984,6 +1987,12 @@ int setup_mtd_parts(struct mtd_info* mtd)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
             bcm63XX_nand_parts[nr_parts].ecclayout = mtd->ecclayout;
 #endif
+            printk("setup_mtd_parts: name %s configured size 0x%08x offset 0x%llX\n"
+            , misc_mtd_partition_names[i]
+            , (int)bcm63XX_nand_parts[nr_parts].size
+            , bcm63XX_nand_parts[nr_parts].offset
+            );
+
             nr_parts++;
         }
     }

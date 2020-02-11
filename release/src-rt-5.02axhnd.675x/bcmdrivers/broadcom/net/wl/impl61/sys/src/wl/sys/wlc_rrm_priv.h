@@ -293,6 +293,7 @@ struct wlc_rrm_info {
 	rrm_txstrmreq_t *txstrmreq; /* Transmit stream/category request/report data */
 	struct wl_timer *rrm_noise_ipi_timer; /* measurement for noise ipi */
 	rrm_ftmreq_t *rrm_frng_req;
+	bool direct_ranging_mode; /* TRUE = driver handles request/report, FALSE means app does */
 	wlc_rrm_cmn_info_t *rrm_cmn;
 };
 

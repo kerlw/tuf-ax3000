@@ -1772,8 +1772,10 @@ stop_wan_if(int unit)
 #endif
 
 	/* Stop l2tp */
-	if (strcmp(wan_proto, "l2tp") == 0)
+	if (strcmp(wan_proto, "l2tp") == 0) {
 		kill_pidfile_tk("/var/run/l2tpd.pid");
+		usleep(1000*10000);
+	}
 
 	/* Stop pppd */
 	stop_pppd(unit);

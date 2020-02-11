@@ -222,7 +222,9 @@ firmware_check_update_main(int argc, char *argv[])
 			snprintf(webs_state_REQinfo, sizeof(webs_state_REQinfo), "%lu_%lu_%lu-%s", req_firmver, req_buildno, req_lextendno, req_commit_num);
 			nvram_set("webs_state_info", webs_state_info);
 			nvram_set("webs_state_REQinfo", webs_state_REQinfo);
-			nvram_set("webs_state_url", url_dl);
+
+			if(!strncmp(url_dl, "http", 4))
+				nvram_set("webs_state_url", url_dl);
 
 			FWUPDATE_DBG("---- current version : %s %s %s %s----", model_name, current_firm, current_buildno, current_extendno);
 			FWUPDATE_DBG("---- productid : %s %lu %lu %lu----", model_name, firmver, buildno, lextendno);

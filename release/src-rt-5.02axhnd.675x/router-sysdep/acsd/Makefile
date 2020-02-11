@@ -50,6 +50,7 @@ include $(SRCBASE)/makefiles/WLAN_Common.mk
 export SRCBASE := $(WLAN_SrcBaseA)
 export BASEDIR := $(WLAN_TreeBaseA)
 #export TOP = ..
+CFLAGS	+= $(EXTRACFLAGS)
 CFLAGS	+= -I. -I$(TOP)/shared -I$(SRCBASE)/include ${WLAN_StdIncPathA} -I$(SRCBASE)/common/include -Wall -Werror
 CFLAGS	+= $(if $(WLAN_ComponentIncPath),$(WLAN_ComponentIncPath),$(addprefix -I,$(wildcard $(SRCBASE)/shared/bcmwifi/include $(SRCBASE)/../components/math/include)))
 #CFLAGS	+= -g -DDEBUG

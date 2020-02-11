@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: dhdu.c 774881 2019-05-09 12:24:28Z $
+ * $Id: dhdu.c 777959 2019-08-16 10:24:31Z $
  */
 
 /* For backwards compatibility, the absence of the define 'BWL_NO_FILESYSTEM_SUPPORT'
@@ -2995,6 +2995,7 @@ dhd_upload(void *dhd, cmd_t *cmd, char **argv)
 				break;
 			}
 		}
+		dhd_iovar_setint(dhd, "devreset", 1);
 	}
 
 exit:

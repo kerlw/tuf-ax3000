@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wlif_utils.c 776654 2019-07-05 06:14:21Z $
+ * $Id: wlif_utils.c 778090 2019-08-22 08:41:00Z $
  */
 
 #include <typedefs.h>
@@ -1686,6 +1686,9 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 	char pfcred1[] = "wlc1_";
 	char pfcred2[] = "wlc2_";
 	int wlif_num = num_of_wl_if();
+	int i, unit = -1;
+	char prefix2[] = "wlXXXXXXX_";
+	bool wps_configured = nvram_match("w_Setting", "1");
 
 	if (!bss || !creds) {
 		cprintf("Err: shared %s bss and credentials can not be null \n", __func__);
@@ -1702,10 +1705,19 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 	}
 
 	prefix = bss->nvifname;
+	wl_ioctl(bss->ifname, WLC_GET_INSTANCE, &unit, sizeof(unit));
+
 	// ssid
 	snprintf(nv_name, sizeof(nv_name), "%s_ssid", prefix);
 	if (!nvram_match(nv_name, creds->ssid)) {
 		nvram_set(nv_name, creds->ssid);
+		if (!wps_configured)
+		for (i = 0; i < wlif_num; i++) {
+			if (i == unit) continue;
+			snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+			nvram_set(strcat_r(prefix2, "_ssid", tmp), creds->ssid);
+		}
+
 		if (nvram_get_int("amesh_wps_enr")) {
 			nvram_set(strcat_r(pfcred, "ssid", tmp), creds->ssid);
 			nvram_set(strcat_r(pfcred0, "ssid", tmp), creds->ssid);
@@ -1750,6 +1762,12 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 	}
 	if (!nvram_match(nv_name, val)) {
 		nvram_set(nv_name, val);
+		if (!wps_configured)
+		for (i = 0; i < wlif_num; i++) {
+			if (i == unit) continue;
+			snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+			nvram_set(strcat_r(prefix2, "_akm", tmp), val);
+		}
 
 		switch (creds->akm) {
 			case WLIF_WPA_AKM_PSK:
@@ -1759,8 +1777,15 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 					nvram_set(strcat_r(pfcred1, "auth_mode", tmp), "psk");
 					if (wlif_num == 3)
 					nvram_set(strcat_r(pfcred2, "auth_mode", tmp), "psk");
-				} else
+				} else {
 					nvram_set(strcat_r(prefix, "_auth_mode_x", tmp), "psk");
+					if (!wps_configured)
+					for (i = 0; i < wlif_num; i++) {
+						if (i == unit) continue;
+						snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+						nvram_set(strcat_r(prefix2, "_auth_mode_x", tmp), "psk");
+					}
+				}
 			break;
 			case WLIF_WPA_AKM_PSK2:
 				if (nvram_get_int("amesh_wps_enr")) {
@@ -1769,8 +1794,15 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 					nvram_set(strcat_r(pfcred1, "auth_mode", tmp), "psk2");
 					if (wlif_num == 3)
 					nvram_set(strcat_r(pfcred2, "auth_mode", tmp), "psk2");
-				} else
+				} else {
 					nvram_set(strcat_r(prefix, "_auth_mode_x", tmp), "psk2");
+					if (!wps_configured)
+					for (i = 0; i < wlif_num; i++) {
+						if (i == unit) continue;
+						snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+						nvram_set(strcat_r(prefix2, "_auth_mode_x", tmp), "psk2");
+					}
+				}
 			break;
 			case (WLIF_WPA_AKM_PSK | WLIF_WPA_AKM_PSK2):
 				if (nvram_get_int("amesh_wps_enr")) {
@@ -1779,19 +1811,59 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 					nvram_set(strcat_r(pfcred1, "auth_mode", tmp), "psk2");
 					if (wlif_num == 3)
 					nvram_set(strcat_r(pfcred2, "auth_mode", tmp), "psk2");
-				} else
+				} else {
 					nvram_set(strcat_r(prefix, "_auth_mode_x", tmp), "pskpsk2");
+					if (!wps_configured)
+					for (i = 0; i < wlif_num; i++) {
+						if (i == unit) continue;
+						snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+						nvram_set(strcat_r(prefix2, "_auth_mode_x", tmp), "pskpsk2");
+					}
+				}
+			break;
+			default:
+				if (nvram_get_int("amesh_wps_enr")) {
+					nvram_set(strcat_r(pfcred, "auth_mode", tmp), "open");
+					nvram_set(strcat_r(pfcred0, "auth_mode", tmp), "open");
+					nvram_set(strcat_r(pfcred1, "auth_mode", tmp), "open");
+					if (wlif_num == 3)
+						nvram_set(strcat_r(pfcred2, "auth_mode", tmp), "open");
+				} else {
+					nvram_set(strcat_r(prefix, "_auth_mode_x", tmp), "open");
+					if (!wps_configured)
+					for (i = 0; i < wlif_num; i++) {
+						if (i == unit) continue;
+						snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+						nvram_set(strcat_r(prefix2, "_auth_mode_x", tmp), "open");
+					}
+				}
 			break;
 		}
 
+		nvram_set(strcat_r(prefix, "_wep", tmp), "0");
 		if (nvram_get_int("amesh_wps_enr")) {
 			nvram_set(strcat_r(pfcred, "wep", tmp), "0");
 			nvram_set(strcat_r(pfcred0, "wep", tmp), "0");
 			nvram_set(strcat_r(pfcred1, "wep", tmp), "0");
 			if (wlif_num == 3)
 			nvram_set(strcat_r(pfcred2, "wep", tmp), "0");
-		} else
+		} else {
 			nvram_set(strcat_r(prefix, "_wep_x", tmp), "0");
+			if (!wps_configured)
+			for (i = 0; i < wlif_num; i++) {
+				if (i == unit) continue;
+				snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+				nvram_set(strcat_r(prefix2, "_wep_x", tmp), "0");
+			}
+		}
+
+		nvram_set(strcat_r(prefix, "_auth", tmp), "0");
+		if (!wps_configured)
+		for (i = 0; i < wlif_num; i++) {
+			if (i == unit) continue;
+			snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+			nvram_set(strcat_r(prefix2, "_auth", tmp), "0");
+		}
 
 		ret = 0;
 	}
@@ -1814,6 +1886,13 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 	}
 	if (!nvram_match(nv_name, val)) {
 		nvram_set(nv_name, val);
+		if (!wps_configured)
+		for (i = 0; i < wlif_num; i++) {
+			if (i == unit) continue;
+			snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+			nvram_set(strcat_r(prefix2, "_crypto", tmp), val);
+		}
+
 		if (nvram_get_int("amesh_wps_enr")) {
 			if (creds->encr == (WLIF_WPA_ENCR_TKIP | WLIF_WPA_ENCR_AES))
 				val = "aes";
@@ -1824,12 +1903,20 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 			if (wlif_num == 3)
 			nvram_set(strcat_r(pfcred2, "crypto", tmp), val);
 		}
+
 		ret = 0;
 	}
 
 	snprintf(nv_name, sizeof(nv_name), "%s_wpa_psk", prefix);
 	if (!nvram_match(nv_name, creds->nw_key)) {
 		nvram_set(nv_name, creds->nw_key);
+		if (!wps_configured)
+		for (i = 0; i < wlif_num; i++) {
+			if (i == unit) continue;
+			snprintf(prefix2, sizeof(prefix2), "wl%d", i);
+			nvram_set(strcat_r(prefix2, "_wpa_psk", tmp), creds->nw_key);
+		}
+
 		if (nvram_get_int("amesh_wps_enr")) {
 			nvram_set(strcat_r(pfcred, "wpa_psk", tmp), creds->nw_key);
 			nvram_set(strcat_r(pfcred0, "wpa_psk", tmp), creds->nw_key);
@@ -1841,13 +1928,15 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 	}
 
 	if (!ret) {
-		nvram_set("w_Setting", "1");
-		if (nvram_get_int("amesh_wps_enr")) {
-			if (nvram_get_int("wps_enr_hw") == 1)
-				nvram_set("x_Setting", "1");
+		if (!wps_configured) {
+			nvram_set("w_Setting", "1");
+			if (nvram_get_int("amesh_wps_enr")) {
+				if (nvram_get_int("wps_enr_hw") == 1)
+					nvram_set("x_Setting", "1");
 #ifdef RTCONFIG_AMAS
-			nvram_set("obd_Setting", "1");
+				nvram_set("obd_Setting", "1");
 #endif
+			}
 		}
 		nvram_commit();
 	}
@@ -2150,7 +2239,7 @@ wl_wlif_fill_bh_creds_from_nvram(char *nvifname, wlif_bh_creds_hapd_clicmd_data_
 {
 	char *ptr, tmp[WLIF_MIN_BUF] = {0};
 	char *next;
-	bool psk_required = FALSE;
+	bool psk_required = FALSE, sae = FALSE;
 
 	snprintf(tmp, sizeof(tmp), "%s_wep", nvifname);
 	ptr = nvram_safe_get(tmp);
@@ -2176,19 +2265,29 @@ wl_wlif_fill_bh_creds_from_nvram(char *nvifname, wlif_bh_creds_hapd_clicmd_data_
 			WLIF_STRNCPY(cmd->auth, "WPA2PSK", sizeof(cmd->encr));
 			psk_required = TRUE;
 		}
+
+		if (!strcmp(tmp, "sae")) {
+			WLIF_STRNCPY(cmd->auth, "WPA2PSK", sizeof(cmd->encr));
+			sae = psk_required = TRUE;
+		}
 	}
 
 	if (psk_required) {
-		snprintf(tmp, sizeof(tmp), "%s_crypto", nvifname);
-		ptr = nvram_safe_get(tmp);
-		if (!strcmp(ptr, "tkip")) {
-			WLIF_STRNCPY(cmd->encr, "TKIP", sizeof(cmd->encr));
-		} else if (!strcmp(ptr, "aes") || !strcmp(ptr, "tkip+aes")) {
+		/* force crypto to CCMP for sae or sae-transition mode */
+		if (sae) {
 			WLIF_STRNCPY(cmd->encr, "CCMP", sizeof(cmd->encr));
 		} else {
-			cprintf("Info: shared %s uknown crypto type (%s) for ifname %s\n",
-				__func__, ptr, nvifname);
-			return -1;
+			snprintf(tmp, sizeof(tmp), "%s_crypto", nvifname);
+			ptr = nvram_safe_get(tmp);
+			if (!strcmp(ptr, "tkip")) {
+				WLIF_STRNCPY(cmd->encr, "TKIP", sizeof(cmd->encr));
+			} else if (!strcmp(ptr, "aes") || !strcmp(ptr, "tkip+aes")) {
+				WLIF_STRNCPY(cmd->encr, "CCMP", sizeof(cmd->encr));
+			} else {
+				cprintf("Info: shared %s uknown crypto type (%s) for ifname %s\n",
+					__func__, ptr, nvifname);
+				return -1;
+			}
 		}
 
 		snprintf(tmp, sizeof(tmp), "%s_wpa_psk", nvifname);
@@ -2493,6 +2592,89 @@ wl_wlif_map_get_candidate_bhsta_bsslist(char *list, wlif_bss_list_t *bss_list, c
 	}
 }
 
+/* Apply the network credentials received from wps session to the bss */
+static void
+wl_wlif_apply_map_backhaul_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
+{
+	char nv_name[WLIF_MIN_BUF] = {0};
+	char *val = "", *prefix;
+	bool wps_v2 = FALSE, sae_transition_mode = FALSE;
+
+	prefix = bss->nvifname;
+
+	/* ssid */
+	snprintf(nv_name, sizeof(nv_name), "%s_ssid", prefix);
+	nvram_set(nv_name, creds->ssid);
+
+	val = nvram_safe_get("wps_version2");
+	if (!strcmp(val, "enabled")) {
+		wps_v2 = TRUE;
+	}
+
+	/* for wps version 2 force psk2 if psk1 is provided. */
+	if (wps_v2 == TRUE) {
+		if (creds->akm & WLIF_WPA_AKM_PSK) {
+			creds->akm |= WLIF_WPA_AKM_PSK2;
+		}
+		if (creds->encr & WLIF_WPA_ENCR_TKIP) {
+			creds->encr |= WLIF_WPA_ENCR_AES;
+		}
+	}
+
+	/* akm */
+	val = "";
+	snprintf(nv_name, sizeof(nv_name), "%s_akm", prefix);
+	switch (creds->akm) {
+	case WLIF_WPA_AKM_PSK:
+		val = "psk";
+		break;
+
+	case WLIF_WPA_AKM_PSK2:
+		val = "psk2 sae";
+		sae_transition_mode = TRUE;
+		break;
+
+	case WLIF_WPA_AKM_PSK | WLIF_WPA_AKM_PSK2:
+		val = "psk psk2";
+		break;
+
+	default:
+		dprintf("Received akm %d \n", creds->akm);
+		break;
+	}
+	nvram_set(nv_name, val);
+
+	/* crypto */
+	snprintf(nv_name, sizeof(nv_name), "%s_crypto", prefix);
+	val = sae_transition_mode ? "aes" : "";	/* Force crypto to aes for sae transition mode */
+	if (!sae_transition_mode) {
+		switch (creds->encr) {
+		case WLIF_WPA_ENCR_TKIP:
+			val = "tkip";
+			break;
+
+		case WLIF_WPA_ENCR_AES:
+			val = "aes";
+			break;
+
+		case WLIF_WPA_ENCR_TKIP | WLIF_WPA_ENCR_AES:
+			val = "tkip+aes";
+			break;
+
+		default:
+			dprintf("Received encr %d \n", creds->encr);
+			break;
+		}
+	}
+	nvram_set(nv_name, val);
+
+	/* wpa-psk */
+	snprintf(nv_name, sizeof(nv_name), "%s_wpa_psk", prefix);
+	nvram_set(nv_name, creds->nw_key);
+
+	nvram_commit();
+}
+
 /* Configuration of multiap backhaul station interface from the credentials received using wps
  * 1: Get the candidate multiap backhaul sta list from the lan_ifnames nvram.
  * 2: From the above list select backhaul sta based on the backhaul ssid using scan results.
@@ -2533,7 +2715,7 @@ wl_wlif_map_configure_backhaul_sta_interface(wlif_bss_t *bss_in, wlif_wps_nw_cre
 			bss = &bss_list.bss[idx];
 			if (!strcmp(bss->ifname, bh_ifname)) {
 				// apply the settings received from wps;
-				ret = wl_wlif_apply_creds(bss, creds);
+				wl_wlif_apply_map_backhaul_creds(bss, creds);
 				nvram_set("map_onboarded", "1");
 				nvram_unset("wps_on_sta");
 			} else {

@@ -44,7 +44,7 @@
  *	OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *	NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_channels.c 776842 2019-07-11 07:40:26Z $
+ *	$Id: acs_channels.c 778096 2019-08-22 10:39:16Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -412,6 +412,7 @@ acs_pick_chanspec_common(acs_chaninfo_t *c_info, int bw, int score_type)
 	}
 
 	if (!acs_is_initial_selection(c_info) &&
+		!c_info->autochannel_through_cli &&
 		!((c_info->switch_reason == APCS_DFS_REENTRY) && c_info->dfs_reentry)) {
 		for (i = 0; i < chstats->count; i++) {
 			if (chstats->version == WL_CHANIM_STATS_VERSION) {
@@ -1933,7 +1934,8 @@ acs_select_chspec(acs_chaninfo_t *c_info)
 		rsi->coex_enb;
 
 	/* Return when acsd is not in autochannel or coex mode */
-	if (!AUTOCHANNEL(c_info) || (BAND_2G(rsi->band_type) && !AUTOCHANNEL(c_info) &&
+	if ((BAND_5G(rsi->band_type) && !AUTOCHANNEL(c_info)) ||
+			(BAND_2G(rsi->band_type) && !AUTOCHANNEL(c_info) &&
 			!need_coex_check)) {
 		ACSD_ERROR("%s: %s called when not in auto mode or not in coex mode (%d)",
 				c_info->name, __func__,	c_info->mode);
@@ -2039,6 +2041,15 @@ reduce_bw:
 			selected = candi[(c_info->c_count[bw])-1].chspec;
 		else
 			selected = candi[0].chspec;
+
+		acs_conf_chspec_t *excl_chans = &(c_info->excl_chans);
+		int i;
+		if (excl_chans && excl_chans->count)
+			for (i = 0; i < excl_chans->count; i++)
+				if (selected == excl_chans->clist[i]) {
+					c_info->selected_chspec = 0;
+					return FALSE;
+				}
 	}
 
 done:
@@ -2099,6 +2110,8 @@ acs_set_chspec(acs_chaninfo_t * c_info, bool update_dfs_params, int ch_chng_reas
 	acs_bgdfs_info_t *acs_bgdfs = c_info->acs_bgdfs;
 	wl_chan_change_reason_t reason;
 	reason = (wl_chan_change_reason_t)ch_chng_reason;
+	int unit = -1;
+	char tmp[32], prefix[32];
 
 	if (c_info->txop_channel_select == 0) {
 		if (chspec) {
@@ -2174,6 +2187,24 @@ acs_set_chspec(acs_chaninfo_t * c_info, bool update_dfs_params, int ch_chng_reas
 			else {
 				ACSD_PRINT("%s: set chanspec 0x%4x (%s) failed!\n",
 					c_info->name, chspec, wf_chspec_ntoa(chspec, chanspecbuf));
+			}
+		} else {
+			wl_ioctl(c_info->name, WLC_GET_INSTANCE, &unit, sizeof(unit));
+			snprintf(prefix, sizeof(prefix), "wl%d_", unit);
+
+			if (BAND_5G(c_info->rs_info.band_type) &&
+				nvram_match(strcat_r(prefix, "mode", tmp), "ap") &&
+				nvram_match("location_code", "RU") &&
+				nvram_match("acs_band3", "0")) {
+				int bw, count = 0;
+				for (bw = 0; bw < ACS_BW_MAX; bw++)
+					if (acs_has_valid_candidate(c_info, bw))
+						count++;
+
+				if (count == 0) {
+					ACSD_PRINT("bring down %s for no valid chanspec!\n", c_info->name);
+					wl_ioctl(c_info->name, WLC_DOWN, NULL, 0);
+				}
 			}
 		}
 	}

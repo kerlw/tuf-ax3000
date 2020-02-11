@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ampdu_rx.c 775546 2019-06-04 02:40:32Z $
+ * $Id: wlc_ampdu_rx.c 777620 2019-08-06 19:04:30Z $
  */
 
 /**
@@ -2408,6 +2408,22 @@ bool wlc_scb_ampdurx_on_tid(struct scb *scb, uint8 prio)
 	ASSERT(scb_ampdu_rx);
 	if (scb_ampdu_rx->resp[prio])
 		return TRUE;
+	return FALSE;
+}
+
+/**
+ * This function is used in wlc_musched_watchdog and is needed to verify that at least one
+ * BA has been established for a certain scb, before that scb can be considered for UL-OFDMA.
+ */
+bool wlc_scb_ampdurx_on(struct scb *scb)
+{
+	uint8 tid;
+
+	for (tid = 0; tid < AMPDU_MAX_SCB_TID; tid++) {
+		if (wlc_scb_ampdurx_on_tid(scb, tid)) {
+			return TRUE;
+		}
+	}
 	return FALSE;
 }
 

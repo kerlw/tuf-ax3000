@@ -96,8 +96,8 @@
 #define I5_DM_LINK_METRICS_MINIMUM_AUTO_FETCH_INTERVAL_MSEC 5000
 #define I5_DM_LINK_METRICS_MAXIMUM_AUTO_FETCH_INTERVAL_MSEC 600000
 
-#define I5_DM_DEVICE_TIMER_ROBUSTNESS            2
-#define I5_DM_DEVICE_TIMER_LATENCY_MSEC          120000
+#define I5_DM_DEVICE_TIMER_ROBUSTNESS            1
+#define I5_DM_DEVICE_TIMER_LATENCY_MSEC          2000
 #define I5_DM_TOP_DISC_DEVICE_GONE_TIMER         I5_DM_DEVICE_TIMER_ROBUSTNESS*I5_MESSAGE_STANDARD_TOPOLOGY_DISCOVERY_PERIOD_MSEC + I5_DM_DEVICE_TIMER_LATENCY_MSEC
 
 #ifdef MULTIAP
@@ -1843,9 +1843,13 @@ int i5DmIsDeviceConnected (i5_dm_device_type *device)
 
 void i5DmDeviceWatchDogTimeout(void *arg)
 {
-  i5_dm_device_type *device = (i5_dm_device_type *) arg;
+  i5_dm_device_type *device = NULL;
+  unsigned char *pmac = (unsigned char *)arg;
 
-  if (!device) {
+  if (!pmac) {
+    return;
+  }
+  if ((device = i5DmDeviceFind(pmac)) == NULL) {
     return;
   }
 
@@ -1869,6 +1873,29 @@ void i5DmDeviceWatchDogTimeout(void *arg)
   i5DmGetSelfDevice()->hasChanged++;
 }
 
+void i5DmDeviceWatchDogTransTimeout(void *arg)
+{
+  i5_dm_device_type *device = NULL;
+  unsigned char *pmac = (unsigned char *)arg;
+
+  if (!pmac) {
+    return;
+  }
+  if ((device = i5DmDeviceFind(pmac)) == NULL) {
+    return;
+  }
+
+  i5TraceError("Device Transitional Timed Out: " I5_MAC_DELIM_FMT " \"%s\" \n",
+    I5_MAC_PRM(device->DeviceId), device->friendlyName);
+  /* Send topology query and start 2 second timer to call actual watchdog */
+
+  i5MessageTopologyQuerySend(device->psock, device->DeviceId);
+  if (device->watchdogTimer) {
+    i5TimerFree(device->watchdogTimer);
+    device->watchdogTimer = i5TimerNew(I5_DM_DEVICE_TIMER_LATENCY_MSEC, i5DmDeviceWatchDogTimeout, arg);
+  }
+}
+
 void i5DmRefreshDeviceTimer(unsigned char *alMacAddress, char createFlag)
 {
   i5_dm_device_type *device = i5DmDeviceIsSelf(alMacAddress) ? NULL : i5DmDeviceFind(alMacAddress);
@@ -1879,7 +1906,8 @@ void i5DmRefreshDeviceTimer(unsigned char *alMacAddress, char createFlag)
       createFlag = 1;
     }
     if (1 == createFlag) {
-      device->watchdogTimer = i5TimerNew(i5_config.deviceWatchdogTimeoutMsec, i5DmDeviceWatchDogTimeout, (void *)device);
+      device->watchdogTimer = i5TimerNew(i5_config.deviceWatchdogTimeoutMsec,
+        i5DmDeviceWatchDogTransTimeout, (void *)device->DeviceId);
     }
   }
 }
@@ -2156,8 +2184,12 @@ void i5DmDeviceFree(i5_dm_device_type *device)
   --i5_dm_network_topology.DevicesNumberOfEntries;
 
   if (isController) {
-    /* If the controller got rmeoved, make all interfaces
-     * unconfigured and start controller search */
+    /* If the controller got removed, enable BH STA roaming,
+     * make all interfaces unconfigured and start controller search
+     */
+    if(i5_config.cbs.set_bh_sta_params) {
+      i5_config.cbs.set_bh_sta_params(IEEE1905_BH_STA_ROAM_ENAB_VAP_FOLLOW);
+    }
     i5WlcfgMarkAllInterfacesUnconfigured();
     i5WlCfgMultiApControllerSearch(NULL);
   }

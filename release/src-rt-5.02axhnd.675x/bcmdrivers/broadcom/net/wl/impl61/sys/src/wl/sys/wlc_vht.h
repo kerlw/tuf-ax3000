@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_vht.h 766106 2018-07-24 17:40:09Z $
+ * $Id: wlc_vht.h 777844 2019-08-13 07:36:57Z $
  */
 
 #ifndef _wlc_vht_h_
@@ -173,6 +173,7 @@ extern void wlc_vht_set_ac_mode(wlc_vht_info_t *vhti);
 extern bool wlc_vht_is_40MHz(wlc_info_t* wlc, void* p, struct scb* scb);
 extern bool wlc_vht_is_SGI(wlc_info_t* wlc, void* p, struct scb* scb);
 extern uint8 wlc_vht_get_mcs(wlc_info_t* wlc, void* p, struct scb* scb);
+extern int wlc_vht_get_scb_oper_nss(wlc_vht_info_t *vhti, struct scb *scb);
 
 #else
 /* empty macros to avoid having to use WL11AC flags everywhere */

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_radar_st.h 776674 2019-07-05 08:59:51Z $
+ * $Id: phy_radar_st.h 777256 2019-07-24 23:41:25Z $
  */
 
 #ifndef _phy_radar_st_
@@ -132,18 +132,13 @@ typedef struct {
 	uint32 last_tstart;
 	uint8 lp_cnt;
 	uint8 lp_skip_cnt;
-	int lp_pw_fm_matched;
 	uint16 lp_pw[3];
 	int16 lp_fm[3];
-	int lp_n_non_single_pulses;
-	bool lp_just_skipped;
 	uint16 lp_skipped_pw;
 	int16 lp_skipped_fm;
-	uint8 lp_skip_tot;
 	uint8 lp_csect_single;
 	uint32 last_detection_time;
 	uint32 last_detection_time_lp;
-	uint32 last_skipped_time;
 	uint8 lp_len_his[LP_LEN_HIS_SIZE];
 	uint8 lp_len_his_idx;
 	int16 min_detected_fc_bin5;
@@ -151,6 +146,11 @@ typedef struct {
 	int16 avg_detected_fc_bin5;
 	pulse_data_t pulse_tail[RDR_NANTENNAS];
 	int16 subband_result;
+	uint16 transmission_chirp;
+	uint8 chirp_fail_cnt;
+	uint8 chirp_match_cnt;
+	uint8 max_burst_intv_fail_cnt;
+	uint8 tot_lp_cnt;
 } radar_lp_info_t;
 
 /* RADAR data structure */

@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_vht.c 774976 2019-05-14 10:37:30Z $
+ * $Id: wlc_vht.c 778019 2019-08-20 10:59:07Z $
  */
 
 /**
@@ -2167,7 +2167,8 @@ wlc_vht_write_vht_brcm_ie(wlc_vht_info_t *vhti, wlc_bsscfg_t *cfg, int band,
 	}
 
 	if (WLCISACPHY(wlc->band) && (ACREV_IS(wlc->band->phyrev, 32) ||
-		ACREV_IS(wlc->band->phyrev, 33) || ACREV_IS(wlc->band->phyrev, 37)) &&
+		ACREV_IS(wlc->band->phyrev, 33) || ACREV_IS(wlc->band->phyrev, 37) ||
+		ACREV_IS(wlc->band->phyrev, 128)) &&
 		((scb && (wlc_scb_ratesel_get_link_bw(wlc, scb) == BW_20MHZ)) ||
 		(AP_ENAB(wlc->pub) && CHSPEC_IS20(wlc->chanspec)))) {
 		WL_INFORM(("wl%d: %s: disable proprates and 1024QAM in 20Mhz\n",
@@ -3633,10 +3634,10 @@ wlc_vht_update_scb_state(wlc_vht_info_t *vhti, int band, struct scb *scb,
 				wlc->stf->op_txstreams,
 				WLC_VHT_FEATURES_PROP_MCS_GET(wlc->pub));
 
+	cubby_info->rxmcsmap = vht_cap_ie->rx_mcs_map;
 	if (cubby_info->rxmcsmap != new_rateset.vht_mcsmap) {
 		wlc_vht_upd_rate_mcsmap_ex(wlc->vhti, scb, new_rateset.vht_mcsmap);
 		wlc_vht_upd_rate_mcsmap_prop_ex(wlc->vhti, scb, new_rateset.vht_mcsmap_prop);
-		cubby_info->rxmcsmap = new_rateset.vht_mcsmap;
 		reinit_ratesel = TRUE;
 	}
 
@@ -4541,6 +4542,29 @@ wlc_send_action_vht_oper_mode(wlc_vht_info_t *vhti, wlc_bsscfg_t *bsscfg,
 		ahdr->mode = bsscfg->oper_mode;
 	}
 	wlc_sendmgmt(wlc, p, bsscfg->wlcif->qi, scb);
+}
+
+/* Get the other entity's NSS.
+ * If OMN is enabled, use RXNSS. Else use raw rxmcsmap and compute NSS.
+ */
+int
+wlc_vht_get_scb_oper_nss(wlc_vht_info_t *vhti, struct scb *scb)
+{
+	struct wlc_vht_scb_info *cubby_info = SCB_VHT_INFO(vhti, scb);
+	int nss = 0;
+
+	if (cubby_info->oper_mode_enabled) {
+		nss = DOT11_OPER_MODE_RXNSS(cubby_info->oper_mode);
+	}
+
+	if (!nss) {
+		nss = VHT_MAX_SS_SUPPORTED(cubby_info->rxmcsmap);
+	}
+
+	WL_RATE(("wl%d: %s SCB's nss %d oper_mode 0x%x oper_mode_enabled %d rxmcsmap 0x%x\n",
+		vhti->wlc->pub->unit, __FUNCTION__, nss, cubby_info->oper_mode,
+		cubby_info->oper_mode_enabled, cubby_info->rxmcsmap));
+	return nss;
 }
 
 #endif /* WL11AC */

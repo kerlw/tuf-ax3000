@@ -255,7 +255,8 @@ endif
     endif
 
     # speed service
-    ifneq ($(strip $(BUILD_SPDSVC)),)
+    ifneq ($(strip $(BCA_CPEROUTER)),)
+    # Always compile in due to binary compatibility issue
         WLFILES_SRC += ../../shared/impl1/wl_spdsvc.c
     endif
 
@@ -306,7 +307,11 @@ endif
 UPDATESH   := $(WLCFGDIR)/diffupdate.sh
 
 ifneq (,$(filter "y","$(CONFIG_BCM947622)" "$(CONFIG_BCM963178)"))
-	WLTUNEFILE := wltunable_lx_63178.h
+	ifeq ($(BUILD_HND_EAP),y)
+		WLTUNEFILE := wltunable_lx_47622_eap.h
+	else
+		WLTUNEFILE := wltunable_lx_63178.h
+	endif
 else ifneq (,$(filter "y","$(CONFIG_BCM947189)" "$(CONFIG_BCM953573)"))
 	WLTUNEFILE := wltunable_lx_47189.h
 else ifneq (,$(filter "y","$(CONFIG_BCM96878)" "$(CONFIG_BCM96846)"))

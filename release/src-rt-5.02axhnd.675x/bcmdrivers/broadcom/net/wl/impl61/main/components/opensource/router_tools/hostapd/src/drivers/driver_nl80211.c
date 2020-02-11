@@ -2379,6 +2379,21 @@ out_err:
 
 static int nl80211_mgmt_subscribe_ap_dev_sme(struct i802_bss *bss)
 {
+#ifdef CONFIG_DRIVER_BRCM
+	static const int stypes[] = {
+		WLAN_FC_STYPE_AUTH,
+		WLAN_FC_STYPE_ASSOC_REQ,
+		WLAN_FC_STYPE_REASSOC_REQ,
+		/* Beacon doesn't work as mac80211 doesn't currently allow
+		 * it, but it wouldn't really be the right thing anyway as
+		 * it isn't per interface ... maybe just dump the scan
+		 * results periodically for OLBC?
+		 */
+		/* WLAN_FC_STYPE_BEACON, */
+	};
+	unsigned int i;
+#endif /* CONFIG_DRIVER_BRCM */
+
 	if (nl80211_alloc_mgmt_handle(bss))
 		return -1;
 	wpa_printf(MSG_DEBUG, "nl80211: Subscribe to mgmt frames with AP "
@@ -2388,6 +2403,16 @@ static int nl80211_mgmt_subscribe_ap_dev_sme(struct i802_bss *bss)
 		goto out_err;
 
 	if (bss->drv->device_ap_sme) {
+#ifdef CONFIG_DRIVER_BRCM
+	for (i = 0; i < ARRAY_SIZE(stypes); i++) {
+		if (nl80211_register_frame(bss, bss->nl_mgmt,
+					   (WLAN_FC_TYPE_MGMT << 2) |
+					   (stypes[i] << 4),
+					   NULL, 0) < 0) {
+			goto out_err;
+		}
+	}
+#else
 		u16 type = (WLAN_FC_TYPE_MGMT << 2) | (WLAN_FC_STYPE_AUTH << 4);
 
 		/* Register for all Authentication frames */
@@ -2395,6 +2420,7 @@ static int nl80211_mgmt_subscribe_ap_dev_sme(struct i802_bss *bss)
 		    < 0)
 			wpa_printf(MSG_DEBUG,
 				   "nl80211: Failed to subscribe to handle Authentication frames - SAE offload may not work");
+#endif /* CONFIG_DRIVER_BRCM */
 	}
 
 	nl80211_mgmt_handle_register_eloop(bss);

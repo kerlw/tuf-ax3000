@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ap.c 776954 2019-07-15 05:10:52Z $
+ * $Id: wlc_ap.c 778114 2019-08-22 19:38:37Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -2496,7 +2496,7 @@ parse_ies:
 send_result:
 
 #ifdef AP
-	if ((status == DOT11_SC_SUCCESS) && (ftpparm.auth.alg == DOT11_FAST_BSS) &&
+	if (scb && (status == DOT11_SC_SUCCESS) && (ftpparm.auth.alg == DOT11_FAST_BSS) &&
 		SCB_AUTHENTICATING(scb)) {
 #ifdef RXCHAIN_PWRSAVE
 		wlc_reset_rxchain_pwrsave_mode(ap);
@@ -3237,6 +3237,8 @@ wlc_ap_process_assocreq(wlc_ap_info_t *ap, wlc_bsscfg_t *bsscfg,
 
 	param->status = status;
 	bcopy(&req_rates, &param->req_rates, sizeof(wlc_rateset_t));
+	/* Copy supported mcs index bit map */
+	bcopy(req_rates.mcs, scb->rateset.mcs, MCSSET_LEN);
 
 #ifdef SPLIT_ASSOC
 	if (SPLIT_ASSOC_REQ(bsscfg)) {
@@ -3513,7 +3515,24 @@ defkey_done:
 		}
 	}
 done:
-	wlc_ap_process_assocreq_done(ap, bsscfg, dc, hdr, body, body_len, scb, param);
+#ifndef WL_SAE_ASSOC_OFFLOAD
+#ifdef WL_SAE
+	/* STA has chosen SAE AKM */
+	if ((scb->WPA_auth == WPA3_AUTH_SAE_PSK) &&
+		scb->pmkid_included) {
+		/* set scb state to PENDING_ASSOC */
+		wlc_scb_setstatebit(wlc, scb, PENDING_ASSOC);
+		/* Send WLC_E_ASSOC event to cfg80211 layer */
+		wlc_bss_mac_event(wlc, bsscfg, WLC_E_ASSOC, &hdr->sa, 0, 0, scb->auth_alg,
+				param->e_data, param->e_datalen);
+		return;
+	}
+	else
+#endif /* WL_SAE */
+#endif /* WL_SAE_ASSOC_OFFLOAD */
+	{
+		wlc_ap_process_assocreq_done(ap, bsscfg, dc, hdr, body, body_len, scb, param);
+	}
 #ifdef SPLIT_ASSOC
 	if (SPLIT_ASSOC_REQ(bsscfg)) {
 		MFREE(wlc->osh, param->body, param->buf_len);
@@ -4238,7 +4257,6 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 #ifdef RADAR
 	wlc_bsscfg_t *bsscfg_ap = NULL;
 	uint bss_radar_flags = 0;
-	bool radar_ap = FALSE;
 #endif /* RADAR */
 
 	WL_TRACE(("wl%d: %s:\n", wlc->pub->unit, __FUNCTION__));
@@ -4298,7 +4316,6 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 #endif /* RADAR */
 
 	appvt->pre_tbtt_us = (MBSS_ENAB(wlc->pub)) ? MBSS_PRE_TBTT_DEFAULT_us : PRE_TBTT_DEFAULT_us;
-
 	/* Reset to re-configure TSF registers for beaconing */
 	wlc->aps_associated = 0;
 
@@ -4306,10 +4323,6 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 	FOREACH_AP(wlc, i, bsscfg) {
 		if (bsscfg->enable) {
 			uint wasup = bsscfg->up;
-#ifdef RADAR
-			wlc_bss_info_t *current_bss = bsscfg->current_bss;
-#endif /* RADAR */
-
 			WL_APSTA_UPDN(("wl%d: wlc_restart_ap -> wlc_bsscfg_up on bsscfg %d%s\n",
 			               appvt->pub->unit, i, (bsscfg->up ? "(already up)" : "")));
 			/* Clearing association state to let the beacon phyctl0
@@ -4330,29 +4343,8 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 				wlc_set_ap_up_pending(wlc, bsscfg, FALSE);
 			}
 #endif /* WLRSDB && WL_MODESW */
-#ifdef RADAR
-			if (RADAR_ENAB(wlc->pub) && bsscfg->up &&
-				(wlc_radar_chanspec(wlc->cmi, current_bss->chanspec) == TRUE)) {
-				radar_ap = TRUE;
-			}
-#endif /* RADAR */
 		}
 	}
-
-#ifdef RADAR
-	if (RADAR_ENAB(wlc->pub) && WL11H_AP_ENAB(wlc) && AP_ACTIVE(wlc)) {
-		/* Check If radar_detect explicitly disabled
-		 * OR
-		 * non of the AP's on radar chanspec
-		 */
-		bool dfs_on = ((bss_radar_flags
-				& (WLC_BSSCFG_SRADAR_ENAB | WLC_BSSCFG_AP_NORADAR_CHAN)) ||
-				!radar_ap) ? OFF:ON;
-
-		wlc_set_dfs_cacstate(wlc->dfs, dfs_on, bsscfg_ap);
-	}
-#endif /* RADAR */
-
 #ifdef RXCHAIN_PWRSAVE
 	wlc_reset_rxchain_pwrsave_mode(ap);
 #endif // endif

@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ampdu_cmn.c 774467 2019-04-25 21:57:45Z $
+ * $Id: wlc_ampdu_cmn.c 777144 2019-07-22 04:59:38Z $
  */
 
 /**
@@ -597,7 +597,7 @@ err:
 		WLCWLUNIT(wlc), __FUNCTION__, action_id, body_len, expected_len));
 action_id_err:
 	WLCNTINCR(wlc->pub->_cnt->rxbadproto);
-	wlc_send_action_err(wlc, hdr, body, body_len);
+	wlc_send_action_err(wlc, scb->bsscfg, hdr, body, body_len);
 	return ret;
 } /* wlc_frameaction_ampdu */
 

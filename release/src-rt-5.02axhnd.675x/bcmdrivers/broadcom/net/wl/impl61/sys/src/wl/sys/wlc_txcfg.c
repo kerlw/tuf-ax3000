@@ -88,7 +88,7 @@ static const int maxusers_table[][8] = {
 	*/
 	{64, MAXSCB, 8, 0, 0, 0, 0, 8},	/* 4365/66 <=B1 */
 	{65, MAXSCB, 8, 0, 0, 0, 0, 8},	/* 4365/66 C0 */
-	{129, MAXSCB, 8, 4, MAXSCB, 8, 16, 12},	/* 43684B/Cx */
+	{129, MAXSCB, 4, 4, MAXSCB, 8, 16, 12},	/* 43684B/Cx */
 	{130, MAXSCB, 2, 2, 4, 4, 4, 8},	/* 63178, 675x (retail/operator) */
 	{131, MAXSCB, 3, 0, 4, 4, 4, 4},	/* 6710 */
 	{0, MAXSCB, 0, 0, 0, 0, 0, 0}	/* default */
