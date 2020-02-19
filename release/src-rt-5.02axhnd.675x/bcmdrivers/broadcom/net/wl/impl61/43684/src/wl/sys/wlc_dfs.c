@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_dfs.c 776528 2019-07-02 05:04:35Z $
+ * $Id: wlc_dfs.c 777926 2019-08-15 01:50:43Z $
  */
 
 /**
@@ -157,12 +157,13 @@ static const bcm_iovar_t wlc_dfs_iovars[] = {
 #define TDWR_CH20_MIN	120u	/* lowest 20MHz TDWR channel number */
 #define TDWR_CH20_MAX	128u	/* highest 20MHz TDWR channel number */
 
-/* radar subband information is available only for 4365/4366 corerev 64 (<=b1), 65 (c0) and
- * 43684 d11rev 128 (A0/A1), 129 (B0/B1)
+/* radar subband information is available only for 4365/4366 (<=B1 corerev=64, C0 corerev=65),
+ * 43684 (A0/A1 corerev=128, B0/B1 corerev=129), 6750/6755 (corerev=130) and 6710 (corerev=131)
  */
 #define DFS_HAS_SUBBAND_INFO(wlc) (\
 		D11REV_IS(wlc->pub->corerev, 65) || D11REV_IS(wlc->pub->corerev, 128) || \
-		D11REV_IS(wlc->pub->corerev, 129))
+		D11REV_IS(wlc->pub->corerev, 129) || D11REV_IS(wlc->pub->corerev, 130) || \
+		D11REV_IS(wlc->pub->corerev, 131))
 
 /* real BW160 is available only for 43684 d11rev 128 (A0/A1), 129 (B0/B1) */
 #define DFS_REAL_BW160(wlc) (D11REV_IS(wlc->pub->corerev, 128) || \
@@ -3277,6 +3278,9 @@ wlc_dfs_cacstate_cac(wlc_dfs_info_t *dfs)
 		/* cac completed. un-mute all. resume normal bss operation */
 		wlc_dfs_cacstate_ism_set(dfs);
 #if defined(SLAVE_RADAR)
+		if (wlc->keep_ap_up) {
+			return;
+		}
 		if (WL11H_STA_ENAB(wlc) && wlc_dfs_get_radar(wlc->dfs)) {
 			/* ISM started, lets prepare for join */
 			wlc_assoc_change_state(wlc->cfg, AS_DFS_ISM_INIT);
@@ -3699,7 +3703,7 @@ wlc_dfs_cacstate_init(wlc_dfs_info_t *dfs)
 		/* unit of cactime is WLC_DFS_RADAR_CHECK_INTERVAL */
 		dfs->dfs_cac.cactime = wlc_dfs_ism_cactime(wlc, dfs->dfs_cac.cactime_pre_ism);
 		if ((!WLC_APSTA_ON_RADAR_CHANNEL(wlc) && dfs->dfs_cac.cactime && !skip_pre_ism) &&
-			(!(APSTA_ENAB(wlc->pub) && AP_ENAB(wlc->pub)) ||
+			(!(APSTA_ENAB(wlc->pub) && AP_ENAB(wlc->pub) && !wlc->keep_ap_up) ||
 #ifdef SLAVE_RADAR
 			!wlc_cac_is_clr_chanspec(dfs, WLC_BAND_PI_RADIO_CHANSPEC) ||
 #endif /* SLAVE_RADAR */

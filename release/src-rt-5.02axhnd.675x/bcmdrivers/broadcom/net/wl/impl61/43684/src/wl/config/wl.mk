@@ -18,7 +18,7 @@
 #
 # <<Broadcom-WL-IPTag/Open:>>
 #
-# $Id: wl.mk 775502 2019-06-02 00:23:30Z $
+# $Id: wl.mk 777731 2019-08-07 19:37:44Z $
 
 WLFLAGS += -DBCM943217ROUTER_ACI_SCANMORECH
 WLFLAGS += -DBPHY_DESENSE
@@ -328,6 +328,7 @@ ifeq ($(WL),1)
 	ifeq ($(BCM_DMA_CT),1)
 		ifeq ($(WL_EAP_UCODE),1)
 			WLFILES_SRC += $(UCODE_RAM_DIR)/d11ucode_mu_eap.c
+			WLFILES_SRC += $(UCODE_RAM_DIR)/d11ucode_mu_eap_ftm.c
 		else
 			WLFILES_SRC += $(UCODE_RAM_DIR)/d11ucode_mu.c
 		endif
@@ -434,6 +435,7 @@ endif
 	WLFILES_SRC += src/wl/sys/wlc_macfltr.c
 	ifeq ($(WL_PROXDETECT),1)
 		WLFLAGS += -DWL_PROXDETECT
+		WLFLAGS += -DWL_PROXD_OUTLIER_FILTERING
 		ifeq ($(WLDEBUG),1)
 			WLFLAGS += -DTOF_DEBUG -DTOF_DEBUG_TIME
 		endif
@@ -441,13 +443,6 @@ endif
 			WLFLAGS += -DTOF_DBG
 		endif
 		WLFILES_PROXD = wlc_pdsvc.c wlc_tof.c wlc_fft.c
-		ifeq ($(WL_TOF),1)
-			WLFLAGS += -DWL_TOF
-			WLFILES_PROXD += wlc_pdtof.c
-			ifeq ($(WL_NAN),1)
-				WLFILES_PROXD += wlc_pdnan.c
-			endif
-		endif
 		ifeq ($(WL_FTM), 1)
 			WLFLAGS += -DWL_FTM -DWL_FTM_MSCH
 			ifeq ($(WL_FTM_11K),1)
@@ -3448,6 +3443,10 @@ ifeq ($(WL_EAP_PER_VAP_CONFIG_RATESET),1)
 	WLFLAGS += -DWL_EAP_PER_VAP_CONFIG_RATESET
 endif
 
+ifeq ($(WL_EAP_FIPS_LOOPBACK),1)
+	WLFLAGS += -DWL_EAP_FIPS_LOOPBACK
+endif
+
 ifeq ($(WL_EAP_DROP_RX_MGMT_RSSI),1)
     WLFLAGS += -DWL_EAP_DROP_RX_MGMT_RSSI
     WLFILES_SRC += src/wl/sys/wlc_filter_rx_mgmt_ctl_rssi.c
@@ -3478,6 +3477,10 @@ endif
 
 ifeq ($(WL_EAP_BCM43570),1)
 	WLFLAGS += -DWL_EAP_BCM43570
+endif
+
+ifeq ($(WL_EAP_VHT_PROPRIETARY_RATES_DIS),1)
+	WLFLAGS += -DWL_EAP_VHT_PROPRIETARY_RATES_DIS
 endif
 
 # Instead of disabling frameburst completly in dynamic frame burst logic,

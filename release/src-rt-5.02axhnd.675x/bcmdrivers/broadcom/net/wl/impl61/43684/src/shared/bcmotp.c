@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: bcmotp.c 775984 2019-06-17 12:02:08Z $
+ * $Id: bcmotp.c 777343 2019-07-29 12:58:01Z $
  */
 
 #include <bcm_cfg.h>
@@ -4373,7 +4373,7 @@ BCMSROMCISDUMPATTACHFN(otp_init)(si_t *sih)
 #endif /* BCMHNDOTP */
 
 	if (EMBEDDED_2x2AX_CORE(sih->chip)) {
-		sih->otpflag = (GCI_REG(sih, 0x300, 0, 0) & 0x1);
+		sih->otpflag = ((CHIPC_REG(sih, chipstatus, 0, 0) & 0x8) ? 1: 0);
 	}
 
 	if (ISSIM_ENAB(sih) && (BCM43684_CHIP(sih->chip) || BCM6710_CHIP(sih->chip))) {

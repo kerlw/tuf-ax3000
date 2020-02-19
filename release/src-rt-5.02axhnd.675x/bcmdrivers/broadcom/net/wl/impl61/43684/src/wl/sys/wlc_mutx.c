@@ -1088,7 +1088,7 @@ BCMATTACHFN(wlc_mutx_attach)(wlc_info_t *wlc)
 		mu_info->pub->mu_features = MU_FEATURES_AUTO;
 	}
 
-	if (D11REV_IS(mu_info->pub->corerev, 131)) {
+	if (D11REV_IS(mu_info->pub->corerev, 130) || D11REV_IS(mu_info->pub->corerev, 131)) {
 		mu_info->pub->mu_features = MU_FEATURES_OFF;
 	}
 
@@ -2788,10 +2788,16 @@ mu_scb_cubby_deinit(void *ctx, scb_t *scb)
 	if (!mu_scb)
 		return;
 
-	mu_sta_mu_disable(mu_info, scb);
+	if (D11REV_GE(wlc->pub->corerev, 129) && HE_MMU_ENAB(wlc->pub) &&
+		SCB_HE_CAP(scb)) {
+		mu_scb->assocd = FALSE;
+		wlc_mutx_he_eval_and_admit_clients(mu_info, scb, mu_scb->assocd);
+	} else {
+		mu_sta_mu_disable(mu_info, scb);
 
-	/* Cancel any pending wlc_mutx_gid_complete packet callbacks. */
-	wlc_pcb_fn_find(wlc->pcb, wlc_mutx_gid_complete, (void*) mu_scb, TRUE);
+		/* Cancel any pending wlc_mutx_gid_complete packet callbacks. */
+		wlc_pcb_fn_find(wlc->pcb, wlc_mutx_gid_complete, (void*) mu_scb, TRUE);
+	}
 
 	if (mu_scb->item != NULL) {
 		mutx_blcklst_del_item(mu_info, mu_scb->item);
@@ -4243,8 +4249,6 @@ wlc_mutx_set_hemmu(wlc_mutx_info_t *mu_info, scb_t* scb, bool enable)
 		}
 #endif // endif
 	} else {
-		/* set tbcap in bfi config */
-		wlc_txbf_tbcap_update(wlc->txbf, scb);
 #ifdef MAC_AUTOTXV_OFF
 		err = wlc_macreq_upd_bfi(wlc, scb, mu_scb->client_index, FALSE);
 		if (err != BCME_OK) {
@@ -4260,6 +4264,8 @@ wlc_mutx_set_hemmu(wlc_mutx_info_t *mu_info, scb_t* scb, bool enable)
 		mu_info->mu_clients[mu_scb->client_index] = NULL;
 		mu_scb->client_index = MU_CLIENT_INDEX_NONE;
 		SCB_HEMMU_DISABLE(scb);
+		/* set tbcap in bfi config */
+		wlc_txbf_tbcap_update(wlc->txbf, scb);
 	}
 
 	WL_MUTX(("wl%d: %s: %s HE MU-MIMO STA "MACF" upd:%d\n", wlc->pub->unit,
@@ -4296,7 +4302,8 @@ wlc_mutx_scb_ishemmu_eligible(wlc_mutx_info_t *mu_info, scb_t* scb)
 	if (mu_scb && SCB_HE_CAP(scb) && HE_MMU_ENAB(wlc->pub) &&
 		BSSCFG_AP(SCB_BSSCFG(scb)) &&
 		wlc_txbf_is_hemmu_enab(wlc->txbf, scb) &&
-		wlc_he_get_ulmu_allow(wlc->hei, scb)) {
+		wlc_he_get_ulmu_allow(wlc->hei, scb) &&
+		!wlc_twt_scb_active(wlc->twti, scb)) {
 		ret = TRUE;
 	}
 	return ret;
@@ -4483,6 +4490,10 @@ wlc_mutx_he_admit_clients(wlc_mutx_info_t *mu_info)
 		FOREACHSCB(wlc->scbstate, &scbiter, scb) {
 			bool mmu_on, scb_onoff;
 			mutx_scb_t *mu_scb = MUTX_SCB(mu_info, scb);
+
+			if (mu_scb == NULL) {
+				continue;
+			}
 			mmu_on = wlc_mutx_scb_ishemmu_eligible(mu_info, scb);
 			link_bw = wlc_scb_ratesel_get_link_bw(wlc, scb);
 

@@ -670,6 +670,8 @@ static void pcie_init_mrrs(struct dngl_bus *pciedev, uint32 mrrs);
 static int pciedev_tx_ioctl_pyld(struct dngl_bus *pciedev, void *p, ret_buf_t *data_buf,
 	uint16 data_len, uint8 msgtype);
 static int pciedev_dump_err_cntrs(struct dngl_bus *pciedev);
+static pciedev_ctrl_resp_q_t * pciedev_setup_ctrl_resp_q(struct dngl_bus *pciedev,
+	uint8 item_cnt);
 static void pciedev_ctrl_resp_q_idx_upd(struct dngl_bus *pcidev, uint8 idx_type);
 static void pciedev_flow_get_opt_count(struct dngl_bus * pciedev);
 #ifdef HEALTH_CHECK
@@ -2031,15 +2033,9 @@ volatile void *regs, uint bustype)
 		goto fail;
 	}
 
-	if ((pciedev->ctrl_resp_q =
-		MALLOCZ(pciedev->osh, sizeof(pciedev_ctrl_resp_q_t))) == NULL) {
+	pciedev->ctrl_resp_q = pciedev_setup_ctrl_resp_q(pciedev, pciedev->tunables[MAXCTRLCPL]);
+	if (pciedev->ctrl_resp_q == NULL) {
 		PCI_ERROR(("Cmplt queue failed\n"));
-		goto fail;
-	}
-
-	if (!(pciedev->ctrl_resp_q->response = (ctrl_completion_item_t *) MALLOCZ(osh,
-		(sizeof(ctrl_completion_item_t) * pciedev->tunables[MAXCTRLCPL])))) {
-		PCI_ERROR(("response information of cmplt queue failed\n"));
 		goto fail;
 	}
 
@@ -9020,6 +9016,25 @@ pciedev_send_lpbkdmaxfer_complete(struct dngl_bus *pciedev, uint16 status, uint3
 }
 #endif /* PCIE_DMAXFER_LOOPBACK */
 
+static  pciedev_ctrl_resp_q_t *
+BCMATTACHFN(pciedev_setup_ctrl_resp_q)(struct dngl_bus *pciedev, uint8 item_cnt)
+{
+	pciedev_ctrl_resp_q_t * ctrl_resp_q;
+	if (!(ctrl_resp_q =
+		MALLOCZ(pciedev->osh, sizeof(pciedev_ctrl_resp_q_t)))) {
+		PCI_ERROR(("Cmplt queue failed\n"));
+		return NULL;
+	}
+
+	if (!(ctrl_resp_q->response = (ctrl_completion_item_t *) MALLOCZ(pciedev->osh,
+		(sizeof(ctrl_completion_item_t) * item_cnt)))) {
+		PCI_ERROR(("response information of cmplt queue failed\n"));
+		return NULL;
+	}
+	ctrl_resp_q->depth = item_cnt;
+	return ctrl_resp_q;
+}
+
 static void
 pciedev_ctrl_resp_q_idx_upd(struct dngl_bus *pciedev, uint8 idx_type)
 {
@@ -9037,23 +9052,6 @@ pciedev_ctrl_resp_q_idx_upd(struct dngl_bus *pciedev, uint8 idx_type)
 		CLR_RXCTLRESP_PENDING(pciedev);
 }
 
-uint8
-pciedev_ctrl_resp_q_avail(struct dngl_bus *pciedev)
-{
-	pciedev_ctrl_resp_q_t *resp_q = pciedev->ctrl_resp_q;
-
-	uint8 w_indx = resp_q->w_indx;
-	uint8 r_indx = resp_q->r_indx;
-
-	/* After a new item is put into ctrl_resp_q, w_indx is moved by 1.
-	 * After an item is processed, r_indx is moved by 1.
-	 * Queue is empty if w_indx = r_indx => available space is PCIEDEV_CNTRL_CMPLT_Q_SIZE
-	 */
-
-	return (r_indx > w_indx ? (r_indx - w_indx - 1) :
-		(pciedev->tunables[MAXCTRLCPL] - w_indx + r_indx));
-}
-
 int
 pciedev_process_ctrl_cmplt(struct dngl_bus *pciedev)
 {
@@ -9068,7 +9066,7 @@ pciedev_process_ctrl_cmplt(struct dngl_bus *pciedev)
 
 	uint8 r_indx = resp_q->r_indx;
 
-	if (pciedev_ctrl_resp_q_avail(pciedev) == pciedev->tunables[MAXCTRLCPL]) {
+	if (IS_RING_SPACE_EMPTY(resp_q->r_indx, resp_q->w_indx, resp_q->depth)) {
 		/* Should not come here */
 		PCI_PRINT(("ctrl resp queue empty..so return\n"));
 		resp_q->scheduled_empty++;
@@ -9151,7 +9149,7 @@ pciedev_process_ctrl_cmplt(struct dngl_bus *pciedev)
 	 * PCIEDEV_CNTRL_CMPLT_Q_STATUS_ENTRY) entries available,
 	 * then we can accept new ctrl messages
 	 */
-	if (pciedev_ctrl_resp_q_avail(pciedev) >
+	if (WRITE_SPACE_AVAIL(resp_q->r_indx, resp_q->w_indx, resp_q->depth) >
 		(PCIEDEV_CNTRL_CMPLT_Q_IOCTL_ENTRY + PCIEDEV_CNTRL_CMPLT_Q_STATUS_ENTRY)) {
 			pciedev->ctrl_resp_q->status &= ~CTRL_RESP_Q_FULL;
 	}
@@ -9166,8 +9164,9 @@ pciedev_schedule_ctrl_cmplt(struct dngl_bus *pciedev, ctrl_completion_item_t *ct
 	cmn_msg_hdr_t *msg_hdr = (cmn_msg_hdr_t *)(ctrl_cmplt->ctrl_response);
 
 	uint8 w_indx = resp_q->w_indx;
+	uint8 wr_space_avail;
 
-	if (pciedev_ctrl_resp_q_avail(pciedev) == 0) {
+	if (IS_RING_SPACE_FULL(resp_q->r_indx, resp_q->w_indx, resp_q->depth)) {
 		/* Should NOT come here! */
 		TRAP_DUE_DMA_RESOURCES(("Ctrl cmplt q full\n"));
 	}
@@ -9183,6 +9182,7 @@ pciedev_schedule_ctrl_cmplt(struct dngl_bus *pciedev, ctrl_completion_item_t *ct
 	 * MSG_TYPE_GEN_STATUS is not retried but has one space reserved
 	 * Hence Trap
 	 */
+	wr_space_avail = WRITE_SPACE_AVAIL(resp_q->r_indx, resp_q->w_indx, resp_q->depth);
 	switch (msg_hdr->msg_type) {
 		case MSG_TYPE_FLOW_RING_CREATE_CMPLT:
 		case MSG_TYPE_D2H_RING_CREATE_CMPLT:
@@ -9190,8 +9190,7 @@ pciedev_schedule_ctrl_cmplt(struct dngl_bus *pciedev, ctrl_completion_item_t *ct
 		case MSG_TYPE_D2H_RING_DELETE_CMPLT:
 		case MSG_TYPE_H2D_RING_DELETE_CMPLT:
 		case MSG_TYPE_RING_STATUS:
-			if (pciedev_ctrl_resp_q_avail(pciedev) <=
-				(PCIEDEV_CNTRL_CMPLT_Q_IOCTL_ENTRY +
+			if (wr_space_avail <= (PCIEDEV_CNTRL_CMPLT_Q_IOCTL_ENTRY +
 				PCIEDEV_CNTRL_CMPLT_Q_STATUS_ENTRY)) {
 					pciedev->ctrl_resp_q->ctrl_resp_q_full++;
 					TRAP_DUE_DMA_RESOURCES(("Cannot send msg type %d:"
@@ -9201,8 +9200,7 @@ pciedev_schedule_ctrl_cmplt(struct dngl_bus *pciedev, ctrl_completion_item_t *ct
 		case MSG_TYPE_FLOW_RING_DELETE_CMPLT:
 		case MSG_TYPE_FLOW_RING_FLUSH_CMPLT:
 		case MSG_TYPE_D2H_MAILBOX_DATA:
-			if (pciedev_ctrl_resp_q_avail(pciedev) <=
-				(PCIEDEV_CNTRL_CMPLT_Q_IOCTL_ENTRY +
+			if (wr_space_avail <= (PCIEDEV_CNTRL_CMPLT_Q_IOCTL_ENTRY +
 				PCIEDEV_CNTRL_CMPLT_Q_STATUS_ENTRY)) {
 					pciedev->ctrl_resp_q->ctrl_resp_q_full++;
 					PCI_ERROR(("Cannot send msg type %d: Ring cmplt q full\n",
@@ -9211,8 +9209,7 @@ pciedev_schedule_ctrl_cmplt(struct dngl_bus *pciedev, ctrl_completion_item_t *ct
 				}
 			break;
 		case MSG_TYPE_GEN_STATUS:
-			if (pciedev_ctrl_resp_q_avail(pciedev) <=
-				PCIEDEV_CNTRL_CMPLT_Q_IOCTL_ENTRY) {
+			if (wr_space_avail <= PCIEDEV_CNTRL_CMPLT_Q_IOCTL_ENTRY) {
 				pciedev->ctrl_resp_q->ctrl_resp_q_full++;
 				TRAP_DUE_DMA_RESOURCES(("Cannot send msg type %d:"
 					" Ring cmplt q full\n", msg_hdr->msg_type));
@@ -9286,7 +9283,7 @@ pciedev_send_ioctlack(struct dngl_bus *pciedev, uint16 status)
 	pciedev_ctrl_resp_q_t *resp_q = pciedev->ctrl_resp_q;
 	uint8 w_indx = resp_q->w_indx;
 
-	if (pciedev_ctrl_resp_q_avail(pciedev) == 0) {
+	if (IS_RING_SPACE_FULL(resp_q->r_indx, resp_q->w_indx, resp_q->depth)) {
 		/* This should NOT happen for IOCTL ACK
 		 * for IOCTL ACK and Completion there is
 		 * space reserved
@@ -9328,7 +9325,7 @@ pciedev_send_ts_cmpl(struct dngl_bus *pciedev, uint16 status)
 	pciedev_ctrl_resp_q_t *resp_q = pciedev->ctrl_resp_q;
 	uint8 w_indx = resp_q->w_indx;
 
-	if (pciedev_ctrl_resp_q_avail(pciedev) == 0) {
+	if (IS_RING_SPACE_FULL(resp_q->r_indx, resp_q->w_indx, resp_q->depth)) {
 		pciedev->ctrl_resp_q->ctrl_resp_q_full++;
 		DBG_BUS_INC(pciedev, pciedev_send_ts_cmpl);
 		TRAP_DUE_DMA_RESOURCES(("Cannot send ts_cmpl: Ring cmplt q full\n"));
@@ -9830,6 +9827,7 @@ pciedev_send_ltr(void *dev, uint8 state)
 void
 pciedev_send_d2h_mb_data_ctrlmsg(struct dngl_bus *pciedev)
 {
+	pciedev_ctrl_resp_q_t *resp_q = pciedev->ctrl_resp_q;
 	ctrl_completion_item_t ctrl_cmplt;
 
 	if (!IS_MBDATA_PENDING(pciedev) || (pciedev->d2h_mb_data == 0)) {
@@ -9841,8 +9839,9 @@ pciedev_send_d2h_mb_data_ctrlmsg(struct dngl_bus *pciedev)
 		return;
 	}
 
-	if (pciedev_ctrl_resp_q_avail(pciedev) == 0)
+	if (IS_RING_SPACE_FULL(resp_q->r_indx, resp_q->w_indx, resp_q->depth)) {
 		return;
+	}
 
 	memset(&ctrl_cmplt, 0, sizeof(ctrl_completion_item_t));
 
@@ -10163,6 +10162,7 @@ pciedev_handle_host_D3_info(struct dngl_bus *pciedev)
 static void
 pciedev_D3_ack(struct dngl_bus *pciedev)
 {
+	pciedev_ctrl_resp_q_t *resp_q = pciedev->ctrl_resp_q;
 	uint32 d3info_duration;
 	uint8 i;
 
@@ -10236,16 +10236,16 @@ pciedev_D3_ack(struct dngl_bus *pciedev)
 	PCI_TRACE(("TIME:%u pciedev_D3_ack acking the D3 req\n", hnd_time()));
 
 	/* Make sure control resp q is flushed before posting D3-ACK */
-	if (pciedev_ctrl_resp_q_avail(pciedev) != pciedev->tunables[MAXCTRLCPL]) {
+	if (READ_AVAIL_SPACE(resp_q->w_indx, resp_q->r_indx, resp_q->depth)) {
 		if (pciedev_process_ctrl_cmplt(pciedev) != BCME_OK) {
 			PCI_ERROR(("Could not flush control resp q:%d\n",
-				pciedev_ctrl_resp_q_avail(pciedev)));
+				READ_AVAIL_SPACE(resp_q->w_indx, resp_q->r_indx, resp_q->depth)));
 			return;
 		}
 	}
-	if (pciedev_ctrl_resp_q_avail(pciedev) != pciedev->tunables[MAXCTRLCPL]) {
+	if (READ_AVAIL_SPACE(resp_q->w_indx, resp_q->r_indx, resp_q->depth)) {
 		PCI_ERROR(("control resp q still not empty:%d\n",
-			pciedev_ctrl_resp_q_avail(pciedev)));
+				READ_AVAIL_SPACE(resp_q->w_indx, resp_q->r_indx, resp_q->depth)));
 		return;
 	}
 
@@ -10825,7 +10825,7 @@ pciedev_send_ioctl_completion(struct dngl_bus *pciedev)
 		}
 	}
 
-	if (pciedev_ctrl_resp_q_avail(pciedev) == 0) {
+	if (!WRITE_SPACE_AVAIL(resp_q->r_indx, resp_q->w_indx, resp_q->depth)) {
 		/* This should NOT happen for IOCTL COMPLETIONs
 		 * For IOCTL ACK and COMPLETION there is
 		 * space reserved
@@ -10883,6 +10883,7 @@ pciedev_send_ioctl_completion(struct dngl_bus *pciedev)
 void
 pciedev_process_ioctl_pend(struct dngl_bus *pciedev)
 {
+	pciedev_ctrl_resp_q_t *resp_q = pciedev->ctrl_resp_q;
 
 	/* resources needed are allocated host buffer for response,
 	 * local buffer to send ack, local buffer to send ioctl response msg,
@@ -10894,7 +10895,7 @@ pciedev_process_ioctl_pend(struct dngl_bus *pciedev)
 	}
 
 	/* if previous IOCTL completion waiting for resources, don't send ACK again */
-	if (pciedev_ctrl_resp_q_avail(pciedev) < 2) {
+	if (WRITE_SPACE_AVAIL(resp_q->r_indx, resp_q->w_indx, resp_q->depth) < 2) {
 		PCI_ERROR(("should not happen\n"));
 		return;
 	}
@@ -10907,6 +10908,7 @@ pciedev_process_ioctl_pend(struct dngl_bus *pciedev)
 void
 pciedev_process_ts_pend(struct dngl_bus *pciedev)
 {
+	pciedev_ctrl_resp_q_t *resp_q = pciedev->ctrl_resp_q;
 	host_timestamp_msg_t *ts_rqst;
 	void *payloadptr;
 
@@ -10915,7 +10917,7 @@ pciedev_process_ts_pend(struct dngl_bus *pciedev)
 		return;
 	}
 	/* if previous control completion waiting for resources, don't send ACK again */
-	if (pciedev_ctrl_resp_q_avail(pciedev) < 1) {
+	if (!WRITE_SPACE_AVAIL(resp_q->r_indx, resp_q->w_indx, resp_q->depth)) {
 		PCI_ERROR(("should not happen\n"));
 		return;
 	}

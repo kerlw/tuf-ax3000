@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_akm_ie.c 775370 2019-05-29 08:20:33Z $
+ * $Id: wlc_akm_ie.c 777842 2019-08-13 07:19:23Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -1804,6 +1804,14 @@ wlc_check_wpa2ie(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, bcm_tlv_t *wpa2ie, struc
 	} else if (pmkid_count != 0 && (len < (pmkid_count * WPA2_PMKID_LEN))) {
 		return DOT11_SC_INVALID_PMKID;
 	}
+
+#ifdef WL_SAE
+	if (pmkid_count == 0) {
+		scb->pmkid_included = 0;
+	} else {
+		scb->pmkid_included = 1;
+	}
+#endif /* WL_SAE */
 
 	len -= (pmkid_count * WPA2_PMKID_LEN);
 

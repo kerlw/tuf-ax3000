@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: wlc_pdsvc.c 692436 2017-03-28 04:54:42Z $
+ * $Id: wlc_pdsvc.c 777979 2019-08-19 23:14:13Z $
  */
 
 #include <typedefs.h>
@@ -72,21 +72,27 @@
 #include <hndpmu.h>
 #include <wlc_pcb.h>
 #include <wlc_event_utils.h>
+#include <wlc_hrt.h>
 
 #include <wlc_pdsvc.h>
 #include <wlc_pddefs.h>
 #include <wlc_pdmthd.h>
-
+#ifdef WL_RANDMAC
+#include <wlc_randmac.h>
+#endif /* WL_RANDMAC */
 #include "pdsvc.h"
 #include "pdftm.h"
 #include "pdburst.h"
-#if defined(WL_FTM) && defined(WLAWDL)
-#include "pdftmawdl.h"
-#endif // endif
 
 #include <phy_tof_api.h>
+#ifdef WLSLOTTED_BSS
 #include <wlc_slotted_bss.h>
+#endif /* WLSLOTTED_BSS */
 #include <wlc_dump.h>
+
+#if defined(WLRSDB) && defined(WL_RANGE_SEQ)
+#include<wlc_rsdb.h>
+#endif /* WLRSDB && WL_RANGE_SEQ */
 
 #define PROXD_NAME "proxd"
 
@@ -117,8 +123,6 @@ struct wlc_pdsvc_info {
 	uint32 ki;
 	uint32 kt;
 	void * ranging;
-	uint8 rptlistnum;
-	struct ether_addr *rptlist;
 	pdftm_t *ftm;
 	wl_proxd_params_tof_tune_t *tunep;
 	uint64	clkfactor; /* clock factor */
@@ -208,47 +212,23 @@ enum {
 	/*
 		SEQ
 	*/
+	IOV_TOF_SEQ = 14
 };
 
 /* Iovars */
 static const bcm_iovar_t  wlc_proxd_iovars[] = {
 	{"proxd", IOV_PROXD, 0, 0, IOVT_BUFFER, sizeof(uint16)*2},
-#if defined(WL_TOF)
-	{"proxd_params", IOV_PROXD_PARAMS, 0, 0, IOVT_BUFFER, sizeof(wl_proxd_params_iovar_t)},
-	{"proxd_bssid", IOV_PROXD_BSSID, 0, 0, IOVT_BUFFER, ETHER_ADDR_LEN},
-	{"proxd_mcastaddr", IOV_PROXD_MCASTADDR, 0, 0, IOVT_BUFFER, ETHER_ADDR_LEN},
-	{"proxd_find", IOV_PROXD_FIND, 0, 0, IOVT_VOID, 0},
-	{"proxd_stop", IOV_PROXD_STOP, 0, 0, IOVT_VOID, 0},
-	{"proxd_status", IOV_PROXD_STATUS, 0, 0, IOVT_BUFFER, sizeof(wl_proxd_status_iovar_t)},
-	{"proxd_monitor", IOV_PROXD_MONITOR, 0, 0, IOVT_BUFFER, ETHER_ADDR_LEN},
-	{"proxd_payload", IOV_PROXD_PAYLOAD, 0, 0, IOVT_BUFFER, 0},
-#endif /* WL_TOF */
 #ifdef TOF_DBG
 	{"proxd_collect", IOV_PROXD_COLLECT, (IOVF_GET_UP | IOVF_SET_UP | IOVF_GET_CLK),
 	IOVT_BUFFER, sizeof(wl_proxd_collect_data_t)},
 #endif /* TOF_DBG */
-#ifdef WL_TOF
-	{"proxd_ftmperiod", IOV_FTM_PERIOD, 0, IOVT_UINT32, 0},
-#endif /* WL_TOF */
 	{"proxd_tune", IOV_PROXD_TUNE, (IOVF_GET_UP | IOVF_SET_UP),
 	0, IOVT_BUFFER, sizeof(wl_proxd_params_iovar_t)},
-	{"proxd_report", IOV_PROXD_REPORT, 0, 0, IOVT_BUFFER, 0},
-#if defined(WL_TOF)
 #ifdef WL_PROXD_AVB_TS
 	{"avb_local_time", IOV_AVB_LOCAL_TIME, 0, IOVT_BUFFER, sizeof(uint32)},
 #endif /* WL_PROXD_AVB_TS */
-#endif /* WL_TOF */
-#ifdef TOF_DBG_SEQ
-	{"tof_seq", IOV_TOF_SEQ,  0, IOVT_UINT32, 0},
-#endif // endif
 	{NULL, 0, 0, 0, 0, 0}
 };
-
-#if defined(WL_TOF)
-/* Proximity Default BSSID and Default Multicast address */
-STATIC CONST struct ether_addr proxd_default_bssid = {{0x00, 0x90, 0x4c, 0x02, 0x17, 0x03}};
-STATIC CONST struct ether_addr proxd_default_mcastaddr = {{0x01, 0x90, 0x4c, 0x02, 0x17, 0x03}};
-#endif // endif
 
 #ifdef BCMDBG
 static void wlc_proxd_bsscfg_cubby_dump(void *ctx, wlc_bsscfg_t *cfg, struct bcmstrbuf *b);
@@ -259,27 +239,17 @@ static void wlc_proxd_bsscfg_cubby_dump(void *ctx, wlc_bsscfg_t *cfg, struct bcm
 #ifdef WL_FTM
 static void proxd_bss_updown(void *ctx, bsscfg_up_down_event_data_t *evt);
 static wl_proxd_params_tof_tune_t *proxd_init_tune(wlc_info_t *wlc);
+static int pdburst_get_tune(wlc_info_t *, wl_proxd_params_tof_tune_t *, void *, uint);
+static int pdburst_set_tune(wl_proxd_params_tof_tune_t *tune, void *pbuf, uint len);
+static int wlc_proxd_wlc_up(void *context);
+static int wlc_proxd_wlc_down(void *context);
 #endif /* WL_FTM */
 
 /* This includes the auto generated ROM IOCTL/IOVAR patch handler C source file (if auto patching is
  * enabled). It must be included after the prototypes and declarations above (since the generated
  * source file may reference private constants, types, variables, and functions).
  */
-
-#if defined(WL_TOF)
-/* Initialize the RSSI method configuration parameters */
-static void
-BCMATTACHFN(wlc_pdsvc_init)(wlc_pdsvc_info_t *pdsvc)
-{
-	/* Setting common default parametrs */
-	memcpy(&pdsvc->config.bssid, &proxd_default_bssid, ETHER_ADDR_LEN);
-	memcpy(&pdsvc->config.mcastaddr, &proxd_default_mcastaddr, ETHER_ADDR_LEN);
-
-	/* get rrtcal from nvram */
-	pdsvc->ki = getintvararray(pdsvc->wlc->pub->vars, "rrtcal", 0);
-	pdsvc->kt = getintvararray(pdsvc->wlc->pub->vars, "rrtcal", 1);
-}
-#endif // endif
+#include <wlc_patch.h>
 
 /* bsscfg cubby */
 static int
@@ -370,92 +340,17 @@ wlc_proxd_bsscfg_cubby_dump(void *ctx, wlc_bsscfg_t *cfg, struct bcmstrbuf *b)
 }
 #endif // endif
 
-#if defined(WL_TOF)
-/* Enabling the proximity interface */
-static int
-wlc_proxd_ifadd(wlc_pdsvc_info_t *pdsvc, struct ether_addr *addr)
-{
-	wlc_info_t *wlc = pdsvc->wlc;
-	wlc_bsscfg_t *bsscfg = NULL;
-	int idx;
-	int err = BCME_OK;
-	wlc_bsscfg_type_t type = {BSSCFG_TYPE_PROXD, BSSCFG_SUBTYPE_NONE};
-
-	/* Get the free id to create bsscfg */
-	if ((idx = wlc_bsscfg_get_free_idx(wlc)) == -1) {
-		WL_ERROR(("wl%d: %s: no free bsscfg\n", wlc->pub->unit, __FUNCTION__));
-		err = BCME_NORESOURCE;
-		goto exit;
-	}
-	if ((bsscfg = wlc_bsscfg_alloc(wlc, idx, &type, WLC_BSSCFG_NOIF, 0, NULL)) == NULL) {
-		WL_ERROR(("wl%d: %s: cannot create bsscfg\n", wlc->pub->unit, __FUNCTION__));
-		err = BCME_NOMEM;
-		goto exit;
-	}
-
-	if (addr)
-		bcopy(addr, &bsscfg->cur_etheraddr, ETHER_ADDR_LEN);
-
-	if (wlc_bsscfg_init(wlc, bsscfg) != BCME_OK) {
-		WL_ERROR(("wl%d: %s: wlc_pd_bsscfg_init failed \n",
-			wlc->pub->unit, __FUNCTION__));
-		goto exit;
-	}
-
-	return BCME_OK;
-
-exit:
-	if (bsscfg != NULL)
-		wlc_bsscfg_free(wlc, bsscfg);
-	pdsvc->bsscfg = NULL;
-
-	return err;
-}
-/* Deleting the proximity interface */
-static void
-wlc_proxd_ifdel(wlc_pdsvc_info_t *pdsvc)
-{
-	wlc_bsscfg_t *bsscfg;
-
-	ASSERT(pdsvc != NULL);
-	bsscfg = pdsvc->bsscfg;
-
-	if (bsscfg != NULL) {
-		if (bsscfg->enable)
-			wlc_bsscfg_disable(pdsvc->wlc, bsscfg);
-		wlc_bsscfg_free(pdsvc->wlc, bsscfg);
-	}
-
-	pdsvc->bsscfg = NULL;
-}
-
-static int
-wlc_proxd_stop(void *ctx)
-{
-	wlc_pdsvc_info_t *pdsvc = (wlc_pdsvc_info_t *)ctx;
-
-	ASSERT(pdsvc != NULL);
-
-	/* Stop proximity detection.
-	   It should be safe to call stop even if it is not active.
-	*/
-	if (pdsvc->cur_mif && pdsvc->cur_mif->mstart) {
-		(*pdsvc->cur_mif->mstart)(pdsvc->cur_mif, FALSE);
-	}
-
-	return BCME_OK;
-}
-#endif /* WL_TOF */
 #ifdef WL_FTM
 /* wl proxd_tune get command */
 static int
-pdburst_get_tune(wlc_info_t *wlc, wl_proxd_params_tof_tune_t *tune, void *pbuf, int len)
+pdburst_get_tune(wlc_info_t *wlc, wl_proxd_params_tof_tune_t *tune, void *pbuf, uint len)
 {
 	wl_proxd_params_tof_tune_t *tunep = pbuf;
 	uint32 *kip = NULL, *ktp = NULL;
 
-	if (len < sizeof(wl_proxd_params_tof_tune_t))
+	if (len < sizeof(wl_proxd_params_tof_tune_t)) {
 		return BCME_BUFTOOSHORT;
+	}
 
 	memcpy(pbuf, tune, sizeof(wl_proxd_params_tof_tune_t));
 	if (!tunep->Ki)
@@ -486,23 +381,23 @@ pdburst_get_tune(wlc_info_t *wlc, wl_proxd_params_tof_tune_t *tune, void *pbuf, 
 
 /* wl proxd_tune set command */
 static int
-pdburst_set_tune(wl_proxd_params_tof_tune_t *tune, void *pbuf, int len)
+pdburst_set_tune(wl_proxd_params_tof_tune_t *tune, void *pbuf, uint len)
 {
 	wl_proxd_params_tof_tune_t *tunep = pbuf;
 
-	if (len < sizeof(wl_proxd_params_tof_tune_t))
+	if (len < sizeof(wl_proxd_params_tof_tune_t)) {
 		return BCME_BUFTOOSHORT;
+	}
 
 	memcpy(tune, pbuf, sizeof(wl_proxd_params_tof_tune_t));
-	if (!(tunep->setflags & WL_PROXD_SETFLAG_K))
+	if (!(tunep->setflags & WL_PROXD_SETFLAG_K)) {
 		tune->Ki = tune->Kt = 0;
+	}
 	tunep->setflags &= ~WL_PROXD_SETFLAG_K;
 
 	return BCME_OK;
 }
 #endif /* WL_FTM */
-
-#include <wlc_patch.h>
 
 /* Iovar processing: Each proximity method is created, deleted, and changes it state by iovars */
 static int
@@ -510,16 +405,11 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 	void *params, uint p_len, void *arg, uint a_len, uint val_size, struct wlc_if *wlcif)
 {
 	wlc_pdsvc_info_t *pdsvc_info = (wlc_pdsvc_info_t *)ctx;
-#if defined(WL_TOF)
-	wl_proxd_status_iovar_t *proxd_status_iovar_p;
-	uint16 mode = 0;
-	bool is_active = FALSE, is_wlup = FALSE;
-#endif // endif
 	uint16 method = 0;
 	wlc_info_t *wlc;
 	int err = BCME_OK;
 #ifdef WL_PROXD_AVB_TS
-	uint32 tx;
+	uint32 tx, rx;
 	wlc_hw_info_t *wlc_hw;
 	osl_t *osh;
 	d11regs_t *regs;
@@ -542,12 +432,12 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 	do {
 		wlc_bsscfg_t *bsscfg;
 		wl_proxd_iov_t *iov;
-		int iov_len;
+		uint iov_len;
 		wl_proxd_cmd_t iov_cmd;
 		wl_proxd_method_t iov_method;
 		wl_proxd_session_id_t iov_sid;
 		wl_proxd_iov_t *rsp_iov;
-		int rsp_tlvs_len;
+		uint rsp_tlvs_len;
 
 		if (IOV_ID(actionid) != IOV_PROXD)
 			break;
@@ -586,6 +476,11 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 			break;
 		}
 
+		if (iov_len < WL_PROXD_IOV_HDR_SIZE) {
+			err = BCME_BUFTOOSHORT;
+			break;
+		}
+
 		/* init response - length may be adjusted later */
 		memcpy(rsp_iov, iov, WL_PROXD_IOV_HDR_SIZE);
 		htol16_ua_store(WL_PROXD_IOV_HDR_SIZE, &rsp_iov->len);
@@ -607,11 +502,14 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 					iov_cmd, iov_sid, iov->tlvs,
 					iov_len - WL_PROXD_IOV_HDR_SIZE);
 			} else {
+				/* TODO: EXCAST to (int *) has to be removed
+				* when int changes are made in pdftm_get_iov
+				*/
 				err = pdftm_get_iov(pdsvc_info->ftm, bsscfg,
 					iov_cmd, iov_sid, iov->tlvs,
 					iov_len - WL_PROXD_IOV_HDR_SIZE,
 					a_len - WL_PROXD_IOV_HDR_SIZE,
-					rsp_iov->tlvs, &rsp_tlvs_len);
+					rsp_iov->tlvs, (int *)&rsp_tlvs_len);
 				ASSERT((rsp_tlvs_len + WL_PROXD_IOV_HDR_SIZE) <= a_len);
 				htol16_ua_store(rsp_tlvs_len + WL_PROXD_IOV_HDR_SIZE,
 					&rsp_iov->len);
@@ -640,280 +538,7 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 #endif /* WL_FTM */
 
 	switch (actionid) {
-#if defined(WL_TOF)
-	/* wl proxd [0|1] [neutral | initiator | target] */
-	case IOV_GVAL(IOV_PROXD):
-		*((uint16*)arg) = pdsvc_info->method;
-		if (pdsvc_info->method > 0)
-			*((uint16*)(arg + sizeof(method))) = pdsvc_info->config.mode;
-		else
-			*((uint16*)(arg + sizeof(method))) = 0;
-		break;
-
-	/* wl proxd [0|1] [neutral | initiator | target] */
-	case IOV_SVAL(IOV_PROXD):
-		if (p_len >= (uint)sizeof(method))
-			bcopy(params, &method, sizeof(method));
-
-		if (p_len >= (uint)(sizeof(method) + sizeof(mode)))
-			bcopy(params + sizeof(method), &mode, sizeof(mode));
-
-		/* RSSI method removed */
-		if ((mode == WL_PROXD_MODE_NEUTRAL) ||
-			(method == PROXD_RSSI_METHOD))
-			return BCME_UNSUPPORTED;
-
-		if (method > PROXD_MAX_METHOD_NUM)
-			return BCME_BADARG;
-
-		if (method != PROXD_UNDEFINED_METHOD) {
-			/* Return BCME_BUSY if it is already enabled */
-			if (pdsvc_info->method != PROXD_UNDEFINED_METHOD) {
-				return BCME_BUSY;
-			}
-			if (!wlc->clk)
-				return BCME_NOCLK;
-
-			/* Initialize the Transmit call back */
-			ASSERT(pdsvc_info->bsscfg == NULL);
-			if (ETHER_ISNULLADDR(&wlc->cfg->cur_etheraddr)) {
-				WL_ERROR(("wl%d: %s: Primary interface ethernet address is NULL \n",
-					wlc->pub->unit, __FUNCTION__));
-				return BCME_BADADDR;
-			}
-			if (mode == WL_PROXD_MODE_INITIATOR || method != PROXD_TOF_METHOD) {
-				if ((err = wlc_proxd_ifadd(pdsvc_info, &wlc->cfg->cur_etheraddr))
-					!= BCME_OK) {
-					WL_ERROR(("wl%d: %s: wlc_proxd_ifadd failed \n",
-						wlc->pub->unit, __FUNCTION__));
-					break;
-				}
-			}
-
-			/*   create & init method object   */
-			ASSERT(pdsvc_info->cur_mif == NULL);
-
-			/* Create a proximity method */
-			ASSERT(pdsvc_info->method_create_fn[method-1] != NULL);
-
-			if (!( pdsvc_info->cur_mif =	/* if Ok returns *mth iface obj */
-				(*pdsvc_info->method_create_fn[method-1])(
-					wlc, mode, &pdsvc_info->funcs, NULL,
-					&pdsvc_info->payload))) {
-				WL_ERROR(("wl%d: %s: Create method:%d failed \n",
-					wlc->pub->unit, __FUNCTION__, method));
-				if (pdsvc_info->bsscfg)
-					wlc_proxd_ifdel(pdsvc_info);
-				break;
-			}
-
-			/* Configure  created method */
-			if (pdsvc_info->cur_mif->mconfig) {
-				/* Call the method configuration */
-				(*pdsvc_info->cur_mif->mconfig)(pdsvc_info->cur_mif, mode,
-					pdsvc_info->bsscfg);
-			}
-
-			/* FIXME: Need to check return value of *pdsvc_info->cur_mif->mconfig
-			          Set pdsvc_info->method and mode only if success
-			*/
-			pdsvc_info->method = method;
-			pdsvc_info->config.mode = mode;
-
-			wlc->pub->_proxd = TRUE;
-		} else /*  == PROXD_UNDEFINED_METHOD) */ {
-			/* Disable proxmity deteciton if it is enabled */
-			if (pdsvc_info->method != 0) {
-				int ret = 0;
-				ASSERT(pdsvc_info->cur_mif != NULL);
-				/* Delete method */
-				if (pdsvc_info->cur_mif) {
-					/* Stop proximity */
-					(void) wlc_proxd_stop((void *)pdsvc_info);
-
-					/* Release the method */
-					ret = (*pdsvc_info->cur_mif->mrelease)(pdsvc_info->cur_mif);
-					pdsvc_info->cur_mif = NULL;
-				}
-
-				/* Delete the proxd interface */
-				if (pdsvc_info->bsscfg && !ret) {
-					wlc_proxd_ifdel(pdsvc_info);
-					pdsvc_info->bsscfg = NULL;
-				}
-				/* Initiatize all the parameters to NULL */
-				pdsvc_info->method = PROXD_UNDEFINED_METHOD;
-				pdsvc_info->config.mode = WL_PROXD_MODE_DISABLE;
-				wlc->pub->_proxd = FALSE;
-			}
-		}
-		break;
-
-	case IOV_GVAL(IOV_PROXD_PARAMS):
-		if (!pdsvc_info->cur_mif)
-			return BCME_BADARG;
-
-		if (p_len >= (uint)sizeof(method))
-			bcopy(params, &method, sizeof(method));
-
-		/* must be a vallid method and == to created method  */
-		if (method == 0 ||
-			method > PROXD_MAX_METHOD_NUM ||
-			pdsvc_info->method != method)
-			return BCME_BADARG;
-
-		/*  read params into the buffer */
-		ASSERT(pdsvc_info->cur_mif->rw_params != NULL);
-		*(uint8 *)arg = pdsvc_info->method; /* current method */
-		err = pdsvc_info->cur_mif->rw_params(pdsvc_info->cur_mif,
-			arg+sizeof(method), p_len, 0);
-
-		break;
-	case IOV_SVAL(IOV_PROXD_PARAMS):
-		/* proximity detection should be in idle state */
-		if (pdsvc_info->state != 0)
-			return BCME_EPERM;
-
-		if (p_len >= (uint)sizeof(method))
-			bcopy(params, &method, sizeof(method));
-
-		/* must be a vallid method and == to created method  */
-		if (method == 0 || method > PROXD_MAX_METHOD_NUM ||
-			pdsvc_info->method != method) {
-			PROXD_TRACE((" cmd mth:%d,  svc cur:%d\n", method, pdsvc_info->method));
-			return BCME_BADARG;
-		}
-
-		/*  write params into method module  */
-		ASSERT(pdsvc_info->cur_mif->rw_params != NULL);
-		err = pdsvc_info->cur_mif->rw_params(pdsvc_info->cur_mif,
-			params + sizeof(method), p_len, 1);
-
-		break;
-
-	case IOV_GVAL(IOV_PROXD_BSSID):
-		bcopy(&pdsvc_info->config.bssid, arg, ETHER_ADDR_LEN);
-		break;
-
-	case IOV_SVAL(IOV_PROXD_BSSID):
-		/* Don't check if NULL so that to allow clearing bssid */
-		bcopy(params, &pdsvc_info->config.bssid, ETHER_ADDR_LEN);
-
-		if (pdsvc_info->bsscfg != NULL) {
-			/* Update BSSID */
-			bcopy(&pdsvc_info->config.bssid, &pdsvc_info->bsscfg->BSSID,
-			      ETHER_ADDR_LEN);
-		}
-		break;
-
-	case IOV_GVAL(IOV_PROXD_MCASTADDR):
-		bcopy(&pdsvc_info->config.mcastaddr, arg, ETHER_ADDR_LEN);
-		break;
-
-	case IOV_SVAL(IOV_PROXD_MCASTADDR):
-		if (!ETHER_ISMULTI(params))
-			return BCME_BADADDR;
-
-		bcopy(params, &pdsvc_info->config.mcastaddr, ETHER_ADDR_LEN);
-		break;
-
-	case IOV_SVAL(IOV_PROXD_FIND):
-		/* proximity detection should have been enabled to start */
-		if (pdsvc_info->method == 0 || !pdsvc_info->cur_mif)
-			return BCME_EPERM;
-
-		/* proxd_find and proxd_stop have a dependency on the driver up state.
-		 * They are allowed only when the driver is up.
-		 * wlc_down_for_mpc() check is required to differentiate it from
-		 *  wl down due to MPC
-		 */
-		is_wlup = wlc->pub->up || wlc_down_for_mpc(wlc);
-		if (!is_wlup)
-			return BCME_NOTUP;
-
-		/* Check if it is already active */
-		if ((*pdsvc_info->cur_mif->mstatus)(pdsvc_info->cur_mif, &is_active, NULL) ==
-			BCME_ERROR)
-			return BCME_ERROR;
-
-		/* Call start only when it is not active */
-		if (!is_active)
-			return (*pdsvc_info->cur_mif->mstart)(pdsvc_info->cur_mif, TRUE);
-		else
-			return BCME_BUSY;
-		break;
-
-	case IOV_SVAL(IOV_PROXD_STOP):
-		/* proximity detection should have been enabled to stop */
-		if (pdsvc_info->method == 0 || !pdsvc_info->cur_mif)
-			return BCME_EPERM;
-
-		/* proxd_find and proxd_stop have a dependency on the driver up state.
-		 * They are allowed only when the driver is up.
-		 * wlc_down_for_mpc() check is required to differentiate it from
-		 *  wl down due to MPC
-		 */
-		is_wlup = wlc->pub->up || wlc_down_for_mpc(wlc);
-		if (!is_wlup)
-			return BCME_NOTUP;
-
-		(void) wlc_proxd_stop((void *)pdsvc_info);
-		break;
-
-	case IOV_GVAL(IOV_PROXD_STATUS):
-		/* proximity detection should have been enabled to start */
-		if (pdsvc_info->method == 0 || !pdsvc_info->cur_mif)
-			return BCME_EPERM;
-
-		if (p_len < sizeof(wl_proxd_status_iovar_t))
-			return BCME_BUFTOOSHORT;
-
-		if (pdsvc_info->cur_mif->mstatus) {
-			proxd_status_iovar_p = (wl_proxd_status_iovar_t *)arg;
-			proxd_status_iovar_p->method = pdsvc_info->method;
-			(*pdsvc_info->cur_mif->mstatus)(pdsvc_info->cur_mif, &is_active,
-				proxd_status_iovar_p);
-		}
-		break;
-
-	case IOV_SVAL(IOV_PROXD_MONITOR):
-		/* proximity detection goes to monitor mode */
-		if (pdsvc_info->method == 0 || !pdsvc_info->cur_mif)
-			return BCME_EPERM;
-
-		/* Check if it is already active */
-		if ((*pdsvc_info->cur_mif->mstatus)(pdsvc_info->cur_mif, &is_active, NULL) ==
-			BCME_ERROR)
-			return BCME_ERROR;
-
-		/* Call start only when it is not active */
-		if (!is_active)
-			(*pdsvc_info->cur_mif->mmonitor)(pdsvc_info->cur_mif, params);
-		else
-			return BCME_BUSY;
-		break;
-
-	case IOV_GVAL(IOV_PROXD_PAYLOAD):
-		*((uint16*)arg) = pdsvc_info->payload.len;
-		if (pdsvc_info->payload.len > 0)
-			memcpy(arg + sizeof(uint16), pdsvc_info->payload.data,
-				pdsvc_info->payload.len);
-		break;
-
-	case IOV_SVAL(IOV_PROXD_PAYLOAD):
-		if (pdsvc_info->payload.data)
-			MFREE(wlc->osh, pdsvc_info->payload.data, pdsvc_info->payload.len);
-		pdsvc_info->payload.data = NULL;
-		if (p_len > 0) {
-			pdsvc_info->payload.data = MALLOC(wlc->osh, p_len);
-			if (!pdsvc_info->payload.data)
-				return BCME_NOMEM;
-			memcpy(pdsvc_info->payload.data, arg, p_len);
-		}
-		pdsvc_info->payload.len = p_len;
-		break;
-#endif /* WL_TOF */
-#if defined(TOF_DBG) && (defined(WL_TOF) || defined(WL_FTM))
+#if defined(TOF_DBG) && defined(WL_FTM)
 	case IOV_GVAL(IOV_PROXD_COLLECT):
 	case IOV_SVAL(IOV_PROXD_COLLECT):
 		/* proximity detection should be in idle state */
@@ -927,22 +552,8 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 			bcopy(params, &quety, sizeof(quety));
 
 			if (pdsvc_info->cur_mif) {
-#ifdef WL_TOF
-				/* must be a vallid method and == to created method  */
-				if (quety.method == 0 || quety.method > PROXD_MAX_METHOD_NUM ||
-					pdsvc_info->method != quety.method) {
-					return BCME_BADARG;
-				}
-
-				if (pdsvc_info->cur_mif->collect == NULL)
-					return BCME_UNSUPPORTED;
-				err = pdsvc_info->cur_mif->collect(pdsvc_info->cur_mif,
-						&quety, arg, a_len, &len);
-#endif /* WL_TOF */
 			} else if (pdsvc_info->ftm) {
-#if defined(WL_FTM)
 				err = pdburst_collection(wlc, NULL, &quety, arg, a_len, &len);
-#endif // endif
 			} else
 				err = BCME_NOTREADY;
 		}
@@ -952,26 +563,15 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 		if (p_len >= (uint)sizeof(method))
 			bcopy(params, &method, sizeof(method));
 
+		if (p_len < sizeof(wl_proxd_params_iovar_t)) {
+			return BCME_BUFTOOSHORT;
+		}
+
 		if (pdsvc_info->cur_mif) {
-#ifdef WL_TOF
-			/* must be a vallid method and == to created method  */
-			if (method == 0 ||
-				method > PROXD_MAX_METHOD_NUM ||
-				pdsvc_info->method != method)
-				return BCME_BADARG;
-			if (method == PROXD_TOF_METHOD) {
-				err = wlc_pdtof_get_tune(pdsvc_info->cur_mif,
-					arg + OFFSETOF(wl_proxd_params_iovar_t, u.tof_tune),
-					p_len - OFFSETOF(wl_proxd_params_iovar_t, u.tof_tune));
-			} else
-				err = BCME_UNSUPPORTED;
-#endif /* WL_TOF */
 		} else if (pdsvc_info->ftm && pdsvc_info->tunep) {
-#ifdef WL_FTM
 			err = pdburst_get_tune(wlc, pdsvc_info->tunep,
 				((uint8*) arg + OFFSETOF(wl_proxd_params_iovar_t, u.tof_tune)),
 				p_len - OFFSETOF(wl_proxd_params_iovar_t, u.tof_tune));
-#endif /* WL_FTM */
 		}
 		else
 			err = BCME_NOTREADY;
@@ -981,60 +581,14 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 			bcopy(params, &method, sizeof(method));
 
 		if (pdsvc_info->cur_mif) {
-#ifdef WL_TOF
-			/* proximity detection should be in idle state */
-			if (pdsvc_info->state != 0)
-				return BCME_EPERM;
-
-			/* must be a vallid method and == to created method  */
-			if (method == 0 || method > PROXD_MAX_METHOD_NUM ||
-				pdsvc_info->method != method) {
-				PROXD_TRACE((" cmd mth:%d, svc cur:%d\n", method,
-					pdsvc_info->method));
-				return BCME_BADARG;
-			}
-
-			if (method == PROXD_TOF_METHOD)
-				err = wlc_pdtof_set_tune(pdsvc_info->cur_mif,
-					params + OFFSETOF(wl_proxd_params_iovar_t, u.tof_tune),
-					p_len - OFFSETOF(wl_proxd_params_iovar_t, u.tof_tune));
-			else
-				err = BCME_UNSUPPORTED;
-#endif /* WL_TOF */
 		} else if (pdsvc_info->ftm && pdsvc_info->tunep) {
-#ifdef WL_FTM
 			err = pdburst_set_tune(pdsvc_info->tunep,
 				((uint8*) params + OFFSETOF(wl_proxd_params_iovar_t, u.tof_tune)),
 				p_len - OFFSETOF(wl_proxd_params_iovar_t, u.tof_tune));
-#endif /* WL_FTM */
 		}
 		else
 			err = BCME_NOTREADY;
 		break;
-#ifdef WL_TOF
-	case IOV_GVAL(IOV_FTM_PERIOD):
-		if (pdsvc_info->method == PROXD_TOF_METHOD) {
-			int val = wlc_pdtof_get_ftmperiod(pdsvc_info->cur_mif);
-			if (val >= 0) {
-				*((uint32 *)arg) = (uint32)val;
-				break;
-			}
-		}
-		err = BCME_UNSUPPORTED;
-		break;
-
-	case IOV_SVAL(IOV_FTM_PERIOD):
-		if (pdsvc_info->method == PROXD_TOF_METHOD) {
-			uint32 val = 0;
-			if (p_len >= sizeof(uint32))
-				bcopy(params, &val, sizeof(val));
-			if (wlc_pdtof_set_ftmperiod(pdsvc_info->cur_mif,
-				val) == BCME_OK)
-				break;
-		}
-		err = BCME_UNSUPPORTED;
-		break;
-
 #ifdef WL_PROXD_AVB_TS
 	case IOV_GVAL(IOV_AVB_LOCAL_TIME):
 		if (p_len < sizeof(uint32))
@@ -1050,72 +604,17 @@ wlc_proxd_doiovar(void *ctx, uint32 actionid,
 
 		/* Read the clock state and MAC control registers */
 		wlc_get_avb_timer_reg(wlc->hw, &clkst, &macctrl1);
+		wlc_hw->machwcap1 = R_REG(wlc_hw->osh, D11_MacHWCap1(wlc_hw));
+		WL_ERROR(("%s clkst 0x%x,  macctrl1 0x%x, machwcap1 0x%x \n",
+			__FUNCTION__, clkst, macctrl1, wlc_hw->machwcap1));
 		wlc_enable_avb_timer(wlc->hw, TRUE);
-		if (macctrl1 & (1 << 2)) {
-			macctrl1 &= ~(1 << 2);
-			W_REG(osh, D11_MacControl1(wlc), macctrl1);
-			macctrl1 |= (1 << 2);
-			W_REG(osh, D11_MacControl1(wlc), macctrl1);
-			tx = R_REG(osh, D11_AvbTxTimeStamp(wlc));
-		} else {
-			macctrl1 |= (1 << 2);
-			W_REG(osh, D11_MacControl1(wlc), macctrl1);
-			tx = R_REG(osh, D11_AvbTxTimeStamp(wlc));
-			macctrl1 &= ~(1 << 2);
-			W_REG(osh, D11_MacControl1(wlc), macctrl1);
-		}
+		wlc_get_avb_timestamp(wlc->hw, &tx, &rx);
+		WL_ERROR(("%s AVBTxTimeStamp 0x%x,  AVBRxTimeStamp 0x%x \n", __FUNCTION__, tx, rx));
 
 		((uint32 *)arg)[0] = tx;
 		break;
 #endif /* WL_PROXD_AVB_TS */
-#endif /* WL_TOF */
-#ifdef TOF_DBG_SEQ
-	case IOV_GVAL(IOV_TOF_SEQ):
-#ifdef WL_TOF
-		if (pdsvc_info->method == PROXD_TOF_METHOD)
-			wlc_tof_dbg_seq_iov(pdsvc_info->cur_mif, 0, (int*)arg);
-		else
-			err = BCME_UNSUPPORTED;
-#endif // endif
-#ifdef WL_FTM
-		err = wlc_tof_dbg_seq_iov(wlc, 0, (int*)arg);
-#endif // endif
-		break;
-	case IOV_SVAL(IOV_TOF_SEQ):
-#ifdef WL_TOF
-		if (pdsvc_info->method == PROXD_TOF_METHOD)
-			err = wlc_tof_dbg_seq_iov(pdsvc_info->cur_mif, *((int32*)params), NULL);
-		else
-			err = BCME_UNSUPPORTED;
-#endif // endif
-#ifdef WL_FTM
-		err = wlc_tof_dbg_seq_iov(wlc, *((int32*)params), NULL);
-#endif // endif
-		break;
-#endif	/* TOF_DBG_SEQ */
 
-	case IOV_GVAL(IOV_PROXD_REPORT):
-		bzero(arg, ETHER_ADDR_LEN * WL_PROXD_MAXREPORT);
-		if (pdsvc_info->rptlistnum)
-			bcopy(pdsvc_info->rptlist, arg, ETHER_ADDR_LEN * pdsvc_info->rptlistnum);
-		break;
-
-	case IOV_SVAL(IOV_PROXD_REPORT):
-		if (pdsvc_info->rptlist)
-			MFREE(wlc->osh, pdsvc_info->rptlist,
-				pdsvc_info->rptlistnum * ETHER_ADDR_LEN);
-		pdsvc_info->rptlist = NULL;
-		pdsvc_info->rptlistnum = 0;
-		if (p_len > 0) {
-			if (ETHER_ISNULLADDR(arg))
-				break;
-			pdsvc_info->rptlist = MALLOC(wlc->osh, p_len);
-			if (!pdsvc_info->rptlist)
-				return BCME_NOMEM;
-			bcopy(arg, pdsvc_info->rptlist, p_len);
-			pdsvc_info->rptlistnum = p_len / ETHER_ADDR_LEN;
-		}
-		break;
 	default:
 		err = BCME_UNSUPPORTED;
 		break;
@@ -1127,125 +626,7 @@ done:
 	return err;
 }
 
-#if defined(WL_TOF)
-/* Provides the call back to method to transmit the action frames */
-static int
-wlc_proxd_transmitaf(wlc_pdsvc_info_t* pdsvc, wl_action_frame_t *af,
-	ratespec_t rate_override, pkcb_fn_t fn, struct ether_addr *selfea)
-{
-	wlc_info_t *wlc;
-	wlc_bsscfg_t *bsscfg;
-	bss_proxd_cubby_t *proxd_bsscfg_cubby;
-	struct scb *scb;
-	struct ether_addr *bssid;
-	uint16 method;
-	chanspec_t chanspec;
-	uint8* pbody;
-	wlc_pkttag_t *pkttag;
-	void *pkt;
-
-	ASSERT(pdsvc != NULL);
-	ASSERT(af != NULL);
-
-	wlc = pdsvc->wlc;
-
-	if (pdsvc->bsscfg) {
-		bsscfg = pdsvc->bsscfg;
-	} else {
-		bsscfg = wlc_bsscfg_find_by_hwaddr(wlc, selfea);
-	}
-	if (bsscfg == NULL) {
-		WL_ERROR(("%s: Bsscfg Iteration Failed\n", __FUNCTION__));
-		return BCME_ERROR;
-	}
-	if (ETHER_ISNULLADDR(&af->da))
-		bcopy(&pdsvc->config.mcastaddr, &af->da, ETHER_ADDR_LEN);
-	if (ETHER_ISNULLADDR(&bsscfg->BSSID))
-		bssid = &pdsvc->config.bssid;
-	else
-		bssid = &bsscfg->BSSID;
-
-	/* get allocation of action frame */
-	if ((pkt = wlc_frame_get_action(wlc, &af->da, &bsscfg->cur_etheraddr,
-		bssid, af->len, &pbody, DOT11_ACTION_CAT_VS)) == NULL) {
-		return BCME_NOMEM;
-	}
-
-	pkttag = WLPKTTAG(pkt);
-	pkttag->shared.packetid = af->packetId;
-	WLPKTTAGBSSCFGSET(pkt, bsscfg->_idx);
-
-	/* copy action frame payload */
-	bcopy(af->data, pbody, af->len);
-
-	/* Need to set a proper scb in action frame transmission so that lower layer
-	   functions can have a correct reference to scb and bsscfg. If scb is not
-	   provided on wlc_queue_80211_frag(), it internally uses the default scb
-	   which points to a wrong bsscfg.
-	*/
-	method = pdsvc->method;
-	ASSERT(method != 0 && method <= PROXD_MAX_METHOD_NUM);
-
-	/* read chanspec from current method  */
-	ASSERT(pdsvc->cur_mif->params_ptr != NULL);
-	chanspec = pdsvc->cur_mif->params_ptr->chanspec;
-
-	proxd_bsscfg_cubby = (bss_proxd_cubby_t *)PROXD_BSSCFG_CUBBY(pdsvc, bsscfg);
-
-	if (method == PROXD_RSSI_METHOD)
-		mboolset(proxd_bsscfg_cubby->flags, PROXD_FLAG_TXPWR_OVERRIDE);
-	else
-		mboolclr(proxd_bsscfg_cubby->flags, PROXD_FLAG_TXPWR_OVERRIDE);
-
-	/* Getting bcmc scb for bsscfg */
-	if (method == PROXD_RSSI_METHOD) {
-		scb = bsscfg->bcmc_scb;
-		ASSERT(scb != NULL);
-	} else {
-		scb = NULL;
-	}
-
-	if (fn) {
-		wlc_pcb_fn_register(wlc->pcb, fn, pdsvc->cur_mif, pkt);
-	}
-
-	/* put into queue and then transmit */
-	if (!wlc_queue_80211_frag(wlc, pkt, wlc->active_queue, scb, bsscfg, FALSE, NULL,
-		rate_override))
-		return BCME_ERROR;
-
-	/* WLF2_PCB1_AF callback is not needed because the action frame was not
-	 * initiated from Host. More importantly, queueing up WLC_E_ACTION_FRAME_COMPLETE event
-	 * which would be done in the callback would keep the device from going into sleep.
-	 */
-
-	return BCME_OK;
-}
-
-/* This is a notify call back to the method to inform DHD on proximity detection */
-static int
-wlc_proxd_notify(void *ctx, struct ether_addr *ea, uint result, uint status,
-	uint8 *body, int body_len)
-{
-	wlc_pdsvc_info_t* pdsvc = ctx;
-	wlc_info_t *wlc;
-	wlc_bsscfg_t *bsscfg;
-
-	PROXD_TRACE(("%s result:%d status :%d\n",
-		__FUNCTION__, result, status));
-
-	ASSERT(pdsvc != NULL);
-
-	wlc = pdsvc->wlc;
-	bsscfg = pdsvc->bsscfg;
-
-	wlc_bss_mac_event(wlc, bsscfg, WLC_E_PROXD, ea, result, status, 0,
-		body, body_len);
-
-	return BCME_OK;
-}
-#endif /* WL_TOF */
-#if defined(WL_FTM) || defined(WL_TOF)
+#if defined(WL_FTM)
 /* Get AVB clock factor
  * AVB timer factor  = (2 * Divior * 1000000)/VCO.
  * The factor for 4335b0 and 4335c0 is 6.19834710... to keep good accuracy. Left Shift it 15 bit.
@@ -1257,17 +638,41 @@ wlc_proxd_AVB_clock_factor(wlc_pdsvc_info_t* pdsvc, uint8 shift, uint32 *ki, uin
 	uint32 factor;
 
 	ASSERT(pdsvc != NULL);
-
+	if (CHIPID(pdsvc->wlc->pub->sih->chip) == BCM63178_CHIP_ID) {
+		/* Considering the default settings for 63178/47622 avoidance mode */
+		/* i_pdiv (pre-divider) = 1 */
+		/* FVCO = xtal (50) * (integer + fractional) */
+		/* Integer = i_ndiv_int [9:0] of PLL Control 2 = 58 */
+		/* Fractional = i_ndiv_frac[19:0] hex2dec('23DD4')/2^20 = 0.14009476 */
+		/* FVCO = 50 * 58.14009476 / 1 = 2907.00474MHz */
+		/* factor = (1000/2907.00474)ns =  0.343996687 << 15 (TOF_SHIFT) */
+		/** AVB Clock =  */
+		factor = 11272;
+	} else if (CHIPID(pdsvc->wlc->pub->sih->chip) == BCM43684_CHIP_ID) {
+		/* Considering the default settings for 43684 avoidance mode */
+		/* i_pdiv (pre-divider) = 1 */
+		/* FVCO = xtal (54) * (integer + fractional) */
+		/* Integer = i_ndiv_int [9:0] of PLL Control 2 = 53 */
+		/* Fractional = i_ndiv_frac[19:0] hex2dec('D55AC')/2^20 = 0.833415985 */
+		/* FVCO = 54 * 53.833415985 / 1 = 2907.004463MHz */
+		/* factor = (1000/2907.004463)ns =  0.34399672 << 15 (TOF_SHIFT) */
+		/** AVB Clock =  */
+		factor = 11272;
+	} else
 	if ((CHIPID(pdsvc->wlc->pub->sih->chip)) == BCM4360_CHIP_ID ||
 		(CHIPID(pdsvc->wlc->pub->sih->chip)) == BCM4352_CHIP_ID ||
 		(CHIPID(pdsvc->wlc->pub->sih->chip)) == BCM43460_CHIP_ID ||
 		(CHIPID(pdsvc->wlc->pub->sih->chip)) == BCM43602_CHIP_ID ||
-		(CHIPID(pdsvc->wlc->pub->sih->chip)) == BCM4347_CHIP_ID) {
+		(CHIPID(pdsvc->wlc->pub->sih->chip)) == BCM4347_CHIP_ID ||
+		D11REV_IS(pdsvc->wlc->pub->corerev, 82)) {
+
 		factor = ((pdsvc->pllreg * 1000) << shift);
+		factor = factor / pdsvc->fvco;
 	} else {
 		factor = (((pdsvc->pllreg & PMU1_PLL0_PC1_M1DIV_MASK) * 1000 * 2) << shift);
+		factor = factor / pdsvc->fvco;
 	}
-	factor = factor / pdsvc->fvco;
+
 	if (ki && pdsvc->ki)
 		*ki = pdsvc->ki;
 	if (kt && pdsvc->kt)
@@ -1278,7 +683,7 @@ wlc_proxd_AVB_clock_factor(wlc_pdsvc_info_t* pdsvc, uint8 shift, uint32 *ki, uin
 
 	return factor;
 }
-#endif /* WL_FTM || WL_TOF */
+#endif /* WL_FTM */
 wlc_pdsvc_info_t *
 BCMATTACHFN(wlc_proxd_attach)(wlc_info_t *wlc)
 {
@@ -1304,22 +709,6 @@ BCMATTACHFN(wlc_proxd_attach)(wlc_info_t *wlc)
 
 	/* save the wlc reference */
 	pdsvc->wlc = wlc;
-#if defined(WL_TOF)
-	/* Hook up the callback interfaces */
-	pdsvc->funcs.txaf = wlc_proxd_transmitaf;
-	pdsvc->funcs.notify = wlc_proxd_notify;
-	pdsvc->funcs.clock_factor = wlc_proxd_AVB_clock_factor;
-	pdsvc->funcs.notifyptr = pdsvc;
-
-	/*  attach create_fn for currrently implemented PD methods  */
-	pdsvc->method_create_fn[PROXD_RSSI_METHOD-1] = NULL;
-	pdsvc->method_create_fn[PROXD_TOF_METHOD-1] =
-		wlc_pdtof_create_method;
-	/* TODO: pdsvc->method_create_fn[PROXD_AOA_METHOD-1] = wlc_pdaoa_create_method;  */
-
-	/* LEGACY stuff, TODO: move rssi related init into the pdrssi module */
-	wlc_pdsvc_init(pdsvc);
-#endif /* WL_TOF */
 	/* reserve cubby in the bsscfg container for per-bsscfg private data */
 	if ((pdsvc->cfgh = wlc_bsscfg_cubby_reserve(wlc, sizeof(bss_proxd_cubby_t),
 		wlc_proxd_bsscfg_cubby_init, wlc_proxd_bsscfg_cubby_deinit,
@@ -1336,7 +725,8 @@ BCMATTACHFN(wlc_proxd_attach)(wlc_info_t *wlc)
 	 * entering sleep due to MPC.
 	 */
 	err = wlc_module_register(wlc->pub, wlc_proxd_iovars, PROXD_NAME, (void *)pdsvc,
-		wlc_proxd_doiovar, NULL, NULL, NULL);
+		wlc_proxd_doiovar, NULL, wlc_proxd_wlc_up, wlc_proxd_wlc_down);
+
 	if (err != BCME_OK) {
 		WL_ERROR(("wl%d: %s: wlc_module_register() failed with status %d\n",
 			wlc->pub->unit, __FUNCTION__, err));
@@ -1355,7 +745,7 @@ BCMATTACHFN(wlc_proxd_attach)(wlc_info_t *wlc)
 	if (!pdsvc->ftm)  /* callee logged failure */
 		goto fail;
 
-	wlc->pub->_proxd = TRUE;
+	/* wlc->pub->_proxd = TRUE; */
 
 	err = wlc_bsscfg_updown_register(wlc, proxd_bss_updown, pdsvc);
 	if (err != BCME_OK) {
@@ -1379,41 +769,15 @@ BCMATTACHFN(wlc_proxd_attach)(wlc_info_t *wlc)
 	}
 #endif /* BCMDBG || BCMDBG_DUMP */
 
-#if defined(WLAWDL)
-	if (AWDL_SUPPORT(wlc->pub)) {
-		if (pdsvc != NULL) {
-			err = wlc_awdl_st_notif_register(wlc->awdl_info,
-				(void *)pdftm_sched_awdl_cb, NULL);
-		}
-		/* ext sched registration fails */
-		if (err != BCME_OK) {
-			WL_ERROR(("wl%d: %s awdl register failed with error %d\n",
-				wlc->pub->unit, __FUNCTION__, err));
-			goto fail;
-		}
-	}
-#endif /* WLAWDL */
-#ifdef WLSLOTTED_BSS
-	if (SLOTTED_BSS_SUPPORT(wlc->pub)) {
-		if (pdsvc != NULL) {
-			err = wlc_slotted_bss_st_notif_register(wlc->sbi,
-					(void *)pdftm_ext_sched_cb, NULL);
-		}
-		/* ext sched registration fails */
-		if (err != BCME_OK) {
-			WL_ERROR(("wl%d: %s nan register failed with error %d\n",
-				wlc->pub->unit, __FUNCTION__, err));
-			goto fail;
-		}
-	}
-#endif /* WLSLOTTED_BSS */
-
 #endif /* WL_FTM */
 
 	return pdsvc;
 
 fail:
 	if (pdsvc != NULL) {
+		if (pdsvc->ftm) {
+			MODULE_DETACH(pdsvc->ftm, pdftm_detach);
+		}
 		(void)wlc_module_unregister(wlc->pub, PROXD_NAME, pdsvc);
 		if (pdsvc->tunep)
 			MFREE(wlc->osh, pdsvc->tunep, sizeof(wl_proxd_params_tof_tune_t));
@@ -1436,33 +800,20 @@ BCMATTACHFN(wlc_proxd_detach) (wlc_pdsvc_info_t *const pdsvc)
 
 	ASSIGN_SIGNATURE(pdsvc, 0);
 
-#if defined(WL_TOF)
-	/* Stop proximity */
-	(void) wlc_proxd_stop((void *)pdsvc);
-#endif // endif
-
 #ifdef WL_FTM
-	pdftm_detach(&pdsvc->ftm);
+	MODULE_DETACH(pdsvc->ftm, pdftm_detach);
 #endif /* WL_FTM */
 
 	/* This is just to clean up the memory if unloading happens before disabling the method */
 	if (pdsvc->cur_mif) {
 		(*pdsvc->cur_mif->mrelease)(pdsvc->cur_mif);
 	}
-#if defined(WL_TOF)
-	if (pdsvc->bsscfg) {
-		wlc_proxd_ifdel(pdsvc);
-	}
-#endif /* WL_TOF */
 	wlc_module_unregister(wlc->pub, "proxd", pdsvc);
 
 	if (pdsvc->tunep)
 		MFREE(wlc->osh, pdsvc->tunep, sizeof(wl_proxd_params_tof_tune_t));
 	MFREE(wlc->osh, pdsvc, sizeof(wlc_pdsvc_info_t));
 
-#if defined(WLAWDL) && defined(WL_FTM)
-	(void)wlc_awdl_st_notif_unregister(wlc->awdl_info, (void *)pdftm_sched_awdl_cb, NULL);
-#endif /* WLAWDL && WL_FTM */
 #if defined(WLSLOTTED_BSS) && defined(WL_FTM)
 	(void)wlc_slotted_bss_st_notif_unregister(wlc->sbi, pdftm_ext_sched_cb, NULL);
 #endif // endif
@@ -1473,18 +824,35 @@ BCMATTACHFN(wlc_proxd_detach) (wlc_pdsvc_info_t *const pdsvc)
 /* wlc calls to receive the action frames */
 int
 wlc_proxd_recv_action_frames(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
-	struct dot11_management_header *hdr, uint8 *body, int body_len,
+	struct dot11_management_header *hdr, uint8 *body, uint body_len,
 	wlc_d11rxhdr_t *wrxh, uint32 rspec)
 {
 	wlc_pdsvc_info_t* pdsvc;
+	uint8 action = 0;
 
 	ASSERT(wlc != NULL);
 	ASSERT(body != NULL);
 	BCM_REFERENCE(bsscfg);
+	BCM_REFERENCE(action);
 
 	pdsvc = wlc->pdsvc_info;
-	if (!pdsvc)
+#ifdef WL_PROXD_UCODE_TSYNC
+	/* process ftm meas frames asap to clear the
+	* ACK TS SHM blocks, else we may drop in between and
+	* ACK block may not be cleared
+	*/
+	if (PROXD_ENAB_UCODE_TSYNC(wlc->pub)) {
+		action = body[DOT11_ACTION_ACT_OFF];
+		if (action == DOT11_PUB_ACTION_FTM) {
+			pdburst_process_tx_rx_status(wlc,
+				NULL, &wrxh->rxhdr, &hdr->sa);
+		}
+	}
+#endif /* WL_PROXD_UCODE_TSYNC */
+
+	if (!pdsvc) {
 		return BCME_OK;
+	}
 #ifdef WL_FTM
 	if (pdftm_is_ftm_action(pdsvc->ftm, hdr, body, body_len)) {
 		if (bsscfg == NULL) {
@@ -1501,12 +869,6 @@ wlc_proxd_recv_action_frames(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
 	}
 #endif /* WL_FTM */
 
-#if defined(WL_TOF)
-	/* Push the frame to method */
-	if (pdsvc->cur_mif && pdsvc->cur_mif->mpushaf)
-		(*pdsvc->cur_mif->mpushaf)(pdsvc->cur_mif, &hdr->sa, &hdr->da, wrxh,
-			body, body_len, rspec);
-#endif // endif
 #ifdef WL_FTM
 done:
 #endif /* WL_FTM */
@@ -1528,7 +890,6 @@ bool wlc_proxd_frame(wlc_info_t *wlc, wlc_pkttag_t *pkttag)
 	{
 		return TRUE;
 	}
-
 	return FALSE;
 }
 
@@ -1539,20 +900,19 @@ void wlc_proxd_tx_conf(wlc_info_t *wlc, uint16 *phyctl, uint16 *mch, wlc_pkttag_
 	ASSERT(wlc != NULL);
 
 	pdsvc = wlc->pdsvc_info;
-	uint8 core_shift = (pdsvc->tunep->core == 255) ? 0 : pdsvc->tunep->core;
 
 	if (pdsvc && pkttag &&
 		((pkttag->shared.packetid & 0x7fff0000) == PROXD_FTM_PACKET_TAG))
 	{
 		uint16 mask;
-#if defined(WL_TOF)
-		/* measurement packet using one antenna to tx */
-		if (pdsvc->cur_mif)
-			mask = (wlc_pdtof_get_tx_mask(pdsvc->cur_mif) << D11AC_PHY_TXC_CORE_SHIFT);
-		else
-#endif // endif
+		uint8 core_shift = (pdsvc->tunep->core == 255) ? 0 : pdsvc->tunep->core;
+		if (D11REV_GE(wlc->pub->corerev, 80)) {
+			mask = (1 << core_shift);
+			*phyctl = (*phyctl & ~(D11_REV80_PHY_TXC_CORE_MASK)) | mask;
+		} else {
 			mask = (1 << core_shift) << D11AC_PHY_TXC_CORE_SHIFT;
-		*phyctl = (*phyctl & ~D11AC_PHY_TXC_CORE_MASK) | mask;
+			*phyctl = (*phyctl & ~D11AC_PHY_TXC_CORE_MASK) | mask;
+		}
 
 		if (pkttag->shared.packetid & PROXD_MEASUREMENT_PKTID) {
 			/* signal ucode to enable timestamping for this frame */
@@ -1606,8 +966,13 @@ void wlc_proxd_tx_conf_subband(wlc_info_t *wlc, uint16 *phyctl, wlc_pkttag_t *pk
 		uint16 subband;
 		chanspec_t chspec = pkttag->shared.packetid & 0xffff;
 		subband = wlc_proxd_get_tx_subband(wlc, chspec) & D11AC_PHY_TXC_PRIM_SUBBAND_MASK;
-		*phyctl = (*phyctl & ~WL_CHANSPEC_CTL_SB_MASK) |
-			(subband << WL_CHANSPEC_CTL_SB_SHIFT);
+		if (D11REV_GE(wlc->pub->corerev, 80)) {
+			*phyctl = (*phyctl & ~D11_REV80_PHY_TXC_SB_MASK) |
+				(subband << D11_REV80_PHY_TXC_SB_SHIFT);
+		} else {
+			*phyctl = (*phyctl & ~WL_CHANSPEC_CTL_SB_MASK) |
+				(subband << WL_CHANSPEC_CTL_SB_SHIFT);
+		}
 	}
 }
 
@@ -1626,189 +991,88 @@ uint32 wlc_pdsvc_sqrt(uint32 x)
 	return answer;
 }
 
-uint32 wlc_pdsvc_average(uint32 *arr, int n)
+int32 wlc_pdsvc_average(int32 *arr, int n)
 {
 	int total;
 	int i;
-	uint32 ret;
+	int32 ret;
 
 	if (n > 1) {
 		i = 1;
 		total = 0;
-		while (i < n)
+		while (i < n) {
 			total += (arr[i++]-arr[0]);
+		}
 		total = total*100/n;
 		ret = total/100+arr[0];
-		if (total%100 >= 50)
+		if (total%100 >= 50) {
 			ret++;
-		return ret;
-	} else if (n == 1)
-		return arr[0];
-	return 0;
+		}
+	} else if (n == 1) {
+		ret = arr[0];
+	} else {
+		ret = 0;
+	}
+
+	return ret;
 }
 
-uint32 wlc_pdsvc_deviation(uint32 *arr, int n, uint8 decimaldigits)
+uint32 wlc_pdsvc_deviation(int32 *arr, int32 mean, int n, uint8 decimaldigits)
 {
-	uint32 sum = 0, mean;
+	uint32 sum = 0;
 	int i, diff;
 
-	if (n == 0)
+	if (n == 0) {
 		return 0;
-	if (decimaldigits > 3)
+	}
+	if (decimaldigits > 3) {
 		decimaldigits = 3;
-	mean = wlc_pdsvc_average(arr, n);
+	}
 	for (i = 0; i < n; i++) {
 		diff = arr[i] - mean;
 		sum += diff * diff;
 	}
-	for (i = 0; i < decimaldigits; i++)
+	for (i = 0; i < decimaldigits; i++) {
 		sum *= 100;
+	}
 
 	return wlc_pdsvc_sqrt(sum/n);
 }
 
-#if defined(WL_TOF)
-static int wlc_pdsvc_func(wlc_info_t *wlc, uint8 action, chanspec_t chanspec,
-	struct ether_addr *addr, int8 frmcnt, int8 retrycnt, int timeout, uint32 flags)
+#ifdef WL_PROXD_OUTLIER_FILTERING
+void
+wlc_pdsvc_sortasc(int32 *arr, uint16 arr_size)
 {
-	wlc_pdsvc_info_t* pdsvc;
-	wl_proxd_params_tof_method_t tofparam;
-	wl_proxd_params_tof_tune_t toftune;
-	int ret = 0;
+	uint16 i, j;
+	int32 temp;
 
-	ASSERT(wlc != NULL);
-	ASSERT(wlc->pdsvc_info != NULL);
-
-	pdsvc = wlc->pdsvc_info;
-	if (pdsvc && pdsvc->cur_mif) {
-		if (action == WL_PROXD_ACTION_START) {
-			pdsvc->cur_mif->rw_params(pdsvc->cur_mif, &tofparam,
-				sizeof(wl_proxd_params_tof_method_t), 0);
-			tofparam.chanspec = chanspec;
-			if (timeout != -1)
-				tofparam.timeout = timeout;
-			if (frmcnt != -1)
-				tofparam.ftm_cnt = frmcnt;
-			if (retrycnt != -1)
-				tofparam.retry_cnt = retrycnt;
-			bcopy(addr, &tofparam.tgt_mac, ETHER_ADDR_LEN);
-			if (flags & WL_PROXD_FLAG_ONEWAY) {
-				/* One side using 6M legacy rate */
-				tofparam.tx_rate = 12;
-				tofparam.vht_rate = WL_RSPEC_ENCODE_RATE >> 16;
-			} else {
-				tofparam.tx_rate = 1 << WL_RSPEC_VHT_NSS_SHIFT;
-				tofparam.vht_rate = WL_RSPEC_ENCODE_VHT >> 16;
+	/* Sort the data in ascending order */
+	for (i = 0u; i < arr_size; i++) {
+		for (j = 0u; j < arr_size - 1u; j++) {
+			if (arr[j + 1u] < arr[j]) {
+				temp = arr[j];
+				arr[j] = arr[j + 1u];
+				arr[j + 1u] = temp;
 			}
-			pdsvc->cur_mif->rw_params(pdsvc->cur_mif, &tofparam,
-				sizeof(wl_proxd_params_tof_method_t), 1);
-			wlc_pdtof_get_tune(pdsvc->cur_mif, &toftune,
-				sizeof(wl_proxd_params_tof_tune_t));
-			toftune.flags = flags;
-			if (toftune.flags & WL_PROXD_FLAG_SEQ_EN)
-			{
-				toftune.seq_en = 1;
-			} else {
-				toftune.seq_en = 0;
-			}
-
-			wlc_pdtof_set_tune(pdsvc->cur_mif, &toftune,
-				sizeof(wl_proxd_params_tof_tune_t));
 		}
-
-		(*pdsvc->cur_mif->mconfig)(pdsvc->cur_mif,
-			WL_PROXD_MODE_INITIATOR, pdsvc->bsscfg);
-		ret = (*pdsvc->cur_mif->mstart)(pdsvc->cur_mif, (action != WL_PROXD_ACTION_STOP));
 	}
-	return ret;
 }
 
-pdsvc_func_t wlc_pdsvc_register(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, notifypd notify,
-	void *notifyptr, int8 fmtcnt, struct ether_addr *allow_addr, bool setonly, uint32 flags)
+int32
+wlc_pdsvc_median(int32 *arr, uint16 arr_size)
 {
-	wlc_pdsvc_info_t* pdsvc;
-	wl_proxd_params_tof_method_t tofparam;
-	wl_proxd_params_tof_tune_t toftune;
+	int32 median;
 
-	ASSERT(wlc != NULL);
-	ASSERT(wlc->pdsvc_info != NULL);
-
-	pdsvc = wlc->pdsvc_info;
-	pdsvc->bsscfg = bsscfg;
-	if (notify) {
-		pdsvc->funcs.notify = notify;
-		pdsvc->funcs.notifyptr = notifyptr;
+	/* median = (arr_size + 1)/2 th sample in the sorted set */
+	if (arr_size % 2u == 0) {
+		median = (arr[(arr_size / 2u) - 1u] + arr[arr_size / 2u]) / 2u;
+	} else {
+		median = arr[(arr_size + 1u)/2u - 1u];
 	}
 
-	if (!setonly && !(pdsvc->cur_mif = (*pdsvc->method_create_fn[PROXD_TOF_METHOD-1])(
-			wlc, WL_PROXD_MODE_TARGET, &pdsvc->funcs, NULL,
-			&pdsvc->payload))) {
-		WL_ERROR(("wl%d: %s: Create TOF method failed \n",
-			wlc->pub->unit, __FUNCTION__));
-		return NULL;
-	}
-
-	/* Configure  created method */
-	if (!setonly && pdsvc->cur_mif->mconfig) {
-		/* Call the method configuration */
-		(*pdsvc->cur_mif->mconfig)(pdsvc->cur_mif,
-			WL_PROXD_MODE_TARGET, pdsvc->bsscfg);
-	}
-
-	pdsvc->cur_mif->rw_params(pdsvc->cur_mif, &tofparam,
-		sizeof(wl_proxd_params_tof_method_t), 0);
-	if (fmtcnt != -1)
-		tofparam.ftm_cnt = fmtcnt;
-	tofparam.tx_rate = 1 << WL_RSPEC_VHT_NSS_SHIFT;
-	tofparam.vht_rate = WL_RSPEC_ENCODE_VHT >> 16;
-	pdsvc->cur_mif->rw_params(pdsvc->cur_mif, &tofparam,
-		sizeof(wl_proxd_params_tof_method_t), 1);
-
-	wlc_pdtof_get_tune(pdsvc->cur_mif, &toftune, sizeof(wl_proxd_params_tof_tune_t));
-	toftune.vhtack = 1;
-	if (fmtcnt != -1 && fmtcnt != 0)
-		toftune.totalfrmcnt = fmtcnt+1; /* limit total frames */
-	toftune.flags = flags;
-	wlc_pdtof_set_tune(pdsvc->cur_mif, &toftune, sizeof(wl_proxd_params_tof_tune_t));
-
-	wlc_pdtof_allowmac(pdsvc->cur_mif, allow_addr);
-
-	pdsvc->method = PROXD_TOF_METHOD;
-	pdsvc->config.mode = WL_PROXD_MODE_TARGET;
-
-	wlc->pub->_proxd = TRUE;
-
-	if (!setonly)
-		(*pdsvc->cur_mif->mstart)(pdsvc->cur_mif, TRUE);
-
-	return wlc_pdsvc_func;
+	return median;
 }
-
-int wlc_pdsvc_deregister(wlc_info_t *wlc, pdsvc_func_t funcp)
-{
-	wlc_pdsvc_info_t* pdsvc;
-
-	ASSERT(wlc != NULL);
-	ASSERT(wlc->pdsvc_info != NULL);
-
-	pdsvc = wlc->pdsvc_info;
-	if (pdsvc->cur_mif && funcp) {
-		/* Stop proximity */
-		wlc_proxd_stop((void *)pdsvc);
-
-		/* Release the method */
-		(*pdsvc->cur_mif->mrelease)(pdsvc->cur_mif);
-		pdsvc->cur_mif = NULL;
-	}
-
-	/* Initiatize all the parameters to NULL */
-	pdsvc->method = PROXD_UNDEFINED_METHOD;
-	pdsvc->config.mode = WL_PROXD_MODE_DISABLE;
-	wlc->pub->_proxd = FALSE;
-
-	return 0;
-}
-#endif /* WL_TOF */
+#endif /* WL_PROXD_OUTLIER_FILTERING */
 
 /* function to determine if the proxd is supported by the radio card */
 bool wlc_is_proxd_supported(wlc_info_t *wlc)
@@ -1818,7 +1082,9 @@ bool wlc_is_proxd_supported(wlc_info_t *wlc)
 	ASSERT(wlc != NULL);
 	wlc_hw = wlc->hw;
 
-	if (D11REV_GE(wlc_hw->corerev, 42)) {
+	if (D11REV_IS(wlc_hw->corerev, 65) ||
+	    D11REV_IS(wlc_hw->corerev, 129) ||
+	    D11REV_IS(wlc_hw->corerev, 130)) {
 		return TRUE;
 	} else {
 		return FALSE;
@@ -1830,19 +1096,31 @@ uint32 proxd_get_ratespec_idx(ratespec_t rspec, ratespec_t ackrspec)
 	uint32 idx = 0;
 
 	if (RSPEC_ISLEGACY(rspec)) {
-		if (RSPEC2RATE(rspec) == WLC_RATE_6M)
+		if (RSPEC2RATE(rspec) == WLC_RATE_6M) {
 			idx = WL_PROXD_RATE_6M;
-		else
+		} else {
 			idx = WL_PROXD_RATE_LEGACY;
+		}
 	} else if (RSPEC_ISHT(rspec)) {
-		if (wlc_ratespec_mcs(rspec) > 0)
+		if (wlc_ratespec_mcs(rspec) > 0) {
 			idx = WL_PROXD_RATE_MCS;
-		else
+		} else {
 			idx = WL_PROXD_RATE_MCS_0;
+		}
 	}
 
 	if (RSPEC_ISLEGACY(ackrspec)) {
-		idx |= (WL_PROXD_RATE_6M << 8);
+		if (RSPEC2RATE(ackrspec) == WLC_RATE_6M) {
+			idx |= WL_PROXD_RATE_6M << WL_RSPEC_ACKIDX_SHIFT;
+		} else {
+			idx |= WL_PROXD_RATE_LEGACY << WL_RSPEC_ACKIDX_SHIFT;
+		}
+	} else if (RSPEC_ISHT(ackrspec)) {
+		if (wlc_ratespec_mcs(ackrspec) > 0) {
+			idx |= WL_PROXD_RATE_MCS << WL_RSPEC_ACKIDX_SHIFT;
+		} else {
+			idx |= WL_PROXD_RATE_MCS_0 << WL_RSPEC_ACKIDX_SHIFT;
+		}
 	}
 
 	return idx;
@@ -1901,29 +1179,41 @@ proxd_init_event(wlc_pdsvc_info_t *pdsvc, wl_proxd_event_type_t type,
 	event->type = htol16(type);
 	event->method = htol16(method);
 	event->sid = htol16(sid);
-	memset(event->pad, 0, sizeof(event->pad));
+	bzero(event->pad, sizeof(event->pad));
 }
 
 void
 proxd_send_event(wlc_pdsvc_info_t *pdsvc, wlc_bsscfg_t *bsscfg, wl_proxd_status_t status,
     const struct ether_addr *addr, wl_proxd_event_t *event, uint16 len)
 {
+#ifdef WL_RANGE_SEQ
+	wlc_info_t *wlc;
+#endif // endif
 	ASSERT(pdsvc != NULL);
 	ASSERT(event != NULL);
 	ASSERT(len >= OFFSETOF(wl_proxd_event_t, tlvs));
+
+#ifdef WL_RANGE_SEQ
+	wlc = pdsvc->wlc;
+	ASSERT(wlc != NULL);
+#endif // endif
 
 	if (bsscfg == NULL)
 		bsscfg = pdsvc->bsscfg;
 
 	event->len = htol16(len);
+#ifdef WL_RANGE_SEQ
+	wlc_bss_mac_event(wlc, bsscfg, WLC_E_PROXD, addr, WLC_E_STATUS_SUCCESS,
+#else
 	wlc_bss_mac_event(pdsvc->wlc, bsscfg, WLC_E_PROXD, addr, WLC_E_STATUS_SUCCESS,
+#endif // endif
 		status, 0 /* auth type */, (uint8 *)event, len);
 }
 
 void*
 proxd_alloc_action_frame(pdsvc_t *pdsvc, wlc_bsscfg_t *bsscfg,
 	const struct ether_addr *da, const struct ether_addr *sa,
-	const struct ether_addr *bssid, int body_len, uint8 **body,
+	const struct ether_addr *bssid, uint body_len, uint8 **body,
 	uint8 category, uint8 action)
 {
 	void *pkt;
@@ -1962,8 +1252,9 @@ proxd_alloc_action_frame(pdsvc_t *pdsvc, wlc_bsscfg_t *bsscfg,
 
 	pkt = wlc_frame_get_action(wlc, da, sa,
 		bssid, body_len, body, category);
-	if (!pkt)
+	if (!pkt) {
 		goto done;
+	}
 
 	WLPKTTAGBSSCFGSET(pkt, WLC_BSSCFG_IDX(bsscfg));
 	WLPKTTAGSCBSET(pkt, scb);
@@ -1987,13 +1278,16 @@ proxd_tx(pdsvc_t *pdsvc, void *pkt, wlc_bsscfg_t *bsscfg, ratespec_t rspec, int 
 {
 	wlc_txq_info_t * qi;
 	struct scb *scb;
+	wlc_pkttag_t *pkttag;
 
 	ASSERT(pdsvc != NULL);
 	ASSERT(pkt != NULL);
 	ASSERT(bsscfg != NULL);
 
 	scb = WLPKTTAGSCBGET(pkt);
+	pkttag = WLPKTTAG(pkt);
 
+	pkttag->flags |= WLF_USERTS;
 	if (status != WL_PROXD_E_SCAN_INPROCESS && scb && bsscfg->up &&
 		(BSSCFG_AP(bsscfg) || bsscfg->associated))
 		qi = bsscfg->wlcif->qi;
@@ -2035,6 +1329,15 @@ static wl_proxd_params_tof_tune_t *proxd_init_tune(wlc_info_t *wlc)
 		tunep->seq_5g20.N_rx_scale = TOF_DEFAULT_RX_THRESHOLD_SCALE_5G_20M;
 		tunep->seq_5g20.w_len = TOF_DEFAULT_WINDOW_LEN_5G_20;
 		tunep->seq_5g20.w_offset = TOF_DEFAULT_WINDOW_OFFSET_5G_20;
+
+#ifdef WL_RANGE_SEQ
+		tunep->seq_2g20.N_tx_log2 = TOF_DEFAULT_TX_THRESHOLD_LOG2_2G_20M;
+		tunep->seq_2g20.N_tx_scale = TOF_DEFAULT_TX_THRESHOLD_SCALE_2G_20M;
+		tunep->seq_2g20.N_rx_log2 = TOF_DEFAULT_RX_THRESHOLD_LOG2_2G_20M;
+		tunep->seq_2g20.N_rx_scale = TOF_DEFAULT_RX_THRESHOLD_SCALE_2G_20M;
+		tunep->seq_2g20.w_len = TOF_DEFAULT_WINDOW_LEN_2G;
+		tunep->seq_2g20.w_offset = TOF_DEFAULT_WINDOW_OFFSET_2G;
+#endif /* WL_RANGE_SEQ */
 
 		tunep->sw_adj = TOF_DEFAULT_SW_ADJ;
 		tunep->hw_adj = TOF_DEFAULT_HW_ADJ;
@@ -2095,7 +1398,36 @@ wl_proxd_params_tof_tune_t *proxd_get_tunep(wlc_info_t *wlc, uint64 *tq)
 
 void proxd_enable(wlc_info_t *wlc, bool enable)
 {
-	wlc->pub->_proxd = enable;
+	uint32 gptime = 0;
+
+	WL_TRACE(("proxd_enable: enable %d, _proxd %d\n", enable, wlc->pub->_proxd));
+	if (wlc->pub->_proxd != enable)
+	{
+		WL_TRACE(("proxd_enable: set _proxd to %d\n", enable));
+		wlc->pub->_proxd = enable;
+
+		/* For supported AX corerevs (>129), a new ucode needs to be
+		 * loaded to use PROXD
+		 */
+		if (D11REV_GE(wlc->pub->corerev, 129)) {
+			WLCNTINCR(wlc->pub->_cnt->reinit);
+
+			/* cache gptime out count */
+			if (wlc->pub->up)
+				gptime = wlc_hrt_gptimer_get(wlc);
+
+			wlc->state = WLC_STATE_GOING_UP;
+			wlc->hw->need_reinit =  WL_REINIT_RC_USER_FORCED;
+			wlc->hw->ucode_loaded = 0;
+			wl_init(wlc->wl);
+
+			/* restore gptime out count after init
+			 * (gptimer is reset due to wlc_reset
+			 */
+			if (gptime)
+				wlc_hrt_gptimer_set(wlc, gptime);
+		}
+	}
 }
 
 uint16
@@ -2163,21 +1495,6 @@ proxd_update_tunep_values(wl_proxd_params_tof_tune_t *tunep, chanspec_t cspec, b
 	}
 }
 
-/* function to get report mac address list */
-struct ether_addr *wlc_pdsvc_report_list(wlc_info_t *wlc, int *cntptr)
-{
-	wlc_pdsvc_info_t* pdsvc;
-
-	ASSERT(wlc != NULL);
-	ASSERT(wlc->pdsvc_info != NULL);
-
-	pdsvc = wlc->pdsvc_info;
-	if (cntptr)
-		*cntptr = pdsvc->rptlistnum;
-
-	return pdsvc->rptlist;
-}
-
 wlc_ftm_t*
 wlc_ftm_get_handle(wlc_info_t *wlc)
 {
@@ -2243,7 +1560,7 @@ void proxd_undeaf_phy(wlc_info_t *wlc, bool acked)
 
 		if (R_REG(wlc_hw->osh, D11_MACCOMMAND(wlc_hw)) & MCMD_TOF) {
 			WL_ERROR(("TOF ucode cmd timeout; maccommand: 0x%x\n",
-				(unsigned int)D11_MACCOMMAND(wlc_hw)));
+				R_REG(wlc_hw->osh, D11_MACCOMMAND(wlc_hw))));
 		}
 
 		wlc_write_shm(wlc, shmemptr + M_TOF_CMD_OFFSET(wlc), TOF_RESET);
@@ -2253,4 +1570,87 @@ void proxd_undeaf_phy(wlc_info_t *wlc, bool acked)
 
 	/* Now undeaf the PHY */
 	phy_tof_cmd(WLC_PI(wlc), FALSE, 0);
+}
+
+static int
+wlc_proxd_wlc_up(void *context)
+{
+#ifdef WL_PROXD_UCODE_TSYNC
+	wlc_pdsvc_info_t *pdsvc = (wlc_pdsvc_info_t *)context;
+	wlc_info_t *wlc = pdsvc->wlc;
+	uint16 val;
+	uint16 tof_cap = 0, avb_cap = 0;
+	uint16 chip_id = CHIPID(wlc->pub->sih->chip);
+
+	if (D11REV_GE(wlc->pub->corerev, 65)) {
+		/* check if TOF is enabled in ucode */
+		tof_cap = wlc_read_shm(wlc, M_UCODE_FEATURES2(wlc->hw));
+		if (!(tof_cap & (1 << M_UCODE_F2_TOF_BIT))) {
+			OSL_SYS_HALT();
+			return BCME_UNSUPPORTED;
+		}
+		/* get avb cap in ucode */
+		avb_cap = wlc_read_shm(wlc, M_UCODE_FEATURES3(wlc->hw));
+		avb_cap &= (1 << M_UCODE_F3_AVB_BIT);
+	}
+
+	if ((chip_id == BCM43684_CHIP_ID) ||
+		(chip_id == BCM63178_CHIP_ID) ||
+		(D11REV_GE(wlc->pub->corerev, 65) && avb_cap)) {
+		wlc->pub->cmn->_proxd_ucode_tsync = TRUE;
+		val = wlc_read_shm(wlc, M_HOST_FLAGS6(wlc->hw));
+		wlc_write_shm(wlc, M_HOST_FLAGS6(wlc->hw), val | MHF6_TSYNC_3PKG);
+	}
+#endif /* WL_PROXD_UCODE_TSYNC */
+	return BCME_OK;
+}
+
+static int
+wlc_proxd_wlc_down(void *context)
+{
+#ifdef WL_PROXD_UCODE_TSYNC
+	wlc_pdsvc_info_t *pdsvc = (wlc_pdsvc_info_t *)context;
+	wlc_info_t *wlc = pdsvc->wlc;
+	uint16 val;
+	if (PROXD_ENAB_UCODE_TSYNC(wlc->pub)) {
+		val = wlc_read_shm(wlc, M_HOST_FLAGS6(wlc->hw));
+		wlc_write_shm(wlc, M_HOST_FLAGS6(wlc->hw), val & ~MHF6_TSYNC_3PKG);
+	}
+#endif /* WL_PROXD_UCODE_TSYNC */
+	return BCME_OK;
+}
+
+#ifdef WL_PROXD_UCODE_TSYNC
+void
+wlc_proxd_process_tx_rx_status(wlc_info_t *wlc, tx_status_t *txs,
+	d11rxhdr_t *rxh, struct ether_addr *peer)
+{
+	pdburst_process_tx_rx_status(wlc, txs, rxh, peer);
+}
+#endif /* WL_PROXD_UCODE_TSYNC */
+
+struct ether_addr *
+wlc_proxd_get_randmac(wlc_pdsvc_info_t *pdsvc, wlc_bsscfg_t *bsscfg)
+{
+	struct ether_addr  *random_addr = NULL;
+#ifdef WL_RANDMAC
+	if (RANDMAC_ENAB(pdsvc->wlc->pub)) {
+		random_addr = wlc_randmac_request(pdsvc->wlc->randmac_info,
+			bsscfg, WLC_RANDMAC_FTM, NULL);
+	}
+#endif /* WL_RANDMAC */
+	return random_addr;
+}
+
+int
+wlc_proxd_release_randmac(wlc_pdsvc_info_t *pdsvc, wlc_bsscfg_t *bsscfg)
+{
+	int err = BCME_OK;
+#ifdef WL_RANDMAC
+	if (RANDMAC_ENAB(pdsvc->wlc->pub)) {
+		err = wlc_randmac_release(pdsvc->wlc->randmac_info,
+			bsscfg, WLC_RANDMAC_FTM);
+	}
+#endif /* WL_RANDMAC */
+	return err;
 }

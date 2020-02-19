@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_11h.c 776543 2019-07-02 09:19:04Z $
+ * $Id: wlc_11h.c 777144 2019-07-22 04:59:38Z $
  */
 
 /**
@@ -859,7 +859,7 @@ wlc_recv_frameaction_specmgmt(wlc_11h_info_t *m11h, struct dot11_management_head
 		wlc_recv_csa_action(wlc->csa, cfg, hdr, body, body_len);
 		break;
 	default:
-		wlc_send_action_err(wlc, hdr, body, body_len);
+		wlc_send_action_err(wlc, cfg, hdr, body, body_len);
 		break;
 	}
 }

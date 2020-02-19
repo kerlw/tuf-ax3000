@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_rxgcrs.c 776975 2019-07-15 14:21:12Z $
+ * $Id: phy_ac_rxgcrs.c 777333 2019-07-29 08:57:52Z $
  */
 
 #include <phy_cfg.h>
@@ -265,10 +265,6 @@ static const uint8 tiny4365_g_lna_rout_map[] = {9, 9, 9, 9, 6, 0};
 static const uint8 tiny4365_g_lna_gain_map[] = {2, 3, 4, 5, 5, 5};
 static const uint8 tiny4365_a_lna_rout_map[] = {9, 9, 9, 9, 6, 0};
 static const uint8 tiny4365_a_lna_gain_map[] = {4, 5, 6, 7, 7, 7};
-static const uint8 ac_6878_g_lna_rout_map[] = {0, 0, 0, 10, 7, 0};
-static const uint8 ac_6878_g_lna_gain_map[] = {2, 3, 4, 7, 7, 7 };
-static const uint8 ac_6878_a_lna_rout_map[] = {0, 0, 0, 10, 7, 0 };
-static const uint8 ac_6878_a_lna_gain_map[] = {2, 3, 4, 7, 7, 7 };
 static const uint8 ac_tia_gain_tiny_4365[] = {10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 37, 37, 37};
 static const uint8 ac_tia_gainbits_tiny_4365[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 9};
 
@@ -804,6 +800,7 @@ phy_ac_rxgcrs_wd(phy_wd_ctx_t *ctx)
 {
 	phy_ac_rxgcrs_info_t *rxgcrsi = (phy_ac_rxgcrs_info_t *)ctx;
 	phy_info_t *pi = rxgcrsi->pi;
+	uint8 region_group = wlc_phy_get_locale(pi->rxgcrsi);
 
 	/* Enabling crsmin_cal from watchdog. crsmin phyregs are only updated if the
 	 * (current noise power - prev value from cache) is above certain threshold
@@ -821,6 +818,7 @@ phy_ac_rxgcrs_wd(phy_wd_ctx_t *ctx)
 		phy_noise_sample_request_crsmincal((wlc_phy_t*)pi);
 	}
 	/* Dynamic ED threshold */
+	/* This feature is enabled for non-EU region */
 	/* checking major versions */
 	if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev) ||
 		(ACMAJORREV_GE47(pi->pubpi->phy_rev) && !ACMAJORREV_128(pi->pubpi->phy_rev))) {
@@ -828,9 +826,11 @@ phy_ac_rxgcrs_wd(phy_wd_ctx_t *ctx)
 		if (pi->acphy_for_dynamic_ed == 1) {
 			/* defer dynamic edcrs RM is progress */
 			if (!SCAN_RM_IN_PROGRESS(pi)) {
-				PHY_ACI(("%s: Dynamic threshold is enabled in NVRAM.\n",
-					__FUNCTION__));
-				wlc_dynamic_ed_thresh(pi);
+				if (region_group != REGION_EU) {
+					PHY_ACI(("%s: Dynamic threshold is enabled in NVRAM.\n",
+						__FUNCTION__));
+					wlc_dynamic_ed_thresh(pi);
+				}
 			}
 		}
 	}
@@ -1085,8 +1085,8 @@ BCMATTACHFN(phy_ac_populate_rxg_params)(phy_ac_rxgcrs_info_t *rxgcrs_info)
 		} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
 			rxg_params->lna1_byp_gain_2g = -15;
 			rxg_params->lna1_byp_rout_2g = 10;
-			rxg_params->lna1_byp_gain_5g = -15;
-			rxg_params->lna1_byp_rout_5g = 10;
+			rxg_params->lna1_byp_gain_5g = -10;
+			rxg_params->lna1_byp_rout_5g = 11;
 			rxg_params->lna1_byp_indx = 6;
 			rxg_params->lna1_min_indx = 0;
 
@@ -5441,23 +5441,6 @@ wlc_phy_upd_lna1_lna2_gaintbls_acphy(phy_info_t *pi, uint8 lna12)
 			wlc_phy_table_write_acphy(pi, ACPHY_TBL_ID_LNAROUT, 7, (16 + i), 8,
 					&lna2_gm_ind[idx]);
 		}
-	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
-		/* 2G index is 0->5 */
-		uint8 lnarout_val, x;
-		for (x = 0; x < 6; x++) {
-			lnarout_val = (ac_6878_g_lna_rout_map[x] << 3) |
-				ac_6878_g_lna_gain_map[x];
-			wlc_phy_table_write_acphy(pi, ACPHY_TBL_ID_LNAROUT, 1, x, 8,
-				&lnarout_val);
-		}
-
-		/* 5G index is 8->13 */
-		for (x = 0; x < 6; x++) {
-			lnarout_val =  (ac_6878_g_lna_rout_map[x] << 3) |
-				ac_6878_g_lna_gain_map[x];
-			wlc_phy_table_write_acphy(pi, ACPHY_TBL_ID_LNAROUT, 1, 8 + x, 8,
-			                          &lnarout_val);
-		}
 	}
 
 	/* Update gaintbl */
@@ -9765,7 +9748,7 @@ extern void wlc_phy_agc_28nm(phy_info_t *pi, bool init, bool band_change, bool b
 		}
 	}
 
-	if (ACMAJORREV_51_129(pi->pubpi->phy_rev))
+	if (ACMAJORREV_47_51_129(pi->pubpi->phy_rev))
 		phy_ac_rxgcrs_upd_knoise_shmem(pi);
 }
 

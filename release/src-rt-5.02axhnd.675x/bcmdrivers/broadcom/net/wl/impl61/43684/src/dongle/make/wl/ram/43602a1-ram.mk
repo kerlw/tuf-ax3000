@@ -154,7 +154,6 @@ endif
 
 CLM_BLOBS += 43602a1
 CLM_BLOBS += 43602a1_access
-CLM_BLOBS += 43602_sig
 
 BIN_TRX_OPTIONS_SUFFIX := -x 0x0 -x 0x0 -x 0x0
 

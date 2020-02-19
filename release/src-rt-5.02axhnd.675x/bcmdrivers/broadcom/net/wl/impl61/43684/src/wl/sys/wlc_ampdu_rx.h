@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ampdu_rx.h 774070 2019-04-09 08:16:27Z $
+ * $Id: wlc_ampdu_rx.h 777620 2019-08-06 19:04:30Z $
 */
 
 #ifndef _wlc_ampdu_rx_h_
@@ -122,6 +122,7 @@ extern void wlc_ampdu_agg_state_update_rx_all(wlc_info_t *wlc, bool aggr);
 #if defined(WL_LINKSTAT)
 void wlc_ampdu_rxrates_get(ampdu_rx_info_t *ampdu_rx, wifi_rate_stat_t *rate, int i, int rs);
 #endif // endif
+extern bool wlc_scb_ampdurx_on(struct scb *scb);
 extern bool wlc_scb_ampdurx_on_tid(struct scb *scb, uint8 prio);
 
 #ifdef WLCFP

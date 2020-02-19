@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wl_cfg80211.c 776592 2019-07-03 09:23:29Z $
+ * $Id: wl_cfg80211.c 777842 2019-08-13 07:19:23Z $
  */
 
 /** XXX
@@ -4323,27 +4323,21 @@ wl_cfg80211_create_iface(struct wiphy *wiphy,
 		p2p_on(cfg) = false;
 	}
 
+	if (bcm_get_ifname_unit(name, &unit, &subunit) < 0) {
+		WL_ERR(("Invalid virtual interface name %s\n", name));
+	}
+
+	if (subunit > 0) {
+		bsscfg_idx = (s32)subunit;
+	}
+
 	/*
 	 * Intialize the firmware I/F.
 	 */
-	if (wl_customer6_legacy_chip_check(cfg, primary_ndev)) {
-		/* Use bss iovar instead of interface_create iovar */
-		ret = BCME_UNSUPPORTED;
-	} else {
-		if (bcm_get_ifname_unit(name, &unit, &subunit) < 0) {
-			WL_DBG(("Invalid virtual interface name %s\n", name));
-		}
-
-		if (subunit > 0) {
-			bsscfg_idx = (s32)subunit;
-		}
-
-		ret = wl_cfg80211_interface_ops(cfg, primary_ndev, bsscfg_idx,
+	ret = wl_cfg80211_interface_ops(cfg, primary_ndev, bsscfg_idx,
 			wl_iftype, 0, addr);
-	}
+	/* Use bss iovar instead of interface_create iovar */
 	if (ret == BCME_UNSUPPORTED) {
-		/* Use bssidx 1 by default */
-		bsscfg_idx = 1;
 		if ((ret = wl_cfg80211_add_del_bss(cfg, primary_ndev,
 			bsscfg_idx, wl_iftype, 0, addr)) < 0) {
 			goto exit;
@@ -8292,8 +8286,27 @@ wl_cfg80211_mgmt_tx(struct wiphy *wiphy, bcm_struct_cfgdev *cfgdev,
 			err = wldev_ioctl_set(dev, WLC_SCB_AUTHENTICATE, buf, len);
 			if (err < 0) {
 				WL_ERR(("WLC_SCB_AUTHENTICATE error %d\n", err));
+				ack = false;
+			} else {
+				ack = true;
 			}
-			cfg80211_mgmt_tx_status(cfgdev, *cookie, buf, len, true, GFP_KERNEL);
+			cfg80211_mgmt_tx_status(cfgdev, *cookie, buf, len, ack, GFP_KERNEL);
+			goto exit;
+		}
+		else if (ieee80211_is_assoc_resp(mgmt->frame_control) ||
+				ieee80211_is_reassoc_resp(mgmt->frame_control)) {
+			WL_DBG(("Cfg80211 layer received assoc resp from hostapd\n"));
+			if ((dev == bcmcfg_to_prmry_ndev(cfg)) && cfg->p2p) {
+				bssidx = wl_to_p2p_bss_bssidx(cfg, P2PAPI_BSSCFG_DEVICE);
+			}
+			err = wldev_ioctl_set(dev, WLC_SCB_ASSOCIATE, buf, len);
+			if (err < 0) {
+				WL_ERR(("WLC_SCB_ASSOCIATE error %d\n", err));
+				ack = false;
+			} else {
+				ack = true;
+			}
+			cfg80211_mgmt_tx_status(cfgdev, *cookie, buf, len, ack, GFP_KERNEL);
 			goto exit;
 		}
 
@@ -8779,9 +8792,7 @@ wl_cfg80211_recv_mgmt_frame(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 {
 	u32 event = ntoh32(e->event_type);
 	u32 reason = ntoh32(e->reason);
-#ifdef WL_CLIENT_SAE
 	struct wireless_dev *wdev = ndev->ieee80211_ptr;
-#endif /* WL_CLIENT_SAE */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)) || defined(WL_CFG80211_STA_EVENT) \
 	|| defined(WL_COMPAT_WIRELESS)
 	struct station_info sinfo;
@@ -8838,15 +8849,11 @@ wl_cfg80211_recv_mgmt_frame(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 			((event == WLC_E_DEAUTH) && (reason == DOT11_RC_INACTIVITY))) {
 		cfg80211_del_sta(ndev, e->addr.octet, GFP_ATOMIC);
 	} else if (event == WLC_E_AUTH) {
-#ifdef WL_CLIENT_SAE
-		if (wdev->iftype == NL80211_IFTYPE_STATION)
+		wl_cfg80211_rx_mgmt(ndev, freq, mgmt_frame, len, GFP_ATOMIC);
+	} else if (event == WLC_E_ASSOC) {
+		if (wdev->iftype == NL80211_IFTYPE_AP) {
+			/* Send received Assoc request frame to hostapd. */
 			wl_cfg80211_rx_mgmt(ndev, freq, mgmt_frame, len, GFP_ATOMIC);
-		else
-#endif // endif
-		{
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0))
-			cfg80211_rx_mlme_mgmt(ndev, mgmt_frame, len);
-#endif // endif
 		}
 	} else if (event == WLC_E_ACTION_FRAME) {
 		wl_cfg80211_rx_mgmt(ndev, freq,  mgmt_frame, len, GFP_ATOMIC);
@@ -10865,7 +10872,7 @@ wl_cfg80211_change_station(
 	/* Processing only authorize/de-authorize flag for now */
 	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
 		WL_ERR(("WLC_SCB_AUTHORIZE sta_flags_mask not set \n"));
-		return -ENOTSUPP;
+		return 0;
 	}
 
 	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
@@ -12526,12 +12533,14 @@ wl_notify_connect_status_bss(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev
 		}
 	}
 
-	if ((event == WLC_E_AUTH) && !len) {
+	/* Drop the events with frame length 0 */
+	if (((event == WLC_E_AUTH) || (event == WLC_E_ASSOC) ||
+		(event == WLC_E_ASSOC_IND) || (event == WLC_E_REASSOC_IND)) && !len) {
 		return 0;
 	}
 
 	if (event == WLC_E_DISASSOC_IND || event == WLC_E_DEAUTH_IND || event == WLC_E_DEAUTH ||
-		event == WLC_E_AUTH) {
+		event == WLC_E_AUTH || event == WLC_E_ASSOC) {
 		WL_DBG(("event %s(%d) status %d reason %d\n",
 		bcmevent_get_name(event), event, ntoh32(e->status), reason));
 	}
@@ -12572,6 +12581,9 @@ wl_notify_connect_status_bss(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev
 			break;
 		case WLC_E_REASSOC_IND:
 			fc = FC_REASSOC_REQ;
+			break;
+		case WLC_E_ASSOC:
+			fc = FC_ASSOC_REQ;
 			break;
 		case WLC_E_DISASSOC_IND:
 			fc = FC_DISASSOC;

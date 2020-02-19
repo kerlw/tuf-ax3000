@@ -955,6 +955,15 @@ wlc_stf_doiovar(void *hdl, uint32 actionid,
 							Nsts, txcore_ovrd[Nsts+OFDM_IDX]));
 						return BCME_BADARG;
 					}
+					if (WLC_BITSCNT(txcore_ovrd[Nsts+OFDM_IDX]) >
+						wlc->stf->txstreams) {
+						WL_ERROR(("wl%d: %s: Nsts(%d) core (0x%x) >"
+							" HW core (0x%x)\n",
+							wlc->pub->unit, __FUNCTION__,
+							Nsts, txcore_ovrd[Nsts+OFDM_IDX],
+							wlc->stf->hw_txchain));
+						return BCME_BADARG;
+					}
 					core[0] >>= 8;
 				}
 			}

@@ -2306,7 +2306,7 @@ void start_lan(void)
 						&& (strcmp(mode, "psta") != 0) && (strcmp(mode, "psr") != 0))
 						continue;
 				}
-#elif RTCONFIG_RALINK
+#elif defined(RTCONFIG_RALINK)
 				wlconf_ra(ifname);
 #elif defined(RTCONFIG_QCA)
 				wlconf_qca(ifname);
@@ -3923,7 +3923,7 @@ static int radio_join(int idx, int unit, int subunit, void *param)
 #endif
 				else
 					break;
-#elif RTCONFIG_RALINK
+#elif defined(RTCONFIG_RALINK)
 // add ralink client mode code here.
 #elif defined(RTCONFIG_QCA)
 // add QCA client mode code here.
@@ -6430,3 +6430,4 @@ int start_qtn(void)
 }
 
 #endif
+

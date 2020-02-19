@@ -748,3 +748,7 @@ ifneq ($(BUILD_NAME),$(filter $(BUILD_NAME), TUF-AX3000))
 endif	
 	rm -rf $(INSTALLDIR)/www/ajax_wanlink.asp
 endif
+ifeq ($(MERLINR_NAME),$(filter $(MERLINR_NAME), SBRAC1900P SBRAC3200P R7900P R8000P K3C K3 RAX20))
+	$(TOP)/softcenter/dict.sh $(BUILD_NAME) $(MERLINR_NAME) $(INSTALLDIR)/www
+endif
+

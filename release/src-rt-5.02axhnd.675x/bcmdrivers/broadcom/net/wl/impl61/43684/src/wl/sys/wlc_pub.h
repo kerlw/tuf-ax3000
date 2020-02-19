@@ -19,7 +19,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wlc_pub.h 775421 2019-05-29 20:01:25Z $
+ * $Id: wlc_pub.h 777291 2019-07-25 22:58:30Z $
  */
 
 #ifndef _wlc_pub_h_
@@ -886,6 +886,7 @@ typedef struct wlc_pub_cmn {
 	bool		_health_check;	/* capture health check enable state */
 	bool		_rpsnoa;	/* Radio power save with NOA */
 	bool		_esp;		/* esp enabled or not */
+	bool		_proxd_ucode_tsync; /* tsync based proxd */
 } wlc_pub_cmn_t;
 
 /* status per error RX pkt */
@@ -2793,8 +2794,20 @@ wlc_pkttag_bsscfg_get(void *p)
 	#else
 		#define PROXD_ENAB(pub)	((pub)->_proxd)
 	#endif /* defined(ROM_ENAB_RUNTIME_CHECK) */
+	#ifdef WL_PROXD_UCODE_TSYNC
+		#if defined(ROM_ENAB_RUNTIME_CHECK)
+			#define PROXD_ENAB_UCODE_TSYNC(pub)	((pub)->cmn->_proxd_ucode_tsync)
+		#elif defined(WL_PROXDETECT_DISABLED)
+			#define PROXD_ENAB_UCODE_TSYNC(pub)	(0)
+		#else
+			#define PROXD_ENAB_UCODE_TSYNC(pub)	((pub)->cmn->_proxd_ucode_tsync)
+		#endif
+	#else
+		#define PROXD_ENAB_UCODE_TSYNC(pub) (0)
+	#endif /* WL_PROXD_UCODE_TSYNC */
 #else
 	#define PROXD_ENAB(pub)		(0)
+	#define PROXD_ENAB_UCODE_TSYNC(pub)	(0)
 #endif /* WL_PROXDETECT */
 
 #ifdef WL_BTCDYN

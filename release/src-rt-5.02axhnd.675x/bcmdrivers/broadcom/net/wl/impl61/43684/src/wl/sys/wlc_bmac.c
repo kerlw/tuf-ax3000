@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_bmac.c 776968 2019-07-15 10:47:02Z $
+ * $Id: wlc_bmac.c 778114 2019-08-22 19:38:37Z $
  */
 
 /**
@@ -992,7 +992,6 @@ static bool wlc_bmac_phyrxsts_alloc(wlc_hw_info_t *wlc_hw);
 #ifdef BCMDBG_SR
 static void wlc_sr_timer(void *arg);
 #endif // endif
-
 #ifdef AWD_EXT_TRAP
 static uint8 *wlc_bmac_trap_phy(void *arg, trap_t *tr, uint8 *dst, int *dst_maxlen);
 static uint8 *wlc_bmac_trap_mac(void *arg, trap_t *tr, uint8 *dst, int *dst_maxlen);
@@ -7821,9 +7820,6 @@ BCMUCODEFN(wlc_mxhfdef)(wlc_hw_info_t *wlc_hw, uint16 *mhfs)
 	bzero(&mhfs[MXHF1], sizeof(uint16) * MXHFMAX);
 
 	mhfs[MXHF0] = (MXHF0_CHKFID | MXHF0_DYNSND | MXHF0_MUAGGOPT);
-	if (D11REV_IS(wlc_hw->corerev, 130)) {
-		mhfs[MXHF0] |= ((wlc_hw->sih->otpflag & 0x1) ? MXHF0_MUBCC : 0);
-	}
 
 	if (D11REV_IS(wlc_hw->corerev, 65) && MU_TX_ENAB(wlc_hw->wlc)) {
 		mhfs[MXHF0] |= MXHF0_MUTXUFWAR;
@@ -8043,8 +8039,13 @@ void wlc_get_avb_timestamp(wlc_hw_info_t *wlc_hw, uint32* ptx, uint32* prx)
 	osl_t *osh;
 
 	osh = wlc_hw->osh;
-	*ptx = R_REG(osh, D11_AvbTxTimeStamp(wlc_hw));
 	*prx = R_REG(osh, D11_AvbRxTimeStamp(wlc_hw));
+
+	if (D11REV_IS(wlc_hw->corerev, 129))
+		OR_REG(osh, D11_MacControl1(wlc_hw), MCTL1_AVB_TRIGGER);
+	*ptx = R_REG(osh, D11_AvbTxTimeStamp(wlc_hw));
+	if (D11REV_IS(wlc_hw->corerev, 129))
+		AND_REG(osh, D11_MacControl1(wlc_hw), ~MCTL1_AVB_TRIGGER);
 }
 #endif /* WL_PROXDETECT */
 
@@ -13724,7 +13725,7 @@ wlc_bmac_txstatus(wlc_hw_info_t *wlc_hw, bool bound, bool *fatal)
 		wlc_txs_pkg16_t pkg;
 		/* pkg 1 */
 		uint32 v_s1 = 0, v_s2 = 0, v_s3 = 0, v_s4 = 0;
-#ifdef WLC_TSYNC
+#if defined(WLC_TSYNC) || defined(WL_PROXDETECT)
 		/* pkg 3 */
 		uint32 v_s9, v_s10, v_s11;
 #endif // endif
@@ -13812,8 +13813,8 @@ wlc_bmac_txstatus(wlc_hw_info_t *wlc_hw, bool bound, bool *fatal)
 				txs.status.frag_tx_cnt = TX_STATUS40_TXCNT(v_s3, v_s4);
 			}
 
-#ifdef WLC_TSYNC
-			if (TSYNC_ENAB(wlc->pub)) {
+#if defined(WLC_TSYNC) || defined(WL_PROXDETECT)
+			if (TSYNC_ENAB(wlc->pub) || PROXD_ENAB_UCODE_TSYNC(wlc->pub)) {
 				v_s9 = R_REG(osh, D11_FrmTxStatus(wlc_hw));
 				v_s10 = R_REG(osh, D11_FrmTxStatus2(wlc_hw));
 				v_s11 = R_REG(osh, D11_FrmTxStatus3(wlc_hw));
@@ -13833,7 +13834,7 @@ wlc_bmac_txstatus(wlc_hw_info_t *wlc_hw, bool bound, bool *fatal)
 				txs.status.s10 = v_s10;
 				txs.status.s11 = v_s11;
 			}
-#endif /* WLC_TSYNC */
+#endif /* WLC_TSYNC || WL_PROXDETECT */
 
 			*fatal = wlc_bmac_dotxstatus(wlc_hw, &txs, v_s2);
 
@@ -14923,66 +14924,6 @@ wlc_flushqueues(wlc_hw_info_t *wlc_hw)
 	}
 
 } /* wlc_flushqueues */
-
-#ifdef STA
-#if defined(WLRM)
-/* start a CCA measurement for the given number of microseconds */
-bool
-wlc_bmac_rm_cca_measure(wlc_hw_info_t *wlc_hw, uint32 us)
-{
-
-	if (D11REV_GE(wlc_hw->corerev, 128)) {
-		/* CCA measurement duration */
-		wlc_bmac_write_shm(wlc_hw, M_CCA_MEASINTV_L(wlc_hw->wlc), (us & 0xffff));
-		wlc_bmac_write_shm(wlc_hw, M_CCA_MEASINTV_H(wlc_hw->wlc), (us >> 16));
-		WL_EAP_TRC_RXTXUTIL_MSG(("%s[%d]: CCA Measurement duration 0x%x\n",
-			__func__, __LINE__, us));
-	} else {
-		/* config GPT 2 to decrement by TSF ticks */
-		W_REG(wlc_hw->osh, D11_TSF_GPT_2_STAT(wlc_hw), TSF_GPT_USETSF);
-		/* set GPT 2 to the measurement duration */
-		W_REG(wlc_hw->osh, D11_TSF_GPT_2_CTR_L(wlc_hw), ((us << 3) & 0xffff));
-		W_REG(wlc_hw->osh, D11_TSF_GPT_2_CTR_H(wlc_hw), ((us << 3) >> 16));
-	}
-	/* tell ucode to start the CCA measurement */
-	OR_REG(wlc_hw->osh, D11_MACCOMMAND(wlc_hw), MCMD_CCA);
-
-	return TRUE;
-}
-
-void
-wlc_bmac_rm_cca_int(wlc_hw_info_t *wlc_hw)
-{
-	uint32 cca_busy_us = 0;
-	uint32 cca_idle_us = 0;
-	uint32 busy_h, busy_l;
-	uint32 idle_h, idle_l;
-	uint32 dur_h, dur_l;
-
-	if (D11REV_GE(wlc_hw->corerev, 128)) {
-		/* Measure CCA idle us */
-		busy_l = wlc_bmac_read_shm(wlc_hw, M_CCA_MEASBUSY_L(wlc_hw->wlc));
-		busy_h = wlc_bmac_read_shm(wlc_hw, M_CCA_MEASBUSY_H(wlc_hw->wlc));
-		cca_busy_us = ((busy_h << 16) | busy_l);
-		dur_l = wlc_bmac_read_shm(wlc_hw, M_CCA_MEASINTV_L(wlc_hw->wlc));
-		dur_h = wlc_bmac_read_shm(wlc_hw, M_CCA_MEASINTV_H(wlc_hw->wlc));
-		cca_idle_us = (dur_l | (dur_h << 16)) - cca_busy_us;
-		WL_EAP_TRC_RXTXUTIL_MSG(("%s[%d]: CCA Meas dur %u busy %u us idle %u us\n",
-			__func__, __LINE__, (dur_l | dur_h << 16), cca_busy_us, cca_idle_us));
-	} else {
-		idle_l = R_REG(wlc_hw->osh, D11_TSF_GPT_2_VAL_L(wlc_hw));
-		idle_h = R_REG(wlc_hw->osh, D11_TSF_GPT_2_VAL_H(wlc_hw));
-		/* convert GTP 1/8 us units to us */
-		cca_idle_us = (((idle_h << 16) | idle_l) >> 3);
-
-	}
-	wlc_rm_cca_complete(wlc_hw->wlc, cca_idle_us);
-}
-#endif /* WLRM */
-#endif /* STA */
-
-#ifdef STA
-#endif /* STA */
 
 /** set the PIO mode bit in the control register for the rxfifo */
 void
@@ -17364,6 +17305,12 @@ wlc_bmac_cca_stats_read(wlc_hw_info_t *wlc_hw, cca_ucode_counts_t *cca_counts)
 		wlc_bmac_cca_read_counter(wlc_hw, M_MAC_SLPDUR_L_OFFSET(wlc_hw),
 			M_MAC_SLPDUR_H_OFFSET(wlc_hw));
 
+	if (D11REV_GE(wlc_hw->corerev, 40)) {
+		cca_counts->wifi =
+			wlc_bmac_cca_read_counter(wlc_hw, M_CCA_WIFI_L_OFFSET(wlc_hw),
+				M_CCA_WIFI_H_OFFSET(wlc_hw));
+	}
+
 #if defined(ISID_STATS)
 	cca_counts->crsglitch = wlc_bmac_read_shm(wlc_hw,
 		MACSTAT_ADDR(wlc_hw, MCSTOFF_RXCRSGLITCH));
@@ -17377,30 +17324,17 @@ wlc_bmac_cca_stats_read(wlc_hw_info_t *wlc_hw, cca_ucode_counts_t *cca_counts)
 #if (defined(WL_PROT_OBSS) || defined(WL_OBSS_DYNBW))
 	if (WLC_PROT_OBSS_ENAB(wlc_hw->wlc->pub)) {
 		if (D11REV_GE(wlc_hw->corerev, 40)) {
-			cca_counts->rxcrs_sec20 =
-				wlc_bmac_read_counter(wlc_hw, wlc_hw->macstat1_shm_base,
-					OFFSETOF(macstat1_t, rxsec20_durl),
-					OFFSETOF(macstat1_t, rxsec20_durh));
-			cca_counts->rxcrs_sec40 =
-				wlc_bmac_read_counter(wlc_hw, wlc_hw->macstat1_shm_base,
-				OFFSETOF(macstat1_t, rxsec40_durl),
-				OFFSETOF(macstat1_t, rxsec40_durh));
-			cca_counts->rxcrs_pri =
-				wlc_bmac_read_counter(wlc_hw, wlc_hw->macstat1_shm_base,
-				OFFSETOF(macstat1_t, rxpri_durl),
-				OFFSETOF(macstat1_t, rxpri_durh));
-
-			cca_counts->sec_rssi_hist_hi = wlc_bmac_read_shm(wlc_hw,
-				wlc_hw->macstat1_shm_base + OFFSETOF(macstat1_t, rxsecrssi0));
-			cca_counts->sec_rssi_hist_med = wlc_bmac_read_shm(wlc_hw,
-				wlc_hw->macstat1_shm_base + OFFSETOF(macstat1_t, rxsecrssi1));
-			cca_counts->sec_rssi_hist_low = wlc_bmac_read_shm(wlc_hw,
-				wlc_hw->macstat1_shm_base + OFFSETOF(macstat1_t, rxsecrssi2));
-
-			cca_counts->rxdrop20s = wlc_bmac_read_shm(wlc_hw,
-				MACSTAT_ADDR(wlc_hw, MCSTOFF_RXDROP20S));
-			cca_counts->rx20s = wlc_bmac_read_shm(wlc_hw,
-				wlc_hw->macstat1_shm_base + OFFSETOF(macstat1_t, rx20s));
+		cca_counts->rxcrs_pri = wlc_bmac_read_counter(wlc_hw, 0,
+			M_CCA_RXPRI_LO(wlc_hw), M_CCA_RXPRI_HI(wlc_hw));
+		cca_counts->rxcrs_sec20 = wlc_bmac_read_counter(wlc_hw, 0,
+			M_CCA_RXSEC20_LO(wlc_hw), M_CCA_RXSEC20_HI(wlc_hw));
+		cca_counts->rxcrs_sec40 = wlc_bmac_read_counter(wlc_hw, 0,
+			M_CCA_RXSEC40_LO(wlc_hw), M_CCA_RXSEC40_HI(wlc_hw));
+		cca_counts->sec_rssi_hist_hi = wlc_bmac_read_shm(wlc_hw, M_SECRSSI0(wlc_hw));
+		cca_counts->sec_rssi_hist_med = wlc_bmac_read_shm(wlc_hw, M_SECRSSI1(wlc_hw));
+		cca_counts->sec_rssi_hist_low = wlc_bmac_read_shm(wlc_hw, M_SECRSSI2(wlc_hw));
+		cca_counts->rxdrop20s = wlc_bmac_read_shm(wlc_hw, M_RXDROP20S_CNT(wlc_hw));
+		cca_counts->rx20s = wlc_bmac_read_shm(wlc_hw, M_RX20S_CNT(wlc_hw));
 		}
 	}
 #endif // endif

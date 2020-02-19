@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scb_ratesel.c 774848 2019-05-08 20:46:22Z $
+ * $Id: wlc_scb_ratesel.c 777844 2019-08-13 07:36:57Z $
  */
 
 /**
@@ -1188,6 +1188,11 @@ wlc_scb_ratesel_init(wlc_info_t *wlc, struct scb *scb)
 	if (!SCB_HE_CAP(scb)) {
 		wlc_rateset_he_none_all(rateset);
 	}
+#ifdef WL11AX
+	else {
+		wlc_he_upd_scb_rateset_mcs(wlc->hei, scb, rs_init.bw);
+	}
+#endif /* WL11AX */
 
 	rs_init.bw_auto = TRUE;
 #if WL11AX

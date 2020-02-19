@@ -77,7 +77,13 @@ if [ -f epivers.h ]; then
 	# If REUSE_VERSION is set, epivers iteration is not incremented
 	# This can be used precommit and continuous integration projects
 	if [ -n "$REUSE_VERSION" ]; then
-		echo "Previous epivers.h exists. Skipping version increment"
+		git_id=$(git log -1 2> /dev/null | grep '^commit ' | cut -d ' ' -f 2 | cut -c 1-7)
+		if [ -n "$git_id" ]; then \
+			sed -e 's/)\(\s[0-9a-f]\{7,\}\)\?"$/) '${git_id}'"/' \
+				< epivers.h > epivers.h.new
+			cp -p epivers.h epivers.h.prev
+			mv epivers.h.new epivers.h
+		fi
 		exit 0
 	fi
 
@@ -104,7 +110,7 @@ else # epivers.h doesn't exist
 	fi
 
 	# Following SVNURL should be expanded on checkout
-	SVNURL='$HeadURL: http://bcawlan-svn.sj.broadcom.net/svn/bcawlan/proj/tags/KUDU/KUDU_REL_17_10_99_7/src/include/epivers.sh $'
+	SVNURL='$HeadURL: http://bcawlan-svn.sj.broadcom.net/svn/bcawlan/proj/tags/KUDU/KUDU_REL_17_10_99_1301/src/include/epivers.sh $'
 
 	# .gclient_info is created by gclient checkout/sync steps
 	# and contains "DEPS='<deps-url1> <deps-url2> ..." entry

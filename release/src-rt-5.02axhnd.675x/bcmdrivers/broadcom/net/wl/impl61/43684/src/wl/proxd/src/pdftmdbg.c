@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: pdftmdbg.c 690155 2017-03-14 23:38:37Z $
+ * $Id: pdftmdbg.c 777286 2019-07-25 19:43:30Z $
  */
 
 #include "pdftmpvt.h"
@@ -362,14 +362,14 @@ pdftm_dump_ranging_ctx(const wlc_ftm_ranging_ctx_t *rctx, struct bcmstrbuf *b)
 #endif /* WL_FTM_RANGE */
 
 void
-pdftm_dump_pkt_body(pdftm_t *ftm, const uint8 *body, int body_len,
+pdftm_dump_pkt_body(pdftm_t *ftm, const uint8 *body, uint body_len,
 	struct bcmstrbuf *b)
 {
 	uint8 action;
 	const dot11_ftm_params_t *params = NULL;
 	const bcm_tlv_t *tlv;
 	const dot11_rm_ie_t *meas_req = NULL;
-	int tlv_size;
+	uint tlv_size;
 
 	action = body[DOT11_ACTION_ACT_OFF];
 	if (action == DOT11_PUB_ACTION_FTM_REQ) {
@@ -448,7 +448,8 @@ pdftm_dump_pkt_body(pdftm_t *ftm, const uint8 *body, int body_len,
 		tlv_size = TLV_HDR_LEN + tlv->len;
 		params = (const dot11_ftm_params_t *)tlv;
 		if (tlv_size < sizeof(*params)) {
-			bcm_bprintf(b, "Params tlv too short: size %d\n", tlv_size);
+			bcm_bprintf(b, "Params  too short: size %d\n", tlv_size);
+			prhex("ftm params", body, body_len);
 			return;
 		}
 
@@ -468,7 +469,7 @@ pdftm_dump_pkt_body(pdftm_t *ftm, const uint8 *body, int body_len,
 		/* flush out */
 		FTM_LOGPKT(ftm, (("%s\n", b->origbuf)));
 		bcm_binit(b, b->origbuf, b->origsize);
-		memset(b->origbuf, 0, b->origsize);
+		bzero(b->origbuf, b->origsize);
 
 		bcm_bprintf(b, "Params[6]: 0x%02X FormatBW %d\n", params->info[6],
 			FTM_PARAMS_CHAN_INFO(params));

@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: bcmutils.c 776274 2019-06-24 10:52:42Z $
+ * $Id: bcmutils.c 777533 2019-08-05 10:02:41Z $
  */
 
 #include <bcm_cfg.h>
@@ -5186,7 +5186,7 @@ setbits(uint8 *addr, uint size, uint stbit, uint nbits, uint32 val)
 	if (fbyte == lbyte) {
 		mask = ((1 << nbits) - 1) << fbit;
 		addr[fbyte] &= ~mask;
-		addr[fbyte] |= (uint8)(val << fbit);
+		addr[fbyte] |= ((uint8)(val << fbit)) & mask;
 		return;
 	}
 
@@ -5204,7 +5204,7 @@ setbits(uint8 *addr, uint size, uint stbit, uint nbits, uint32 val)
 	if (rbits > 0) {
 		mask = (1 << rbits) - 1;
 		addr[lbyte] &= ~mask;
-		addr[lbyte] |= (uint8)(val >> (nbits - rbits));
+		addr[lbyte] |= ((uint8)(val >> (nbits - rbits))) & mask;
 		lbyte --;	/* last full byte */
 	}
 

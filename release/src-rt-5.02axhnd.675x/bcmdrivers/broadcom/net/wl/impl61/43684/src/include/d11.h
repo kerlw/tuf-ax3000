@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: d11.h 776936 2019-07-14 00:59:01Z $
+ * $Id: d11.h 778068 2019-08-21 22:05:05Z $
  */
 
 #ifndef	_D11_H
@@ -231,6 +231,7 @@ typedef struct {
 #define MCTL1_EGS_MASK		0x0000c000
 #define MCTL1_EGS_SHIFT		14
 #define MCTL1_AVB_ENABLE	2
+#define MCTL1_AVB_TRIGGER	4
 #define MCTL1_GPIOSEL_SHIFT	8
 #define MCTL1_GPIOSEL_MASK	(0x3F << MCTL1_GPIOSEL_SHIFT)
 
@@ -2163,8 +2164,10 @@ enum  {
 /* PSTA AWARE AP: Max PSTA Tx beamforming entry */
 #define AMT_MAX_TXBF_PSTA_ENTRIES	20
 
-#define AUXPMQ_ENTRIES			64  /* number of AUX PMQ entries */
+#define AUXPMQ_ENTRIES		64  /* number of AUX PMQ entries */
 #define AUXPMQ_ENTRY_SIZE       8
+#define AUXPMQ_ENTRIES_GE129	128  /* revid >= 129 */
+#define AUXPMQ_ENTRIES_GE132	256  /* revid >= 132 */
 
 /* PSM Block */
 
@@ -4908,6 +4911,27 @@ typedef enum {
 	TOF_RX_FTM_NBIT = 0,
 	TOF_SHARED_ANT	= 1
 } eTOFFlags;
+
+/* TOF feature flags */
+#define M_UCODE_F2_TOF_BIT	7 /* part of features_2 shm */
+#define M_UCODE_F3_AVB_BIT	2 /* part of features_3 shm */
+#define M_UCODE_F3_SEQ_BIT	3 /* part of features_3 shm */
+
+#define FTM_TXSTATUS_ACK_RSPEC_BLOCK_MASK	0xFF
+#define FTM_TXSTATUS_ACK_RSPEC_BW_MASK		0x3
+#define FTM_TXSTATUS_ACK_RSPEC_BW_SHIFT		2
+#define FTM_TXSTATUS_ACK_RSPEC_BW_20		0
+#define FTM_TXSTATUS_ACK_RSPEC_BW_40		1
+#define FTM_TXSTATUS_ACK_RSPEC_BW_80		2
+#define FTM_TXSTATUS_ACK_RSPEC_BW_160		3
+#define FTM_TXSTATUS_ACK_RSPEC_TYPE_SHIFT	4
+#define FTM_TXSTATUS_ACK_RSPEC_TYPE_MASK	0x7
+#define FTM_TXSTATUS_ACK_RSPEC_TYPE_CCK		0
+#define FTM_TXSTATUS_ACK_RSPEC_TYPE_LEG		1 /* Legacy */
+#define FTM_TXSTATUS_ACK_RSPEC_TYPE_HT		2
+#define FTM_TXSTATUS_ACK_RSPEC_TYPE_VHT		3
+#define FTM_TXSTATUS_ACK_RSPEC_TYPE_HE		4
+#define FTM_TXSTATUS_ACK_RSPEC_RATE_6M(ackword)	(ackword >> 7)
 
 /* Following are the offsets in M_DRVR_UCODE_IF_PTR block. Start address of
  * M_DRVR_UCODE_IF_PTR block is present in M_DRVR_UCODE_IF_PTR.

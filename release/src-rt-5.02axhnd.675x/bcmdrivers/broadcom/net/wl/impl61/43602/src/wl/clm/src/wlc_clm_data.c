@@ -18195,7 +18195,7 @@ static const struct clm_aggregate_cc_set aggregate_cc_set = {
 };
 
 /** BLOB ID */
-static const char user_string[] = "2019-07-29 14:12:28";
+static const char user_string[] = "2019-08-29 20:42:53";
 
 /** Registry of data structures stored in BLOB */
 const struct clm_data_registry clm_data = {

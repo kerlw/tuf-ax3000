@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_rm.c 774133 2019-04-11 09:15:54Z $
+ * $Id: wlc_rm.c 777088 2019-07-18 17:39:11Z $
  */
 
 /**
@@ -107,6 +107,7 @@ static void wlc_rm_timer(void *arg);
 static void wlc_rm_next_set(rm_info_t *rm_info);
 static chanspec_t wlc_rm_chanspec(rm_info_t *rm_info);
 static void wlc_rm_begin(rm_info_t *rm_info);
+static void wlc_rm_cca_timer_cb(void *arg);
 static void wlc_rm_cca_begin(rm_info_t  *rm_info, uint32 dur);
 static void wlc_rm_rpi_begin(rm_info_t  *rm_info, uint32 dur);
 static void wlc_rm_rpi_timer(void *arg);
@@ -229,6 +230,15 @@ BCMATTACHFN(wlc_rm_attach)(wlc_info_t *wlc)
 		WL_ERROR(("wlc_module_register() for rm  failed\n"));
 		goto fail;
 	}
+	/*
+	 * CCA measurement timer
+	 */
+	if (!(rm_info->rm_cca_timer = wl_init_timer(wlc->wl, wlc_rm_cca_timer_cb,
+			rm_info, "rm_cca"))) {
+		WL_ERROR(("rm_cca_timer init failed\n"));
+		goto fail;
+	}
+	rm_info->rm_state->cca_active = FALSE;
 
 	/* Enable RM module at attach */
 	wlc->pub->_rm = TRUE;
@@ -496,6 +506,7 @@ wlc_rm_free(rm_info_t *rm_info)
 		MFREE(wlc->osh, rm_state->req, rm_state->req_count * sizeof(wlc_rm_req_t));
 
 	WL_EAP_TRC_RM(("%s: freeing all rm_state\n", __FUNCTION__));
+	wlc_phy_hold_upd(WLC_PI(wlc), PHY_HOLD_FOR_RM, FALSE);
 	wl_del_timer(wlc->wl, rm_info->rm_timer);
 	wlc_rm_state_upd(rm_info, WLC_RM_IDLE);
 	/* update ps control */
@@ -506,6 +517,8 @@ wlc_rm_free(rm_info_t *rm_info)
 	rm_state->cur_req = 0;
 	rm_state->req_count = 0;
 	rm_state->req = NULL;
+	WL_EAP_TRC_RXTXUTIL_MSG(("%s[%d]: cca_active %d\n", __func__, __LINE__,
+		rm_state->cca_active));
 	return;
 }
 
@@ -862,11 +875,16 @@ wlc_rm_begin(rm_info_t* rm_info)
 	wlc_rm_state_upd(rm_info, WLC_RM_WAIT_END_MEAS);
 
 	/* check if we need to set WLC_RM_WAIT_END_CCA */
+	WL_EAP_TRC_RXTXUTIL_MSG(("%s[%d]: cca_active %d\n",
+		__func__, __LINE__, rm_state->cca_active));
 	if (rm_state->cca_active &&
 	    !rm_state->rpi_active) {
 		/* need to flag CCA as the ending measurement since nothing else
 		 * will be calling wlc_rm_meas_end
 		 */
+		rm_state->cca_active = FALSE;
+		WL_EAP_TRC_RXTXUTIL_MSG(("%s[%d]: cca_active %d\n", __func__, __LINE__,
+			rm_state->cca_active));
 		wlc_rm_state_upd(rm_info, WLC_RM_WAIT_END_CCA);
 	}
 
@@ -901,6 +919,9 @@ wlc_rm_meas_end(wlc_info_t* wlc)
 		 * With WLC_RM_WAIT_END_CCA set, the CCA measurement will set
 		 * the rm_timer to fire when done
 		 */
+		rm_state->cca_active = FALSE;
+		WL_EAP_TRC_RXTXUTIL_MSG(("%s[%d]: cca_active %d\n", __func__, __LINE__,
+			rm_state->cca_active));
 		wlc_rm_state_upd(rm_info, WLC_RM_WAIT_END_CCA);
 		WL_INFORM(("wl%d: all measurements ended before CCA, waiting for CCA interrupt,"
 			" dur %d TUs\n", wlc->pub->unit, rm_state->cca_dur));
@@ -953,9 +974,11 @@ static void
 wlc_rm_cca_begin(rm_info_t *rm_info, uint32 dur)
 {
 	wlc_rm_req_state_t* rm_state = rm_info->rm_state;
-	/* start the hw measurement */
-	if (wlc_bmac_rm_cca_measure(rm_info->wlc->hw, dur * DOT11_TU_TO_US)) {
-		rm_state->cca_active = TRUE;
+
+	/* start measurement */
+	if (wlc_rm_cca_start(rm_info->wlc, dur)) {
+		WL_EAP_TRC_RXTXUTIL_MSG(("%s[%d]: cca_active %d: ",
+			__FUNCTION__, __LINE__, rm_state->cca_active));
 		rm_state->cca_idle = 0;
 		rm_state->cca_dur = dur;
 	}
@@ -963,27 +986,168 @@ wlc_rm_cca_begin(rm_info_t *rm_info, uint32 dur)
 }
 
 void
-wlc_rm_cca_complete(wlc_info_t *wlc, uint32 cca_idle_us)
+wlc_rm_cca_end(wlc_info_t *wlc)
 {
 	rm_info_t *rm_info = wlc->rm_info;
 	wlc_rm_req_state_t* rm_state = rm_info->rm_state;
 	uint32 cca_dur_us;
-	uint32 busy_us = 0;
-	uint8  frac;
+	uint32 cca_end_h;
+	cca_ucode_counts_t *delta = &wlc->util_delta_counts;
+	uint32 rx_util_ucode = 0;
+	uint32 tx_util_ucode = 0;
+	uint32 chan_util_ucode = 0;
+	uint32 cca_busy_us = 0;
+	uint32 interference = 0;
+	uint32 congest_ibss = 0;
+	uint32 congest_obss = 0;
+	uint8 frac = 0;
+	uint8 utilization;
+	uint8 chan_utilization = 0;
+
 	if (!rm_state->cca_active) {
 		return;
 	}
+	wlc->channel_util_seq++;
 
-	cca_dur_us = rm_state->cca_dur * DOT11_TU_TO_US;
-	frac = (uint8)CEIL((255 * busy_us), cca_dur_us);
+	/*
+	 * TSF timestamp - Actual CCA meas end time
+	 */
+	wlc_bmac_read_tsf(wlc->hw, &rm_state->cca_end_l, &cca_end_h);
 
-	rm_state->cca_active = FALSE;
-	rm_state->cca_idle = (cca_dur_us - busy_us);
-	rm_state->cca_busy = frac;
+	wlc_bmac_cca_stats_read(wlc->hw, &wlc->util_counts);
+	/*
+	 * Calculate actual measurement duration.
+	 */
+	cca_dur_us = DELTA(rm_state->cca_end_l, rm_state->cca_start_l);
 
-	WL_INFORM(("wl%d: wlc_rm_cca_int: CCA dur %d us, idle %d us, busy frac %d\n",
-		wlc->pub->unit, cca_dur_us, rm_state->cca_idle, frac));
+	/*
+	* At the end of a CCA measurement interval, calculate the receive and transmit utilization
+	* and save in wlc for retrieval by application
+	*/
+	delta->usecs = cca_dur_us;
+	/*
+	 * Detailed stats. Calculate delta and update previous util counts
+	 */
+	wlc->util_last_counts.usecs = wlc->util_counts.usecs;
+	delta->ibss = DELTA(wlc->util_counts.ibss, wlc->util_last_counts.ibss);
+	wlc->util_last_counts.ibss = wlc->util_counts.ibss;
+	delta->obss = DELTA(wlc->util_counts.obss, wlc->util_last_counts.obss);
+	wlc->util_last_counts.obss = wlc->util_counts.obss;
+	delta->PM = DELTA(wlc->util_counts.PM, wlc->util_last_counts.PM);
+	wlc->util_last_counts.PM = wlc->util_counts.PM;
+	delta->noctg = DELTA(wlc->util_counts.noctg, wlc->util_last_counts.noctg);
+	wlc->util_last_counts.noctg = wlc->util_counts.noctg;
+	delta->nopkt = DELTA(wlc->util_counts.nopkt, wlc->util_last_counts.nopkt);
+	wlc->util_last_counts.nopkt = wlc->util_counts.nopkt;
+	delta->txdur = DELTA(wlc->util_counts.txdur, wlc->util_last_counts.txdur);
+	wlc->util_last_counts.txdur = wlc->util_counts.txdur;
+#if defined(ISID_STATS)
+	delta->crsglitch = DELTA(wlc->util_counts.crsglitch, wlc->util_last_counts.crsglitch);
+	wlc->util_last_counts.crsglitch = wlc->util_counts.crsglitch;
+	delta->badplcp = DELTA(wlc->util_counts.badplcp, wlc->util_last_counts.badplcp);
+	wlc->util_last_counts.badplcp = wlc->util_counts.badplcp;
+	delta->bphy_badplcp =
+		DELTA(wlc->util_counts.bphy_badplcp, wlc->util_last_counts.bphy_badplcp);
+	wlc->util_last_counts.bphy_badplcp = wlc->util_counts.bphy_badplcp;
+	delta->bphy_crsglitch = DELTA(wlc->util_counts.bphy_crsglitch,
+		wlc->util_last_counts.bphy_crsglitch);
+	wlc->util_last_counts.bphy_crsglitch = wlc->util_counts.bphy_crsglitch;
+#endif // endif
 
+#if defined(WL_PROT_OBSS)
+	delta->rxdrop20s = DELTA(wlc->util_counts.rxdrop20s, wlc->util_last_counts.rxdrop20s);
+	wlc->util_last_counts.rxdrop20s = wlc->util_counts.rxdrop20s;
+	delta->rx20s = DELTA(wlc->util_counts.rx20s, wlc->util_last_counts.rx20s);
+	wlc->util_last_counts.rx20s = wlc->util_counts.rx20s;
+	delta->rxcrs_pri = DELTA(wlc->util_counts.rxcrs_pri, wlc->util_last_counts.rxcrs_pri);
+	wlc->util_last_counts.rxcrs_pri = wlc->util_counts.rxcrs_pri;
+	delta->rxcrs_sec20 = DELTA(wlc->util_counts.rxcrs_sec20,
+		wlc->util_last_counts.rxcrs_sec20);
+	wlc->util_last_counts.rxcrs_sec20 = wlc->util_counts.rxcrs_sec20;
+	delta->rxcrs_sec40 = DELTA(wlc->util_counts.rxcrs_sec40,
+		wlc->util_last_counts.rxcrs_sec40);
+	wlc->util_last_counts.rxcrs_sec40 = wlc->util_counts.rxcrs_sec40;
+	delta->sec_rssi_hist_hi = DELTA(wlc->util_counts.sec_rssi_hist_hi,
+		wlc->util_last_counts.sec_rssi_hist_hi);
+	wlc->util_last_counts.sec_rssi_hist_hi = wlc->util_counts.sec_rssi_hist_hi;
+	delta->sec_rssi_hist_med = DELTA(wlc->util_counts.sec_rssi_hist_med,
+		wlc->util_last_counts.sec_rssi_hist_med);
+	wlc->util_last_counts.sec_rssi_hist_med = wlc->util_counts.sec_rssi_hist_med;
+	delta->sec_rssi_hist_low = DELTA(wlc->util_counts.sec_rssi_hist_low,
+		wlc->util_last_counts.sec_rssi_hist_low);
+	wlc->util_last_counts.sec_rssi_hist_low = wlc->util_counts.sec_rssi_hist_low;
+#endif // endif
+
+	delta->wifi = DELTA(wlc->util_counts.wifi, wlc->util_last_counts.wifi);
+	wlc->util_last_counts.wifi = wlc->util_counts.wifi;
+
+	/*
+	 * Calculate rx_util, tx_util from CRS counters and txdur.
+	 */
+	WL_EAP_TRC_RXTXUTIL_MSG(("%s: ********* Pri=%d BW=%d ***********\n",
+			__FUNCTION__, ((wlc->chanspec & 0x0700) >> 8),
+			((wlc->chanspec & 0x3800) >> 11)));
+	frac = (uint8)CEIL((255 * (delta->ibss + delta->obss + delta->noctg)), delta->usecs);
+	rx_util_ucode = (frac * 100)/255;
+	wlc->rx_util_ucode = rx_util_ucode;
+
+	frac = (uint8)CEIL((255 * delta->txdur), delta->usecs);
+	tx_util_ucode = (frac * 100)/255;
+	wlc->tx_util_ucode = tx_util_ucode;
+
+	cca_busy_us = delta->ibss + delta->obss + delta->noctg + delta->PM + delta->txdur +
+		delta->wifi;
+	frac = (uint8)CEIL((255 * cca_busy_us), delta->usecs);
+	chan_util_ucode = (frac * 100)/255;
+	wlc->channel_util_ucode = chan_util_ucode;
+
+	chan_utilization = (uint8)CEIL(100 * (delta->ibss + delta->obss +
+		delta->noctg + delta->txdur + delta->nopkt + delta->wifi), delta->usecs);
+	chan_utilization = MIN(100, chan_utilization);
+
+	congest_ibss = delta->ibss + delta->txdur;
+	congest_obss = delta->obss + delta->noctg;
+	interference = delta->nopkt + delta->wifi;
+
+	utilization = (uint8)CEIL(100 * (interference + congest_ibss + congest_obss), delta->usecs);
+	utilization = MIN(100, utilization);
+
+	WL_EAP_TRC_RXTXUTIL_MSG(("%s: Raw Stats: \n"
+		" rxdrop20s \t %u (%u %%)\n"
+		" rx20s \t %u (%u %%)\n"
+		" rxcrs_pri \t %u (%u %%)\n"
+		" rxcrs_sec20 \t %u (%u %%)\n"
+		" rxcrs_sec40 \t %u (%u %%)\n"
+		" sec_rssi_hist_hi \t %u\n"
+		" sec_rssi_hist_med \t %u\n"
+		" sec_rssi_hist_lo \t %u\n"
+		" ibss \t\t %u (%u %%) \n"
+		" obss \t\t %u (%u %%) \n"
+		" noctg \t\t %u (%u %%) \n"
+		" nopkt \t\t %u (%u %%) \n"
+		" PM \t\t %u (%u %%)\n"
+		" txdur \t\t %u (%u %%) \n"
+		" Meas dur \t\t %u"
+		" Meas sequence \t %u",
+		__FUNCTION__,
+		delta->rxdrop20s, (uint8)CEIL((100 * delta->rxdrop20s), delta->usecs),
+		delta->rx20s, (uint8)CEIL((100 * delta->rx20s), delta->usecs),
+		delta->rxcrs_pri, (uint8)CEIL((100 * delta->rxcrs_pri), delta->usecs),
+		delta->rxcrs_sec20, (uint8)CEIL((100 * delta->rxcrs_sec20), delta->usecs),
+		delta->rxcrs_sec40, (uint8)CEIL((100 * delta->rxcrs_sec40), delta->usecs),
+		delta->sec_rssi_hist_hi, delta->sec_rssi_hist_med, delta->sec_rssi_hist_low,
+		delta->ibss, (uint8)CEIL((100 * delta->ibss), delta->usecs),
+		delta->obss, (uint8)CEIL((100 * delta->obss), delta->usecs),
+		delta->noctg, (uint8)CEIL((100 * delta->noctg), delta->usecs),
+		delta->nopkt, (uint8)CEIL((100 * delta->nopkt), delta->usecs),
+		delta->PM, (uint8)CEIL((100 * delta->PM), delta->usecs),
+		delta->txdur, (uint8)CEIL((100 * delta->txdur), delta->usecs),
+		delta->usecs, wlc->channel_util_seq));
+
+#if defined(ISID_STATS)
+	WL_EAP_TRC_RXTXUTIL_MSG(("%s: CCA delta->crsglitch %u, delta->badplcp %u\n",
+		__FUNCTION__, delta->crsglitch, delta->badplcp));
+#endif // endif
 	/* check if we should call the timer */
 	if (rm_state->step == WLC_RM_WAIT_END_CCA) {
 		wlc_rm_state_upd(rm_info, WLC_RM_WAIT_END_MEAS);
@@ -1401,5 +1565,46 @@ wlc_rm_state_upd(rm_info_t *rm_info, uint state)
 		wlc_phy_hold_upd(WLC_PI(wlc), PHY_HOLD_FOR_RM, !was_in_progress);
 
 	return;
+}
+bool
+wlc_rm_cca_start(wlc_info_t *wlc, uint32 dur)
+{
+	rm_info_t *rm_info = (rm_info_t *)wlc->rm_info;
+	wlc_rm_req_state_t* rm_state = rm_info->rm_state;
+	uint32 cca_start_h;
+
+	/*
+	 * Scan takes priority over RM. Yield if scan is in progress
+	 */
+
+	/*
+	 * TSF timestamp - Actual measurement start time
+	 */
+	wlc_bmac_read_tsf(wlc->hw, &rm_state->cca_start_l, &cca_start_h);
+
+	/*
+	 * Read previous stats
+	 */
+	wlc_bmac_cca_stats_read(wlc->hw, &wlc->util_last_counts);
+	rm_state->cca_active = TRUE;
+	WL_EAP_TRC_RXTXUTIL_MSG(("wl%d: %s: start %u: cca_active %d dur %u\n",
+		wlc->pub->unit, __FUNCTION__, rm_state->cca_start_l, rm_state->cca_active, dur));
+	/*
+	 * Arm the timer
+	 */
+	wl_add_timer(wlc->wl, rm_info->rm_cca_timer, dur, 0);
+	return TRUE;
+}
+
+static void
+wlc_rm_cca_timer_cb(void *arg)
+{
+	rm_info_t *rm_info = (rm_info_t*)arg;
+	wlc_info_t *wlc = rm_info->wlc;
+
+	/*
+	 * Reset PHY measure hold flag and invoke rm_cca_complete
+	 */
+	wlc_rm_cca_end(wlc);
 }
 #endif /* STA && WLRM */

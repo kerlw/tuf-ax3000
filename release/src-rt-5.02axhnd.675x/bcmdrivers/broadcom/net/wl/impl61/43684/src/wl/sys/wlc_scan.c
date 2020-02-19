@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scan.c 774725 2019-05-05 16:54:46Z $
+ * $Id: wlc_scan.c 777984 2019-08-20 01:04:28Z $
  */
 
 /* XXX
@@ -108,8 +108,6 @@
 #include <wlc_rm.h>
 #include <wlc_ap.h>
 #include <wlc_assoc.h>
-#include <wlc_scan_priv.h>
-#include <wlc_scan.h>
 #ifdef WLP2P
 #include <wlc_p2p.h>
 #endif // endif
@@ -156,6 +154,8 @@
 #ifdef ECOUNTERS
 #include <ecounters.h>
 #endif // endif
+#include <wlc_scan_priv.h>
+#include <wlc_scan.h>
 
 #if defined(BCMDBG) || defined(WLMSG_INFORM)
 #define	WL_INFORM_SCAN(args)                                                                    \
@@ -4714,6 +4714,12 @@ chanspec_t
 wlc_scan_get_current_chanspec(wlc_scan_info_t *wlc_scan_info)
 {
 	scan_info_t *scan_info = (scan_info_t *)wlc_scan_info->scan_priv;
+#ifdef WL_AIR_IQ
+	if (wlc_airiq_scan_in_progress(SCAN_WLC(scan_info)) &&
+			!wlc_airiq_phymode_3p1(SCAN_WLC(scan_info))) {
+		return wlc_airiq_get_current_scan_chanspec(SCAN_WLC(scan_info));
+	}
+#endif /* WL_AIR_IQ */
 
 	if (scan_info->channel_idx >= scan_info->channel_num)
 		return scan_info->chanspec_list[scan_info->channel_num - 1];
@@ -6702,3 +6708,6 @@ uint8 wlc_scan_get_num_passes_left(wlc_info_t *wlc)
 	return scan_info->pass;
 }
 #endif /* WL_OCE */
+
+#ifdef STA
+#endif /* STA */

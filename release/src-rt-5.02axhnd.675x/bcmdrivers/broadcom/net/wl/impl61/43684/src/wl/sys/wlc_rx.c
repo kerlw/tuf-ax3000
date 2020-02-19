@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_rx.c 776525 2019-07-02 04:26:00Z $
+ * $Id: wlc_rx.c 777731 2019-08-07 19:37:44Z $
  *
  */
 #include <wlc_cfg.h>
@@ -566,7 +566,6 @@ wlc_recv(wlc_info_t *wlc, void *p)
 	bool amsdu_rx_enabled = wlc->_amsdu_rx;
 #endif /* WLAMSDU */
 	wlc_pub_t *pub = wlc->pub;
-
 	WL_TRACE(("wl%d: wlc_recv\n", pub->unit));
 
 	osh = wlc->osh;
@@ -5506,14 +5505,14 @@ wlc_recv_mgmtact(wlc_info_t *wlc, struct scb *scb, struct dot11_management_heade
 			break;
 		}
 		/* Unrecognized (or disabled) action category */
-		wlc_send_action_err(wlc, hdr, body, body_len);
+		wlc_send_action_err(wlc, bsscfg, hdr, body, body_len);
 		break;
 	}
 
 	return;
 
 rxbadproto:
-	wlc_send_action_err(wlc, hdr, body, body_len);
+	wlc_send_action_err(wlc, bsscfg, hdr, body, body_len);
 	WLCNTINCR(wlc->pub->_cnt->rxbadproto);
 }
 

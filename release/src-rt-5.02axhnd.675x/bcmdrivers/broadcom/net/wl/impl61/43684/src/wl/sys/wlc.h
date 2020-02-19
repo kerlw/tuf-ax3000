@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc.h 776968 2019-07-15 10:47:02Z $
+ * $Id: wlc.h 777731 2019-08-07 19:37:44Z $
  */
 
 #ifndef _wlc_h_
@@ -774,6 +774,10 @@ typedef struct {
 	uint32 nopkt;	/**< non 802.11 */
 	uint32 usecs;	/**< usecs in this interval */
 	uint32 PM;	/**< usecs MAC spent in doze mode for PM */
+	uint32 wifi;	/**< usecs spent on uncategorized wifi packets.
+			 ** Packets detected with valid preamble/PLCP, but decoding
+			 ** the rest of the packet failed.
+			 */
 #if defined(ISID_STATS)
 	uint32 crsglitch;	/**< num rxcrsglitchs */
 	uint32 badplcp;		/**< num bad plcp */
@@ -1502,6 +1506,15 @@ struct wlc_info {
 	bool		pm2_radio_shutoff_pending; /**< flag indicating radio shutoff pending */
 	struct wl_timer *pm2_radio_shutoff_dly_timer;	/**< timer to delay radio shutoff */
 
+	uint32 channel_util_ucode;
+	uint32 rx_util_ucode;
+	uint32 tx_util_ucode;
+	uint32 channel_util_seq;
+
+	cca_ucode_counts_t util_counts;
+	cca_ucode_counts_t util_last_counts;
+	cca_ucode_counts_t util_delta_counts;
+
 	struct sa_seqctl ctl_dup_det[SA_SEQCTL_SIZE]; /**< Small table for duplicate detections
 						       * for cases where SCB does not exist
 						       */
@@ -2195,6 +2208,7 @@ extern void wlc_fifoerrors(wlc_info_t *wlc);
 extern void wlc_pllreq(wlc_info_t *wlc, bool set, mbool req_bit);
 extern void wlc_update_phy_mode(wlc_info_t *wlc, uint32 phy_mode);
 extern void wlc_reset_bmac_done(wlc_info_t *wlc);
+extern void wlc_shutdown_handler(wlc_info_t *wlc);
 extern void wlc_gptimer_wake_upd(wlc_info_t *wlc, mbool requestor, bool set);
 extern void wlc_user_wake_upd(wlc_info_t *wlc, mbool requestor, bool set);
 extern uint16 wlc_wme_get_frame_medium_time(wlc_info_t *wlc, uint8 bandunit,
@@ -2309,8 +2323,8 @@ extern void wlc_sendprobe(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
 extern uint16 wlc_prep80211_raw(wlc_info_t *wlc, wlc_if_t *wlcif,
 	uint ac, void *p, ratespec_t rspec, uint *outfifo);
 
-extern int wlc_send_action_err(wlc_info_t *wlc, struct dot11_management_header *hdr,
-	uint8 *body, int body_len);
+extern int wlc_send_action_err(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
+	struct dot11_management_header *hdr, uint8 *body, int body_len);
 
 extern void *wlc_frame_get_mgmt(wlc_info_t *wlc, uint16 fc, const struct ether_addr *da,
 	const struct ether_addr *sa, const struct ether_addr *bssid, uint body_len,

@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_mfp.c 775370 2019-05-29 08:20:33Z $
+ * $Id: wlc_mfp.c 777286 2019-07-25 19:43:30Z $
  *
  * This file provides implementation of interface to MFP functionality
  * defined in wlc_mfp.h
@@ -1394,6 +1394,26 @@ wlc_mfp_frame_get_mgmt(wlc_mfp_info_t *mfp, uint16 fc, uint8 cat,
 		WLPKTTAG(p)->flags |= WLF_MFP;
 
 	return (p);
+}
+
+uint
+wlc_mfp_frame_get_sec_len(wlc_mfp_info_t *mfp, uint16 fc, uint8 cat,
+	const struct ether_addr *da, wlc_bsscfg_t *bsscfg)
+{
+	uint iv_len = 0, tail_len = 0;
+	uint sec_len = 0;
+	wlc_info_t *wlc = mfp->wlc;
+
+	if (!WLC_MFP_ENAB(wlc->pub)) {
+		goto done;
+	}
+
+	if (mfp_needs_mfp(mfp, bsscfg, da, fc, cat, &iv_len, &tail_len)) {
+		sec_len = iv_len;
+	}
+
+done:
+	return sec_len;
 }
 
 #ifdef MFP_TEST

@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: 802.11.h 776450 2019-06-28 15:53:43Z $
+ * $Id: 802.11.h 777236 2019-07-24 13:51:48Z $
  */
 
 #ifndef _802_11_H_
@@ -1845,6 +1845,8 @@ typedef struct dot11_oper_mode_notif_ie dot11_oper_mode_notif_ie_t;
 #define DOT11_PUB_ACTION_GAS_CB_REQ	12	/* GAS Comeback Request */
 #define DOT11_PUB_ACTION_FTM_REQ	32		/* FTM request */
 #define DOT11_PUB_ACTION_FTM		33		/* FTM measurement */
+#define DOT11_PUB_ACTION_FTM_REQ_TRIGGER_START	1u	/* FTM request start trigger */
+#define DOT11_PUB_ACTION_FTM_REQ_TRIGGER_STOP	0u	/* FTM request stop trigger */
 
 /* Block Ack action types */
 #define DOT11_BA_ACTION_ADDBA_REQ	0	/* ADDBA Req action frame type */
@@ -2793,6 +2795,7 @@ typedef struct dot11_rrm_cap_ie dot11_rrm_cap_ie_t;
 #endif /* WL11K_AP */
 #define DOT11_RRM_CAP_CIVIC_LOC_ENAB		(1 << (DOT11_RRM_CAP_CIVIC_LOC - 32))
 #define DOT11_RRM_CAP_IDENT_LOC_ENAB		(1 << (DOT11_RRM_CAP_IDENT_LOC - 32))
+#define DOT11_RRM_CAP_FTM_RANGE_ENAB		(1 << (DOT11_RRM_CAP_FTM_RANGE - 32))
 #else
 #define DOT11_RRM_CAP_LINK_ENAB			0
 #define DOT11_RRM_CAP_FM_ENAB			0
@@ -2807,6 +2810,7 @@ typedef struct dot11_rrm_cap_ie dot11_rrm_cap_ie_t;
 #define DOT11_RRM_CAP_MPTI_ENAB			0
 #define DOT11_RRM_CAP_CIVIC_LOC_ENAB		0
 #define DOT11_RRM_CAP_IDENT_LOC_ENAB		0
+#define DOT11_RRM_CAP_FTM_RANGE_ENAB		0
 #endif /* WL11K_ALL_MEAS */
 #ifdef WL11K_NBR_MEAS
 #define DOT11_RRM_CAP_NEIGHBOR_REPORT_ENAB	(1 << DOT11_RRM_CAP_NEIGHBOR_REPORT)
@@ -5102,6 +5106,17 @@ BWL_PRE_PACKED_STRUCT struct dot11_ftm_vs_ie {
 } BWL_POST_PACKED_STRUCT;
 typedef struct dot11_ftm_vs_ie dot11_ftm_vs_ie_t;
 
+/* same as payload of dot11_ftm_vs_ie.
+* This definition helps in having struct access
+* of pay load while building FTM VS IE from other modules(NAN)
+*/
+BWL_PRE_PACKED_STRUCT struct dot11_ftm_vs_ie_pyld {
+	uint8 sub_type;					/* BRCM_FTM_IE_TYPE (or Customer) */
+	uint8 version;
+	ftm_vs_tlv_t	tlvs[1];
+} BWL_POST_PACKED_STRUCT;
+typedef struct dot11_ftm_vs_ie_pyld dot11_ftm_vs_ie_pyld_t;
+
 /* ftm vs api version */
 #define BCM_FTM_VS_PARAMS_VERSION 0x01
 
@@ -5113,7 +5128,8 @@ enum {
 	FTM_VS_TLV_SEC_PARAMS = 3,		/* security parameters (in either) */
 	FTM_VS_TLV_SEQ_PARAMS = 4,		/* toast parameters (FTM_REQ, BRCM proprietary) */
 	FTM_VS_TLV_MF_BUF = 5,			/* multi frame buffer - may span ftm vs ie's */
-	FTM_VS_TLV_TIMING_PARAMS = 6            /* timing adjustments */
+	FTM_VS_TLV_TIMING_PARAMS = 6,            /* timing adjustments */
+	FTM_VS_TLV_MF_STATS_BUF = 7		/* multi frame statistics buffer */
 	/* add additional types above */
 };
 

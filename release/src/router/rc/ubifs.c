@@ -31,6 +31,22 @@
 #define LEBS		0x1F000		/* 124 KiB */
 #define NUM_OH_LEB	24		/* for ubifs overhead */
 #endif
+#if defined(RTAC68U) || defined(RTAC3200) || defined(RTAC3100)
+#define JFFS2_MTD_NAME	"brcmnand"
+#define UBI_DEV_NUM	"0"
+#define UBI_DEV_PATH	"/dev/ubi0"
+#define LEBS		0x1F000		/* 124 KiB */
+#define NUM_OH_LEB	20		/* for ubifs overhead */
+#endif
+// AC86U/GTAC2900/GTAC5300/R7900P/R8000P
+#ifdef HND_ROUTER
+#define PATH_MAX	512
+#define JFFS2_MTD_NAME	"misc2"
+#define UBI_DEV_NUM	"2"
+#define UBI_DEV_PATH	"/dev/ubi2"
+#define LEBS		0x1F000		/* 124 KiB */
+#define NUM_OH_LEB	20		/* for ubifs overhead */
+#endif
 
 static void error(const char *message)
 {
@@ -125,15 +141,15 @@ void start_ubifs(void)
 	int mtd_part = 0, mtd_size = 0;
 	char dev_mtd[] = "/dev/mtdXXX";
 #endif
-
-#ifndef RTCONFIG_NVRAM_FILE
+#if defined(RTAC68U) || defined(RTAC3200) || defined(RTAC3100) || defined(HND_ROUTER)
+	int mtd_part = 0, mtd_size = 0;
+	char dev_mtd[] = "/dev/mtdXXX";
+#endif
 	if (!nvram_match("ubifs_on", "1")) {
 		notice_set("ubifs", "");
 		return;
 	}
-#endif
 
-#ifndef RTCONFIG_NVRAM_FILE
 #if defined(RTCONFIG_LANTIQ)
 	if (!wait_action_idle(1))
 		return;
@@ -141,9 +157,7 @@ void start_ubifs(void)
 	if (!wait_action_idle(10))
 		return;
 #endif
-#endif
 
-#ifndef RTCONFIG_NVRAM_FILE
 #ifdef RTCONFIG_MTK_NAND
 	if (!mtd_getinfo(JFFS2_MTD_NAME, &mtd_part, &mtd_size)) return;
 
@@ -162,7 +176,7 @@ void start_ubifs(void)
 		_dprintf("*** ubifs: ubi volume not found\n");
 
 		/* mtd erase on UBIFS_VOL_NAME first */
-		if (!mtd_erase(JFFS2_MTD_NAME)) {
+		if (mtd_erase(JFFS2_MTD_NAME)) {
 			error("formatting");
 			return;
 		}
@@ -188,13 +202,71 @@ void start_ubifs(void)
 		}
 	}
 #endif
-#endif
+#if defined(RTAC68U) || defined(RTAC3200) || defined(RTAC3100) || defined(HND_ROUTER)
+	if (!mtd_getinfo(JFFS2_MTD_NAME, &mtd_part, &mtd_size)) return;
+	snprintf(dev_mtd, sizeof(dev_mtd), "/dev/mtd%d", mtd_part);
+	_dprintf("*** ubifs: %s (%d, %d)\n", JFFS2_MTD_NAME, mtd_part, mtd_size);
 
+	if (nvram_match("ubifs_clean_fs", "1") || nvram_match("jffs2_format", "1") || nvram_match("ubifs_format", "1")) {
+		nvram_unset("ubifs_clean_fs");
+		nvram_set("jffs2_format", "0");
+		nvram_set("ubifs_format", "0");
+		eval("ubiformat",dev_mtd,"-y");
+#if defined(HND_ROUTER)
+//ubi0:rootfs ubi1:nvram ubi2:jffs or ubi0:rootfs ubi1:data ubi2:nvram ubi3:jffs
+		eval("ubiattach","-p",dev_mtd,"-d","2");
+		eval("ubimkvol","/dev/ubi2","-N", UBIFS_VOL_NAME,"-m");
+#else
+		eval("ubiattach","-p",dev_mtd,"-d","0");
+		eval("ubimkvol","/dev/ubi0","-N", UBIFS_VOL_NAME,"-m");
+#endif
+		format = 1;
+	} else {
+		/* attach ubi */
+		_dprintf("*** ubifs: attach (%s, %s)\n", dev_mtd, UBI_DEV_NUM);
+		eval("ubiattach", "-p", dev_mtd, "-d", UBI_DEV_NUM);
+	}
+	if (ubi_getinfo(JFFS2_MTD_NAME, &dev, &part, &size)==0) {
+		sprintf(s, "%d", size);
+		p = nvram_get("ubifs_size");
+		if ((p == NULL) || (strcmp(p, s) != 0)) {
+			nvram_set("ubifs_size", s);
+			nvram_commit_x();
+		}
+	}
+#if defined(HND_ROUTER)
+	if (mount("/dev/ubi2_0", UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
+#else
+	if (mount("/dev/ubi0_0", UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
+#endif
+		_dprintf("*** ubifs mount error\n");
+		eval("ubidetach", "-p", dev_mtd);
+		eval("ubiformat", dev_mtd, "-y");
+#if defined(HND_ROUTER)
+		eval("ubiattach","-p",dev_mtd,"-d","2");
+		eval("ubimkvol","/dev/ubi2","-N", UBIFS_VOL_NAME,"-m");
+#else
+		eval("ubiattach","-p",dev_mtd,"-d","0");
+		eval("ubimkvol","/dev/ubi0","-N", UBIFS_VOL_NAME,"-m");
+#endif
+		format = 1;
+#if defined(HND_ROUTER)
+		if (mount("/dev/ubi2_0", UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
+#else
+		if (mount("/dev/ubi0_0", UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
+#endif
+			_dprintf("*** ubifs 2-nd mount error\n");
+			error("mounting");
+			return;
+		}
+	}
+	goto BRCM_UBI;
+
+#endif
 	if (ubi_getinfo(UBIFS_VOL_NAME, &dev, &part, &size) < 0)
 		return;
 
 	_dprintf("*** ubifs: %s %d, %d, %d\n", UBIFS_VOL_NAME, dev, part, size);
-#ifndef RTCONFIG_NVRAM_FILE
 	if (nvram_match("ubifs_format", "1")) {
 		nvram_set("ubifs_format", "0");
 
@@ -205,11 +277,7 @@ void start_ubifs(void)
 
 		format = 1;
 	}
-#else
-		format = 0;
-#endif
 
-#ifndef RTCONFIG_NVRAM_FILE
 	sprintf(s, "%d", size);
 	p = nvram_get("ubifs_size");
 	if ((p == NULL) || (strcmp(p, s) != 0)) {
@@ -221,7 +289,6 @@ void start_ubifs(void)
 			return;
 		}
 	}
-#endif
 
 	if ((statfs(UBIFS_MNT_DIR, &sf) == 0)
 	    && (sf.f_type != 0x73717368 /* squashfs */ )) {
@@ -229,7 +296,6 @@ void start_ubifs(void)
 		notice_set("ubifs", format ? "Formatted" : "Loaded");
 		return;
 	}
-#ifndef RTCONFIG_NVRAM_FILE
 	if (nvram_get_int("ubifs_clean_fs")) {
 		if (ubifs_unlock(dev, part)) {
 			error("unlocking");
@@ -240,7 +306,6 @@ void start_ubifs(void)
 		nvram_commit_x();
 #endif
 	}
-#endif
 	sprintf(s, "/dev/ubi%d_%d", dev, part);
 
 	if (mount(s, UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
@@ -258,31 +323,42 @@ void start_ubifs(void)
 		}
 	}
 
-#ifndef RTCONFIG_NVRAM_FILE
+#if defined(RTCONFIG_ISP_CUSTOMIZE)
+	load_customize_package();
+#endif
+#if defined(RTAC68U) || defined(RTAC3200) || defined(RTAC3100) || defined(HND_ROUTER)
+BRCM_UBI:
+		nvram_unset("ubifs_clean_fs");
+		nvram_commit_x();
+#endif
+
 	if (nvram_get_int("ubifs_clean_fs")) {
 		_dprintf("Clean /jffs/*\n");
 		system("rm -fr /jffs/*");
 		nvram_unset("ubifs_clean_fs");
 		nvram_commit_x();
 	}
-#endif
 
 	userfs_prepare(UBIFS_MNT_DIR);
 
 	notice_set("ubifs", format ? "Formatted" : "Loaded");
 
-#if 0 /* disable legacy & asus autoexec */
-#ifndef RTCONFIG_NVRAM_FILE
 	if (((p = nvram_get("ubifs_exec")) != NULL) && (*p != 0)) {
 		chdir(UBIFS_MNT_DIR);
 		system(p);
 		chdir("/");
 	}
+
+#ifdef HND_ROUTER
+#ifdef RTCONFIG_JFFS_NVRAM
+	system("rm -rf /jffs/nvram_war");
+	jffs_nvram_init();
+	system("touch /jffs/nvram_war");
 #endif
-	run_userfile(UBIFS_MNT_DIR, ".asusrouter", UBIFS_MNT_DIR, 3);
 #endif
 
-#ifndef RTCONFIG_NVRAM_FILE
+	run_userfile(UBIFS_MNT_DIR, ".asusrouter", UBIFS_MNT_DIR, 3);
+
 #if defined(RTCONFIG_TEST_BOARDDATA_FILE)
 	/* Copy /lib/firmware to /tmp/firmware, and
 	 * bind mount /tmp/firmware to /lib/firmware.
@@ -295,8 +371,10 @@ void start_ubifs(void)
 	if ((r = mount(UBIFS_MNT_DIR "/firmware", "/lib/firmware", NULL, MS_BIND, NULL)) != 0)
 		_dprintf("%s: bind mount " UBIFS_MNT_DIR "/firmware fail! (r = %d)\n", __func__, r);
 #endif
-#endif
 
+	if (!check_if_dir_exist("/jffs/scripts/")) mkdir("/jffs/scripts/", 0755);
+	if (!check_if_dir_exist("/jffs/configs/")) mkdir("/jffs/configs/", 0755);
+	if (!check_if_dir_exist("/jffs/opt/")) mkdir("/jffs/opt/", 0755);
 }
 
 void stop_ubifs(int stop)
@@ -314,10 +392,8 @@ void stop_ubifs(int stop)
 
 	if ((statfs(UBIFS_MNT_DIR, &sf) == 0) && (sf.f_type != 0x73717368)) {
 		// is mounted
-#if 0 /* disable legacy & asus autoexec */
 		run_userfile(UBIFS_MNT_DIR, ".autostop", UBIFS_MNT_DIR, 5);
 		run_nvscript("script_autostop", UBIFS_MNT_DIR, 5);
-#endif
 	}
 #if defined(RTCONFIG_PSISTLOG)
 	if (!stop && !strncmp(get_syslog_fname(0), UBIFS_MNT_DIR "/", sizeof(UBIFS_MNT_DIR) + 1)) {
@@ -345,3 +421,4 @@ void stop_ubifs(int stop)
 		start_syslogd();
 #endif
 }
+

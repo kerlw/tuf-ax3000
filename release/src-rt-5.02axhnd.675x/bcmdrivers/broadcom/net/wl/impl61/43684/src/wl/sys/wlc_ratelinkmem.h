@@ -85,7 +85,8 @@ typedef struct {
 #define D11_RATEIDX_LOW128_MASK		0x7F /* 127 */
 
 /* helper macro to get RSPEC from store */
-#define WLC_RATELINKMEM_GET_RSPEC(rstore, entry)	((rstore) ? (rstore)->rspec[(entry)] : \
+#define WLC_RATELINKMEM_GET_RSPEC(rstore, entry)	((rstore) ? \
+								(rstore)->rspec[(entry)] : \
 								OFDM_RSPEC(WLC_RATE_6M))
 /**
  * Module functions

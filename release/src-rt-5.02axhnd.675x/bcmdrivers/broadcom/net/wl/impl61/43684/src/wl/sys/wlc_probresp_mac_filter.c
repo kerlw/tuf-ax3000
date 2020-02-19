@@ -93,8 +93,6 @@ static const bcm_iovar_t prb_iovars[] = {
 #error "MAX_PROBRESP is not properly defined!"
 #endif // endif
 
-#define PROBRESP_CK_THRESH 3
-
 #define PROB_RESP_EA_HASH(ea) ((((uint8*)(ea))[5] + ((uint8*)(ea))[4] + ((uint8*)(ea))[3] +\
 	((uint8*)(ea))[2] + ((uint8*)(ea))[1]) % MAX_PROBRESP)
 
@@ -108,7 +106,6 @@ static const bcm_iovar_t prb_iovars[] = {
  */
 typedef struct prob_resp_ea {
 	struct ether_addr mac;
-	uint8 check_cnt;
 	struct prob_resp_ea *next;
 } prob_resp_ea_t;
 
@@ -503,17 +500,6 @@ wlc_probresp_intransit_filter_check_probe_req(void *handle, wlc_bsscfg_t *cfg,
 	while (stap != NULL) {
 		p = stap->next;
 		if (!PROB_RESP_EA_CMP(&stap->mac, &hdr->sa)) {
-			WL_ERROR(("wl%d.%d: %s check_cnt %d mac "MACF" intransit %d\n",
-				cfg->wlc->pub->unit, WLC_BSSCFG_IDX(cfg),
-				__func__, stap->check_cnt,
-				ETHERP_TO_MACF(&hdr->sa),
-				mprobresp_mac_filter->intransit_inuse));
-			if (cfg->closednet_nobcprbresp &&
-				(stap->check_cnt++ > PROBRESP_CK_THRESH)) {
-				wlc_probresp_intransit_filter_rem_da(mprobresp_mac_filter,
-					cfg, &stap->mac);
-			}
-
 			return FALSE;
 		}
 		stap = p;

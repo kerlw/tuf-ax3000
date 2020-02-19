@@ -51,7 +51,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_intr.c 776506 2019-07-01 13:59:17Z $
+ * $Id: wlc_intr.c 777088 2019-07-18 17:39:11Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -417,16 +417,6 @@ wlc_dpc(wlc_info_t *wlc, bool bounded, wlc_dpc_info_t *dpc)
 		WL_NONE(("wl%d: got background noise samples\n", wlc_hw->unit));
 		phy_noise_sample_intr(wlc_hw->band->pi);
 	}
-
-#ifdef STA
-#endif /* STA */
-
-#if defined(STA) && defined(WLRM)
-	if (WLRM_ENAB(wlc->pub) && macintstatus & MI_CCA) { /* CCA measurement complete */
-		WL_INFORM(("wl%d: CCA measurement interrupt\n", wlc_hw->unit));
-		wlc_bmac_rm_cca_int(wlc_hw);
-	}
-#endif // endif
 
 	if (macintstatus & MI_GP0) {
 		uint16 psm_assert_reason;

@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_he.c 776966 2019-07-15 10:06:51Z $
+ * $Id: wlc_he.c 778011 2019-08-20 09:01:58Z $
  */
 
 #ifdef WL11AX
@@ -200,11 +200,17 @@ typedef struct {
 					WL_HE_FEATURES_DLOMU | WL_HE_FEATURES_ULOMU | \
 					WL_HE_FEATURES_DLMMU)
 /* default features */
-#ifndef WL_HE_FEATURES_DEFAULT
-#define WL_HE_FEATURES_DEFAULT		(WL_HE_FEATURES_2G | WL_HE_FEATURES_5G | \
-					WL_HE_FEATURES_DLOMU | WL_HE_FEATURES_ULOMU | \
-					WL_HE_FEATURES_DLMMU)
-#endif // endif
+static uint32
+WL_HE_FEATURES_DEFAULT(wlc_info_t *wlc)
+{
+	uint32 ret = (WL_HE_FEATURES_5G | WL_HE_FEATURES_2G | WL_HE_FEATURES_DLOMU |
+	              WL_HE_FEATURES_ULOMU);
+	if (!D11REV_IS(wlc->pub->corerev, 130)) { /* deemed not mature enough on this twig */
+		ret |= WL_HE_FEATURES_DLMMU;
+	}
+
+	return ret;
+}
 
 /* Max. MSDU fragments */
 #define WLC_HE_MAX_MSDU_FRAG_ENC	5 /* Max. MSDU fragments receivable by
@@ -775,7 +781,7 @@ BCMATTACHFN(wlc_he_attach)(wlc_info_t *wlc)
 
 	wlc->pub->_he_enab = TRUE;
 
-	WLC_HE_FEATURES_SET(wlc->pub, WL_HE_FEATURES_DEFAULT);
+	WLC_HE_FEATURES_SET(wlc->pub, WL_HE_FEATURES_DEFAULT(wlc));
 
 	/* update FIFOs because we enable MU */
 	wlc_hw_update_nfifo(wlc->hw);
@@ -867,6 +873,76 @@ wlc_he_remove_1024qam(wlc_info_t *wlc, uint8 nstreams, uint16 *he_mcs_nss)
 	}
 }
 
+/*
+ * Intersect HE Cap mcsmaps with that of peer's and
+ * update rateset with BW, Tx and Rx limitations
+ */
+static void
+wlc_he_intersect_txrxmcsmaps(wlc_he_info_t *hei, scb_t *scb, bool bw_160,
+		bool isomi, uint txlimit, uint rxlimit)
+{
+	scb_he_t *sh;
+	wlc_rateset_t *scb_rs;
+	uint nss;
+	uint16 txmcsmap80, rxmcsmap80, txmcsmap160, rxmcsmap160, txmcsmap80p80, rxmcsmap80p80;
+
+	sh = SCB_HE(hei, scb);
+	ASSERT(sh != NULL);
+
+	/* First copy the ratesets, apply possible BW limitations */
+	scb_rs = &scb->rateset;
+
+	/* Update tx and rx mcs maps based on intersection of Our cap with SCB's.
+	 * Intersection of our Tx and SCB's Rx to get our Tx; Our Rx and SCB's Tx to get our Rx.
+	 */
+	txmcsmap80 = wlc_he_rateset_intersection(hei->he_rateset.bw80_tx_mcs_nss,
+			sh->bw80_rx_mcs_nss);
+	rxmcsmap80 = wlc_he_rateset_intersection(hei->he_rateset.bw80_rx_mcs_nss,
+			sh->bw80_tx_mcs_nss);
+	if (bw_160) {
+		txmcsmap160 = wlc_he_rateset_intersection(hei->he_rateset.bw160_tx_mcs_nss,
+				sh->bw160_rx_mcs_nss);
+		rxmcsmap160 = wlc_he_rateset_intersection(hei->he_rateset.bw160_rx_mcs_nss,
+				sh->bw160_tx_mcs_nss);
+		txmcsmap80p80 = wlc_he_rateset_intersection(hei->he_rateset.bw80p80_tx_mcs_nss,
+				sh->bw80p80_rx_mcs_nss);
+		rxmcsmap80p80 = wlc_he_rateset_intersection(hei->he_rateset.bw80p80_rx_mcs_nss,
+				sh->bw80p80_tx_mcs_nss);
+	} else {
+		txmcsmap160 = HE_CAP_MAX_MCS_NONE_ALL;
+		rxmcsmap160 = HE_CAP_MAX_MCS_NONE_ALL;
+		txmcsmap80p80 = HE_CAP_MAX_MCS_NONE_ALL;
+		rxmcsmap80p80 = HE_CAP_MAX_MCS_NONE_ALL;
+	}
+
+	/* Now apply NSS txlimit to get final tx rateset */
+	for (nss = txlimit + 1; nss <= HE_CAP_MCS_MAP_NSS_MAX; nss++) {
+		HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, txmcsmap80);
+		HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, txmcsmap160);
+		HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, txmcsmap80p80);
+	}
+
+	if (!isomi) {
+		/* Now apply the rx chain limits */
+		for (nss = rxlimit + 1; nss <= HE_CAP_MCS_MAP_NSS_MAX; nss++) {
+			HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, rxmcsmap80);
+			HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, rxmcsmap160);
+			HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, rxmcsmap80p80);
+		}
+	}
+	scb_rs->he_bw80_tx_mcs_nss = txmcsmap80;
+	scb_rs->he_bw80_rx_mcs_nss = rxmcsmap80;
+	scb_rs->he_bw160_tx_mcs_nss = txmcsmap160;
+	scb_rs->he_bw160_rx_mcs_nss = rxmcsmap160;
+	scb_rs->he_bw80p80_tx_mcs_nss = txmcsmap80p80;
+	scb_rs->he_bw80p80_rx_mcs_nss = rxmcsmap80p80;
+
+	WL_RATE(("wl%d: %s txmcsmap80 0x%x rxmcsmap80 0x%x txmcsmap160 0x%x rxmcsmap160 0x%x"
+			" txmcsmap80p80 0x%x rxmcsmap80p80 0x%x\n",
+			hei->wlc->pub->unit, __FUNCTION__, txmcsmap80, rxmcsmap80, txmcsmap160,
+			rxmcsmap160, txmcsmap80p80, rxmcsmap80p80));
+}
+
 /**
  * initialize the given rateset with HE defaults based upon band type.
  */
@@ -927,39 +1003,12 @@ wlc_he_init_rateset(wlc_he_info_t *hei, wlc_rateset_t *rateset, uint8 band_idx, 
 static void
 wlc_he_apply_omi(wlc_info_t *wlc, scb_t *scb, uint8 omi_bw, uint8 omi_rxnss, bool update_vht)
 {
-	scb_he_t *sh;
-	wlc_rateset_t *rateset;
-	uint nss;
+	wlc_he_info_t *hei = wlc->hei;
 	uint8 oper_mode;
 
-	sh = SCB_HE(wlc->hei, scb);
-	ASSERT(sh != NULL);
-
-	/* First copy the ratesets, apply possible BW limitations */
-	rateset = &scb->rateset;
-
-	rateset->he_bw80_tx_mcs_nss = sh->bw80_tx_mcs_nss;
-	rateset->he_bw80_rx_mcs_nss = sh->bw80_rx_mcs_nss;
-
-	/* BW160 and 80p80 are one define (same value) */
-	if (omi_bw == DOT11_OPER_MODE_160MHZ)  {
-		rateset->he_bw160_tx_mcs_nss = sh->bw160_tx_mcs_nss;
-		rateset->he_bw160_rx_mcs_nss = sh->bw160_rx_mcs_nss;
-		rateset->he_bw80p80_tx_mcs_nss = sh->bw80p80_tx_mcs_nss;
-		rateset->he_bw80p80_rx_mcs_nss = sh->bw80p80_rx_mcs_nss;
-	} else {
-		rateset->he_bw160_tx_mcs_nss = HE_CAP_MAX_MCS_NONE_ALL;
-		rateset->he_bw160_rx_mcs_nss = HE_CAP_MAX_MCS_NONE_ALL;
-		rateset->he_bw80p80_tx_mcs_nss = HE_CAP_MAX_MCS_NONE_ALL;
-		rateset->he_bw80p80_rx_mcs_nss = HE_CAP_MAX_MCS_NONE_ALL;
-	}
-
-	/* Now apply NSS on top of tx rateset */
-	for (nss = omi_rxnss + 2; nss <= HE_CAP_MCS_MAP_NSS_MAX; nss++) {
-		HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, rateset->he_bw80_tx_mcs_nss);
-		HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, rateset->he_bw160_tx_mcs_nss);
-		HE_MCS_MAP_SET_MCS_PER_SS(nss, HE_CAP_MAX_MCS_NONE, rateset->he_bw80p80_tx_mcs_nss);
-	}
+	/* Intersect and update rateset */
+	wlc_he_intersect_txrxmcsmaps(hei, scb, (omi_bw == DOT11_OPER_MODE_160MHZ) ? TRUE : FALSE,
+		TRUE, omi_rxnss + 1, 0);
 
 	/* This is all what is needed within HE. The BW limitation of 20 or 40 in the final
 	 * rate table will be determined by wlc_scb_ratesel_init. The BW limitation is stored
@@ -2653,12 +2702,12 @@ wlc_he_parse_cap_ie(wlc_he_info_t *hei, scb_t *scb, he_cap_ie_t *cap)
 		wlc_rateset_he_cp(&bi->rateset, rateset);
 	}
 	/* Copy the MCS sets for all BWs to sh. They are needed to be able to apply OMI */
-	sh->bw80_tx_mcs_nss = rateset->he_bw80_tx_mcs_nss;
-	sh->bw80_rx_mcs_nss = rateset->he_bw80_rx_mcs_nss;
-	sh->bw160_tx_mcs_nss = rateset->he_bw160_tx_mcs_nss;
-	sh->bw160_rx_mcs_nss = rateset->he_bw160_rx_mcs_nss;
-	sh->bw80p80_tx_mcs_nss = rateset->he_bw80p80_tx_mcs_nss;
-	sh->bw80p80_rx_mcs_nss = rateset->he_bw80p80_rx_mcs_nss;
+	sh->bw80_tx_mcs_nss = he_rateset.bw80_tx_mcs_nss;
+	sh->bw80_rx_mcs_nss = he_rateset.bw80_rx_mcs_nss;
+	sh->bw160_tx_mcs_nss = he_rateset.bw160_tx_mcs_nss;
+	sh->bw160_rx_mcs_nss = he_rateset.bw160_rx_mcs_nss;
+	sh->bw80p80_tx_mcs_nss = he_rateset.bw80p80_tx_mcs_nss;
+	sh->bw80p80_rx_mcs_nss = he_rateset.bw80p80_rx_mcs_nss;
 
 	/* Initialize OMI values with capabilities, so no limit gets accidently applied */
 	if (getbits((uint8 *)&sh->mac_cap, sizeof(sh->mac_cap),
@@ -3784,13 +3833,13 @@ wlc_he_htc_process_omi(wlc_info_t* wlc, scb_t *scb, uint32 omi_data)
 		((omi_data & HTC_OM_CONTROL_UL_MU_DATA_DISABLE_MASK) !=
 		(he_scb->omi_htc & HTC_OM_CONTROL_UL_MU_DATA_DISABLE_MASK)));
 
+	bw_change = ((omi_data & HTC_OM_CONTROL_CHANNEL_WIDTH_MASK) !=
+		(he_scb->omi_htc & HTC_OM_CONTROL_CHANNEL_WIDTH_MASK));
+
 	/* Store original received htc omi before updating channel width,
 	 * because omi_htc has to be equal to omi_pmq to get SCB out of PS.
 	 */
 	he_scb->omi_htc = (uint16)omi_data;
-
-	bw_change = ((omi_data & HTC_OM_CONTROL_CHANNEL_WIDTH_MASK) !=
-		(he_scb->omi_htc & HTC_OM_CONTROL_CHANNEL_WIDTH_MASK));
 
 	if (bw_change) {
 		uint8 omi_bw, chanspec_bw;
@@ -3870,10 +3919,11 @@ wlc_he_htc_process_omi(wlc_info_t* wlc, scb_t *scb, uint32 omi_data)
 	}
 
 	if (ulmu_dis_change) {
-		bool admit = wlc_he_get_ulmu_allow(wlc->hei, scb);
-		WL_MUTX(("wl%d: %s: change ul ofdma STA "MACF" admission to %d\n",
-			wlc->pub->unit, __FUNCTION__, ETHER_TO_MACF(scb->ea), admit));
-		wlc_musched_admit_ulclients(wlc, scb, admit);
+		if (wlc_he_get_ulmu_allow(wlc->hei, scb) == FALSE) {
+			WL_MUTX(("wl%d: %s: change ul ofdma STA "MACF" admission to FALSE\n",
+				wlc->pub->unit, __FUNCTION__, ETHER_TO_MACF(scb->ea)));
+			wlc_musched_admit_ulclients(wlc, scb, FALSE);
+		} /* Else let the msched watchdog trigger the UL MU admission */
 #ifdef TESTBED_AP_11AX
 		update_pkt_eng_ulstate(wlc, !HTC_OM_CONTROL_UL_MU_DISABLE(omi_data));
 #endif /* TESTBED_AP_11AX */
@@ -4395,4 +4445,40 @@ wlc_he_cmd_testbed(void *ctx, uint8 *params, uint16 plen, uint8 *result, uint16 
 }
 #endif /* TESTBED_AP_11AX */
 
+/*
+ * Update the HE rateset of SCB based on the max NSS.
+ */
+void
+wlc_he_upd_scb_rateset_mcs(wlc_he_info_t *hei, struct scb *scb, uint8 link_bw)
+{
+	wlc_info_t *wlc =  hei->wlc;
+	wlc_bsscfg_t *cfg = SCB_BSSCFG(scb);
+	uint txstreams, rxstreams, peer_nss;
+
+	/* For Tx chain limit, use min of op_txsreams and Peer's NSS from OMN;
+	 * If Peer is in OMN, use the RXNSS of OMN as the Tx chains.
+	 */
+	if (SCB_VHT_CAP(scb)) {
+		peer_nss = wlc_vht_get_scb_oper_nss(wlc->vhti, scb);
+	} else if (SCB_HE_CAP(scb)) {
+		scb_he_t *sh;
+
+		sh = SCB_HE(hei, scb);
+		ASSERT(sh != NULL);
+
+		peer_nss = HE_MAX_SS_SUPPORTED(sh->bw80_tx_mcs_nss);
+		if (link_bw == BW_160MHZ) {
+			peer_nss = HE_MAX_SS_SUPPORTED(sh->bw160_tx_mcs_nss);
+		}
+	} else {
+		return;
+	}
+
+	txstreams = MIN(wlc->stf->op_txstreams, peer_nss);
+	rxstreams = MIN(wlc->stf->op_rxstreams, wlc_stf_rxstreams_get(wlc));
+
+	/* Intersect and update rateset */
+	wlc_he_intersect_txrxmcsmaps(hei, scb, !wlc_he_bw80_limited(wlc, cfg),
+		FALSE, txstreams, rxstreams);
+}
 #endif /* WL11AX */

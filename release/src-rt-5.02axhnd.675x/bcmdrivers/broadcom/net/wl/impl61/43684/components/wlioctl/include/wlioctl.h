@@ -21,7 +21,7 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wlioctl.h 775500 2019-06-02 00:14:24Z $
+ * $Id: wlioctl.h 777625 2019-08-06 19:54:12Z $
  */
 
 #ifndef _wlioctl_h_
@@ -7767,6 +7767,8 @@ typedef struct nbr_rpt_elem {
 	uint8 bss_trans_preference;
 	uint8 flags;
 } nbr_rpt_elem_t;
+#define WL_RRM_NBR_RPT_LCI_FLAG     0x1
+#define WL_RRM_NBR_RPT_CIVIC_FLAG	0x2
 
 /* Neighbor Report List */
 typedef struct nbr_list {
@@ -13091,6 +13093,33 @@ typedef struct txstrmreq {
 	uint8 bin0_range;	/* Delay range of the first bin */
 } txstrmreq_t;
 
+#define WL_RRM_LCI_REQ_VER		1
+typedef struct lci_req {
+	uint8 version;
+	uint8 len;
+	struct ether_addr da;
+	uint8 subject;
+	uint8 azimuth_req;
+	uint16 max_age;
+	struct ether_addr orig_addr;
+	struct ether_addr target_addr;
+} lci_req_t;
+
+#define WL_RRM_CIVIC_REQ_VER		1
+typedef struct civic_req {
+	uint8 version;
+	uint8 len;
+	struct ether_addr da;
+	uint8 subject;
+	uint8 type;
+	uint16 service_interval;
+	uint8 si_units;
+	uint8 pad[3];
+	struct ether_addr orig_addr;
+	struct ether_addr target_addr;
+} civic_req_t;
+
+/* (unversioned, deprecated) */
 typedef struct lcireq {
 	struct ether_addr da;	/* Destination address */
 	uint16 reps;		/* number of repetitions */
@@ -13100,6 +13129,7 @@ typedef struct lcireq {
 	uint8 alt_res;		/* Altitude requested Resolution */
 } lcireq_t;
 
+/* (unversioned, deprecated) */
 typedef struct civicreq {
 	struct ether_addr da;	/* Destination address */
 	uint16 reps;		/* number of repetitions */
@@ -13209,7 +13239,9 @@ typedef struct wl_rrm_frng_ioc {
 enum {
 	WL_RRM_FRNG_NONE	= 0,	/* reserved */
 	WL_RRM_FRNG_SET_REQ	= 1,	/* send ftm ranging request */
-	WL_RRM_FRNG_MAX		= 2
+	WL_RRM_FRNG_SET_REP	= 2,	/* send ftm ranging report */
+	WL_RRM_FRNG_SET_DIR	= 3,	/* direct ranging (let the driver do ranging) */
+	WL_RRM_FRNG_MAX		= 4
 };
 
 #define WL_RRM_FRNG_NAME "rrm_frng"
@@ -13588,6 +13620,7 @@ enum {
 	WL_PROXD_SESSION_FLAG_TX_AUTO_BURST	= 0x00000200,  /**< Same as proxd flags above */
 	WL_PROXD_SESSION_FLAG_NAN_BSS		= 0x00000400,  /**< Use NAN BSS, if applicable */
 	WL_PROXD_SESSION_FLAG_TS1		= 0x00000800,  /**< e.g. FTM1 - ASAP-capable */
+	WL_PROXD_SESSION_FLAG_RANDMAC		= 0x00001000,  /**< use random mac */
 	WL_PROXD_SESSION_FLAG_REPORT_FAILURE	= 0x00002000, /**< report failure to target */
 	WL_PROXD_SESSION_FLAG_INITIATOR_RPT	= 0x00004000, /**< report distance to target */
 	WL_PROXD_SESSION_FLAG_NOCHANSWT		= 0x00008000,
@@ -13725,6 +13758,7 @@ enum {
 	WL_PROXD_E_CANCELED		= -1026,	/**< local */
 	WL_PROXD_E_INVALID_SESSION	= -1025,
 	WL_PROXD_E_BAD_STATE		= -1024,
+	WL_PROXD_E_START		= -1024,
 	WL_PROXD_E_ERROR		= -1,
 	WL_PROXD_E_OK			= 0
 };
@@ -14127,7 +14161,7 @@ enum {
 typedef uint32 wl_proxd_debug_mask_t;
 
 /** tlv IDs - data length 4 bytes unless overridden by type, alignment 32 bits */
-enum {
+typedef enum {
 	WL_PROXD_TLV_ID_NONE			= 0,
 	WL_PROXD_TLV_ID_METHOD			= 1,
 	WL_PROXD_TLV_ID_FLAGS			= 2,
@@ -14191,8 +14225,65 @@ enum {
 	WL_PROXD_TLV_ID_COLLECT_CHAN_DATA	= 1030,	/* wl_proxd_collect_data_t */
 	WL_PROXD_TLV_ID_MF_STATS_DATA		= 1031,	/* mf_stats_buffer */
 
+	WL_PROXD_TLV_ID_COLLECT_INLINE_HEADER	= 1032,
+	WL_PROXD_TLV_ID_COLLECT_INLINE_FRAME_INFO	= 1033,
+	WL_PROXD_TLV_ID_COLLECT_INLINE_FRAME_DATA	= 1034,
+	WL_PROXD_TLV_ID_COLLECT_INLINE_RESULTS	= 1035,
+
 	WL_PROXD_TLV_ID_MAX
-};
+} wl_proxd_tlv_types_t;
+
+#define TOF_COLLECT_INLINE_HEADER_INFO_VER_1	1
+
+typedef struct wl_proxd_collect_inline_header_info_v1
+{
+	uint16			version;
+	uint16			pad1;
+	uint32			ratespec;		/* override */
+	chanspec_t		chanspec;
+	uint16			num_ftm;
+	struct ether_addr	peer_mac;
+	struct ether_addr	cur_ether_addr;		/* source address for Tx */
+} wl_proxd_collect_inline_header_info_v1_t;
+
+#define TOF_COLLECT_INLINE_RESULTS_VER_1		1
+typedef struct wl_proxd_collect_inline_results_info_v1
+{
+	uint16 version;
+	uint16 pad1;
+	uint32 meanrtt;
+	uint32 distance;
+	uint16 num_rtt;
+	uint16 pad2;
+	int32 status;
+	uint32 ratespec;
+} wl_proxd_collect_inline_results_info_v1_t;
+
+#define TOF_COLLECT_INLINE_FRAME_INFO_VER_1	1
+typedef struct wl_proxd_collect_inline_frame_info_v1
+{
+	uint16 version;
+	uint16 pad1;
+	int32 gd;
+	uint32 T[4];
+	uint32 prev_t1;
+	uint32 prev_t4;
+	int32 hadj;
+	int8 rssi;
+	uint8 pad[3];
+} wl_proxd_collect_inline_frame_info_v1_t;
+
+#define TOF_COLLECT_INLINE_FRAME_INFO_VER_2	2
+typedef struct wl_proxd_collect_inline_frame_info_v2
+{
+	uint16 version;
+	uint16 pad1;
+	int32 gd;
+	uint32 T[4];
+	int32 hadj;
+	int8 rssi;
+	uint8 pad[3];
+} wl_proxd_collect_inline_frame_info_v2_t;
 
 typedef struct wl_proxd_tlv {
 	uint16 id;
@@ -14257,7 +14348,7 @@ typedef struct wl_proxd_event {
 	wl_proxd_event_type_t	type;
 	wl_proxd_method_t	method;
 	wl_proxd_session_id_t	sid;
-	uint8			pad[2];
+	uint8			pad[2];		/* This field is used fragmentation purpose */
 	wl_proxd_tlv_t		tlvs[1];	/**< variable */
 } wl_proxd_event_t;
 

@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_twt.c 776910 2019-07-12 14:15:22Z $
+ * $Id: wlc_twt.c 777318 2019-07-26 17:37:00Z $
  */
 
 #ifdef WLTWT
@@ -85,6 +85,7 @@
 #include <wlc_hw_priv.h>
 #include <wlc_cfp.h>
 #include <wlc_dump.h>
+#include <wlc_mutx.h>
 
 #define WLC_TWT_MAX_BTWT_CLIENTS	16		/* Max clients supported in one BTWT (AP) */
 #define WLC_TWT_MAX_BTWT		8		/* Max broadcast TWTs currently supported */
@@ -238,6 +239,7 @@ static int wlc_twt_doiovar(void *ctx, uint32 actionid, void *params, uint plen,
 #if defined(BCMDBG) || defined(BCMDBG_DUMP) || defined(DUMP_TWT)
 static int wlc_twt_dump(void *ctx, struct bcmstrbuf *b);
 #endif /* BCMDBG || BCMDBG_DUMP || DUMP_TWT */
+static int wlc_twt_wlc_up(void *ctx);
 
 /* bsscfg cubby */
 static int wlc_twt_bss_init(void *ctx, wlc_bsscfg_t *cfg);
@@ -329,7 +331,7 @@ BCMATTACHFN(wlc_twt_attach)(wlc_info_t *wlc)
 
 	/* register module up/down, watchdog, and iovar callbacks */
 	if (wlc_module_register(wlc->pub, twt_iovars, "twt", twti, wlc_twt_doiovar,
-			NULL, NULL, NULL) != BCME_OK) {
+			NULL, wlc_twt_wlc_up, NULL) != BCME_OK) {
 		WL_ERROR(("wl%d: %s: wlc_module_register failed\n", wlc->pub->unit, __FUNCTION__));
 		goto fail;
 	}
@@ -2842,13 +2844,17 @@ wlc_twt_itwt_rlm_scheduler_update_trigger(void *arg)
 					WL_ERROR(("%s TSF (%08x:%08x) too far in future\n",
 						__FUNCTION__, delta_h, delta_l));
 					continue;
-				} else {
-					WL_TWT(("Missed SP schedule, jumping ahead\n"));
-					/* Keep adding interval till we delta_h is 0 */
-					while (delta_h) {
-						wlc_uint64_add(&delta_h, &delta_l, 0,
-							indv->wake_interval);
-					}
+				}
+				WL_TWT(("Missed SP schedule, jumping ahead,"
+					" delta (%08x:%08x) tsf (%08x:%08x) wake_int %08x\n",
+					delta_h, delta_l, tsf_h, tsf_l, indv->wake_interval));
+				/* Keep adding interval till we delta_h is 0 */
+				while (delta_h) {
+					wlc_uint64_add(&delta_h, &delta_l, 0,
+						indv->wake_interval);
+					/* for assertion check in the next if body */
+					wlc_uint64_add(&indv->twt_h, &indv->twt_l, 0,
+						indv->wake_interval);
 				}
 			}
 			/* if schedid of delta_l is 0 then we are too late!! It would mean
@@ -3136,9 +3142,12 @@ wlc_twt_itwt_start(wlc_twt_info_t *twti, scb_t *scb, twt_indv_desc_t *indv)
 	}
 
 #ifdef WLCFP
-	/* Trigger CFP patch update check. TWT will block it */
+	/* Trigger CFP path update check. TWT will block it */
 	wlc_cfp_scb_state_upd(wlc->cfp, scb);
 #endif /* WLCFP */
+
+	/* Trigger MUTX to re-evaluate admission */
+	wlc_mutx_he_eval_and_admit_clients(wlc->mutx, scb, TRUE);
 
 	return BCME_OK;
 }
@@ -3194,6 +3203,15 @@ wlc_twt_itwt_stop(wlc_twt_info_t *twti, scb_t *scb, twt_indv_desc_t *indv, bool 
 	if (total == 0) {
 		wlc_apps_bcmc_force_ps_by_twt(wlc, SCB_BSSCFG(scb), FALSE);
 	}
+
+#ifdef WLCFP
+	/* Trigger CFP path update check. TWT would have blocked it */
+	wlc_cfp_scb_state_upd(wlc->cfp, scb);
+#endif /* WLCFP */
+
+	/* Trigger MUTX to re-evaluate admission */
+	wlc_mutx_he_eval_and_admit_clients(wlc->mutx, scb, TRUE);
+
 	return BCME_OK;
 }
 
@@ -3366,6 +3384,38 @@ wlc_twt_fill_link_entry(wlc_twt_info_t *twti, scb_t *scb, d11linkmem_entry_t *li
 	}
 	WL_TWT(("%s TWT active for this SCB %p\n", __FUNCTION__, scb));
 	link_entry->BFIConfig1 |= 0x8;		/* indicate this is TWT user */
+}
+
+/* wlc up/init callback, this function is registered to deal with reinit/big hammer handling.
+ * When this function is called while the TWT is active, so there are one or more TWT schedules
+ * active then it is safe to assume this happened due to reinit of driver. When this happesn
+ * ucode will be reset and te RLM scheduler should reinitialize. Since the TWT scheduler timer
+ * will continue like normal the safest method to deal with this is clear the RLM and reinit
+ * the state such that ucode will get re-initialized on the next schedule.
+ */
+static int
+wlc_twt_wlc_up(void *ctx)
+{
+	wlc_twt_info_t *twti = ctx;
+	wlc_info_t *wlc = twti->wlc;
+	uint8 i;
+
+	WL_TWT(("%s Enter\n", __FUNCTION__));
+
+	if (twti->rlm_scheduler_active) {
+		twti->rlm_scheduler_active = FALSE;
+		/* Reset the rlm programming index */
+		twti->rlm_prog_idx = 0;
+		twti->rlm_read_idx = 0;
+		/* Clear RLM before ucode TWT gets enabled */
+		memset(twti->twtschedblk, 0, sizeof(twti->twtschedblk));
+		for (i = 0; i < AMT_IDX_TWT_RSVD_SIZE; i++) {
+			wlc_ratelinkmem_update_link_twtschedblk(wlc, i,
+				(uint8 *)&twti->twtschedblk[i], sizeof(twti->twtschedblk[i]));
+		}
+	}
+
+	return BCME_OK;
 }
 
 #endif /* WLTWT */

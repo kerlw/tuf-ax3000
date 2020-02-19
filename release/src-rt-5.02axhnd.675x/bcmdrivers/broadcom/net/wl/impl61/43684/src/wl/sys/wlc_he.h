@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_he.h 773512 2019-03-21 21:12:13Z $
+ * $Id: wlc_he.h 777844 2019-08-13 07:36:57Z $
  */
 
 #ifndef _wlc_he_h_
@@ -175,5 +175,6 @@ extern uint16 wlc_he_get_scb_flags(wlc_he_info_t *hei, struct scb *scb);
 extern bool wlc_he_get_ulmu_allow(wlc_he_info_t *hei, struct scb *scb);
 
 void wlc_he_recv_af_oper_mode(wlc_info_t* wlc, scb_t *scb, uint8 oper_mode);
+void wlc_he_upd_scb_rateset_mcs(wlc_he_info_t *hei, struct scb *scb, uint8 link_bw);
 
 #endif /* _wlc_he_h_ */

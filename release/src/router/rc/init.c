@@ -74,6 +74,20 @@
 #include <aura_rgb.h>
 #endif
 
+#if defined(K3C)
+#include <k3c.h>
+#elif defined(K3)
+#include <k3.h>
+#elif defined(SBRAC1900P)
+#include <1900p.h>
+#elif defined(SBRAC3200P)
+#include <3200p.h>
+#elif defined(R7900P) || defined(R8000P)
+#include <r7900p.h>
+#else
+#include <merlinr.h>
+#endif
+
 #define SHELL "/bin/sh"
 #define LOGIN "/bin/login"
 
@@ -103,18 +117,21 @@ static char *defenv[] = {
 	"HOME=/",
 	//"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
 #ifdef RTCONFIG_LANTIQ
-	"PATH=/opt/usr/bin:/opt/bin:/opt/usr/sbin:/opt/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/rom/opt/lantiq/bin:/rom/opt/lantiq/usr/sbin",
+	"PATH=/opt/usr/bin:/opt/bin:/opt/usr/sbin:/opt/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/rom/opt/lantiq/bin:/rom/opt/lantiq/usr/sbin:/jffs/softcenter/bin:/jffs/softcenter/scripts",
 #else
-	"PATH=/opt/usr/bin:/opt/bin:/opt/usr/sbin:/opt/sbin:/usr/bin:/bin:/usr/sbin:/sbin",
+	"PATH=/opt/usr/bin:/opt/bin:/opt/usr/sbin:/opt/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/jffs/softcenter/bin:/jffs/softcenter/scripts",
 #endif
 #ifdef HND_ROUTER
-	"LD_LIBRARY_PATH=/lib:/usr/lib:/lib/aarch64",
+	"LD_LIBRARY_PATH=/lib:/usr/lib:/lib/aarch64:/jffs/softcenter/lib",
 #endif
 #ifdef RTCONFIG_BCM_MFG
 	"PS1=# ",
 #endif
 #ifdef RTCONFIG_LANTIQ
-	"LD_LIBRARY_PATH=/lib:/usr/lib:/opt/lantiq/usr/lib:/opt/lantiq/usr/sbin/:/tmp/wireless/lantiq/usr/lib/",
+	"LD_LIBRARY_PATH=/lib:/usr/lib:/opt/lantiq/usr/lib:/opt/lantiq/usr/sbin/:/tmp/wireless/lantiq/usr/lib/:/jffs/softcenter/lib",
+#endif
+#if defined(RTAC3100) || defined(RTAC68U) || defined(RTAC3200)
+	"LD_LIBRARY_PATH=/lib:/usr/lib:/jffs/softcenter/lib",
 #endif
 	"SHELL=" SHELL,
 	"USER=root",
@@ -7820,6 +7837,7 @@ int init_nvram(void)
 	case MODEL_RTAX58U:
 		update_rf_para();
 		update_43684_tempthresh();
+		merlinr_init();
 		nvram_set("lan_ifname", "br0");
 		if (is_router_mode()) {
 			nvram_set("lan_ifnames", "eth0 eth1 eth2 eth3 eth5 eth6");
@@ -10922,6 +10940,7 @@ static void sysinit(void)
 		"/tmp/etc/rc.d",
 #endif
 		"/tmp/var/tmp",
+		"/tmp/etc/dnsmasq.user",	// ssr and adbyby
 		NULL
 	};
 	umask(0);
@@ -11564,6 +11583,7 @@ int init_main(int argc, char *argv[])
 #ifdef RTN65U
 		asm1042_upgrade(1);	// check whether upgrade firmware of ASM1042
 #endif
+		run_custom_script("init-start", 0, NULL, NULL);
 
 		state = SIGUSR2;	/* START */
 
@@ -12143,6 +12163,13 @@ _dprintf("%s %d turnning on power on ethernet here\n", __func__, __LINE__);
 #ifndef RTCONFIG_LANTIQ
 			nvram_set("success_start_service", "1");
 			force_free_caches();
+#endif
+#if defined(K3)
+			k3_init_done();
+#elif defined(R7900P)||defined(R8000P)
+			r8000p_init_done();
+#else
+			merlinr_init_done();
 #endif
 
 #ifdef RTCONFIG_AMAS

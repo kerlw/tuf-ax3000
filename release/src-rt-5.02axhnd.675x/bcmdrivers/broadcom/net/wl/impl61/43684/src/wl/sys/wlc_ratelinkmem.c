@@ -184,6 +184,7 @@ struct wlc_ratelinkmem_info {
 	uint		rate_dma_sz;	/* last DMA'ed size */
 	d11ratemem_rev128_entry_t rate_entry; /* single rate entry for filling and copying to HW */
 	uint8		null_link_entry[WLC_RLM_LINK_ENTRY_SIZE_FULL];	/* used for erasing */
+	bool		block_in_release; /* block new calls into RLM during release of AMT */
 };
 
 /* Local function declarations */
@@ -1225,6 +1226,12 @@ wlc_ratelinkmem_update_rate_entry(wlc_info_t *wlc, scb_t *scb,
 			scbh, ETHER_TO_MACF(scb->ea)));
 		return BCME_ERROR;
 	}
+	if (rlmi->block_in_release) {
+		WL_INFORM(("wl%d: %s, %p, %p, STA: "MACF" Skip updating ratemem"
+			" while in release\n", wlc->pub->unit, __FUNCTION__, scb,
+			scbh, ETHER_TO_MACF(scb->ea)));
+		return BCME_NOTREADY;
+	}
 
 	if ((scbh->rate_state == RATE_ENTRY_STATE_UNINITED) &&
 		(scbh->link_state == LINK_ENTRY_STATE_UNINITED)) {
@@ -1604,6 +1611,12 @@ wlc_ratelinkmem_update_link_entry_onsize(wlc_info_t *wlc, scb_t *scb, uint16 siz
 			scbh, ETHER_TO_MACF(scb->ea)));
 		return BCME_ERROR;
 	}
+	if (rlmi->block_in_release) {
+		WL_INFORM(("wl%d: %s, %p, %p, STA: "MACF" Skip updating linkmem"
+			" while in release\n", wlc->pub->unit, __FUNCTION__, scb,
+			scbh, ETHER_TO_MACF(scb->ea)));
+		return BCME_NOTREADY;
+	}
 
 	if ((scbh->rate_state == RATE_ENTRY_STATE_UNINITED) &&
 		(scbh->link_state == LINK_ENTRY_STATE_UNINITED)) {
@@ -1829,8 +1842,11 @@ wlc_ratelinkmem_scb_amt_release(wlc_info_t *wlc, scb_t *scb, int index)
 		scbh->rate_state = RATE_ENTRY_STATE_UNINITED;
 		scbh->link_state = LINK_ENTRY_STATE_UNINITED;
 
+		/* avoid scb_ratesel_init from triggering new setup of rate or link mem */
+		rlmi->block_in_release = TRUE;
 		/* notify RATESEL (and TXC) that existing rateentry is no longer valid */
 		wlc_scb_ratesel_init(wlc, scb);
+		rlmi->block_in_release = FALSE;
 	} /* else nothing to do */
 } /* wlc_ratelinkmem_scb_amt_release */
 

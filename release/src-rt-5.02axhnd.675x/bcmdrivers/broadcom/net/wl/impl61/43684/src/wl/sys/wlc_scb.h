@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scb.h 776084 2019-06-18 11:55:34Z $
+ * $Id: wlc_scb.h 777861 2019-08-13 21:59:37Z $
  */
 
 #ifndef _wlc_scb_h_
@@ -99,8 +99,9 @@ struct scb_trf_info {
 		((scb)->pkts_inflt_fifocnt[(prio)]++)	/**< Increment by 1 */
 #define SCB_PKTS_INFLT_FIFOCNT_DECR(scb, prio) \
 	do { \
-		((scb)->pkts_inflt_fifocnt[(prio)]--); /**< Decrement by 1 */ \
-		ASSERT((scb)->pkts_inflt_fifocnt[(prio)] >= 0); \
+		if ((scb)->pkts_inflt_fifocnt[(prio)]) {\
+			((scb)->pkts_inflt_fifocnt[(prio)]--); /**< Decrement by 1 */ \
+		} \
 	} while (0);
 #define SCB_PKTS_INFLT_FIFOCNT_ADD(scb, prio, delta) \
 		((scb)->pkts_inflt_fifocnt[(prio)] += (delta))	/**< Increment by specified value */
@@ -233,6 +234,9 @@ struct scb {
 #endif /* WLCNTSCB */
 
 	uint32 mem_bytes; /* bytes of memory allocated for this scb */
+#ifdef WL_SAE
+	uint8 pmkid_included; /* PMKID included in assoc request */
+#endif /* WL_SAE */
 };
 
 /** Iterator for scb list */

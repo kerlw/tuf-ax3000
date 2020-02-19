@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: pdftmpvt.h 691862 2017-03-24 06:26:32Z $
+ * $Id: pdftmpvt.h 777979 2019-08-19 23:14:13Z $
  */
 
 #ifndef _pdftmpvt_h_
@@ -55,6 +55,9 @@
 #include <wlc_cfg.h>
 
 #include <typedefs.h>
+#ifdef WL_RANGE_SEQ
+#include <bcmstdlib_s.h>
+#endif // endif
 #include <bcmendian.h>
 #include <bcmutils.h>
 #include <bcmtlv.h>
@@ -63,6 +66,9 @@
 #include <wlioctl.h>
 #include <bcmwifi_channels.h>
 #include <bcm_notif_pub.h>
+#ifdef WL_RANGE_SEQ
+#include <bcmwpa.h>
+#endif // endif
 
 #include <osl.h>
 #include <wl_dbg.h>
@@ -97,7 +103,11 @@
 #include <wlc_pdsvc.h>
 #include <wlc_pdmthd.h>
 #include <phy_tof_api.h>
-#include <wlc_awdl.h>
+#ifdef WLTDLS
+#include <wlc_tdls.h>
+#endif // endif
+
+#define	PHY_CH_EST_SMPL_SZ	512
 
 #define HOWMANY(x, y) ((((x) + (y) - 1)) / (y))
 
@@ -138,6 +148,7 @@ struct pdftm_config {
 	wl_proxd_avail_t		*local_avail;	/* local availability */
 	struct ether_addr		dev_addr;
 	uint8				nan_map_id;
+	wl_proxd_flags_t		scratch_flags;
 };
 typedef struct pdftm_config pdftm_config_t;
 
@@ -227,12 +238,31 @@ enum {
 };
 typedef int8 pdftm_tsf_scan_state_t;
 
+enum {
+	TARGET_STATS_MF_BUF_RCVD		= (1 << 0),
+	TARGET_STATS_MF_BUF_BITFLIPS_VALID	= (1 << 1),
+	TARGET_STATS_MF_BUF_SNR_VALID		= (1 << 2),
+	TARGET_STATS_MEAS_INFO_RCVD		= (1 << 3),
+	TARGET_STATS_MF_STATS_BUF_RCVD		= (1 << 4),
+	TARGET_STATS_ALL			= 0xffff
+};
+typedef uint16 target_stats_status_t;
+
 struct target_side_data {
-    wl_proxd_bitflips_t		bit_flips;
-    wl_proxd_snr_t		snr;
-    wl_proxd_phy_error_t	target_phy_error;
+	wl_proxd_bitflips_t	bit_flips;
+	wl_proxd_snr_t		snr;
+	wl_proxd_phy_error_t	target_phy_error;
+	target_stats_status_t	status;	/* bit mask, see above target_stats_status_t */
 };
 typedef struct target_side_data target_side_data_t;
+
+typedef struct pdftm_session_record {
+	wl_proxd_session_state_t	state;
+	wl_proxd_status_t		status;
+	pdftm_time_t			state_ts;
+} pdftm_session_record_t;
+
+#define FTM_SESSION_MAX_RECORDS		10u
 
 struct pdftm_session {
 	pdftm_t				*ftm;
@@ -257,6 +287,10 @@ struct pdftm_session {
 	pdftm_tsf_scan_state_t		tsf_scan_state;
 	wlc_hrt_to_t			*ftm1_tx_timer; /* FTM1 tx timer */
 	target_side_data_t		target_stats;
+	wlc_bsscfg_t			*event_bsscfg; /* bsscfg to be used for FTM events */
+	uint8				scan_retry_attempt;
+	int				session_rec_idx; /* current rec index */
+	pdftm_session_record_t		*session_records; /* session state records/history */
 };
 
 #define FTM_SESSION_INVALID_IDX 0xff
@@ -307,13 +341,13 @@ struct pdftm_cmn {
 };
 #define FTM_DIG_INIT(_ftm, _sn, _dig) do {\
 	_dig = (_ftm)->ftm_cmn->dig; \
-	memset((_dig), 0, sizeof(*(_dig))); \
+	bzero((_dig), sizeof(*(_dig))); \
 	(_dig)->ftm = _ftm; \
 	(_dig)->session = _sn; \
 } while (0)
 
 #define FTM_DIG_RESET(_ftm, _sn, _dig) do { \
-	memset((_dig), 0, sizeof(*(_dig))); \
+	bzero((_dig), sizeof(*(_dig))); \
 	(_dig)->ftm = _ftm; \
 	(_dig)->session = _sn; \
 } while (0)
@@ -323,7 +357,7 @@ struct pdftm {
 	wlc_info_t	*wlc;
 	pdsvc_t		*pd;
 	pdftm_cmn_t	*ftm_cmn;
-	int		scb_cubby_h;	/* scb cubby handle */
+	int		scbh;	/* scb cubby handle */
 };
 /* packing support  - digest of supported tlvs and pack/unpack state */
 
@@ -446,10 +480,8 @@ struct wlc_ftm_ranging_ctx {
 
 /* logging support */
 #ifdef EVENT_LOG_COMPILE
-#define FTM_INFO(_args) do { \
-	if (EVENT_LOG_IS_LOG_ON(EVENT_LOG_TAG_PROXD_INFO)) \
-		EVENT_LOG_COMPACT_CAST_PAREN_ARGS(EVENT_LOG_TAG_PROXD_INFO, _args); \
-	} while (0)
+#define FTM_INFO(_args) \
+	EVENT_LOG_COMPACT_CAST_PAREN_ARGS(EVENT_LOG_TAG_PROXD_INFO, _args);
 #define FTM_TRACE(_args) do { \
 	if (EVENT_LOG_IS_LOG_ON(EVENT_LOG_TAG_PROXD_TRACE)) \
 		EVENT_LOG_COMPACT_CAST_PAREN_ARGS(EVENT_LOG_TAG_PROXD_TRACE, _args); \
@@ -567,6 +599,9 @@ enum {
 
 #define FTM_BSSCFG_FTM_ENABLED(_ftm, _bsscfg) isset((_ftm)->enabled_bss, \
 	FTM_BSSCFG_OPTION_BIT(_bsscfg, FTM_BSSCFG_OPTION_TX))
+
+#define FTM_BSSCFG_FTM_RX_ENABLED(_ftm, _bsscfg) isset((_ftm)->enabled_bss, \
+	FTM_BSSCFG_OPTION_BIT(_bsscfg, FTM_BSSCFG_OPTION_RX))
 
 #define FTM_WLC_UP(_ftm) FTM_PUB(_ftm)->up
 #define FTM_WLC_HW_UP(_ftm) FTM_PUB(_ftm)->hw_up
@@ -698,7 +733,7 @@ enum {
 
 #define FTM_SCHED_DELAY_EXP_ADJ_US 2000
 #define FTM_GETEXP(_x, _e) do {\
-	int _i; \
+	uint _i; \
 	uint64 _x2 = (_x); \
 	for (_i = 0, (_e) = 0; _i < (sizeof(_x) * NBBY); ++_i, (_x2) >>= 1) {\
 		if ((_x2) & 0x1) (_e) = _i; \
@@ -707,13 +742,15 @@ enum {
 
 #define FTM_PROTO_BEXP(_val, _exp) FTM_GETEXP(_val, _exp)
 
-#define FTM_GETEXP_ROUNDUP(_val, _nbits, _res) {\
+#define FTM_GETEXP_ROUNDUP(_val, _nbits, _res) { \
 	int _shift = (_nbits); \
-	while ((_shift > 0) && (((1 << (_shift)) & (_val)) == 0)) \
+	while ((_shift > 0) && (((1 << (_shift)) & (_val)) == 0)) { \
 		(_shift)--; \
+	} \
 	_res =  _shift + 1; \
-	if ((1 << _shift)  == (_val)) \
+	if ((1U << _shift)  == (_val)) { \
 		_res = (_res) - 1; \
+	} \
 }
 
 #define FTM_PROTO_BURSTTMO(_val, _exp) do {\
@@ -771,10 +808,11 @@ enum {
 #define FTM_SESSION_DEFAULT_BURST_PERIOD_MS 5000
 
 /* Default FTM separation in micro seconds */
-#define FTM_SEP_SEQ_EN	3600
-#define FTM_SEP_80M	940
-#define FTM_SEP_40M	460
-#define FTM_SEP_20M	90
+#define FTM_SEP_SEQ_EN	3600u
+#define FTM_SEP_80M	1300u
+#define FTM_SEP_40M	700u
+#define FTM_SEP_20M	200u
+#define FTM_SEP_CM3	1400u
 
 #define FTM_SESSION_FOR_SID(_ftm, _sid) pdftm_find_session(_ftm, \
 	&(_sid), NULL, WL_PROXD_SESSION_FLAG_NONE, WL_PROXD_SESSION_STATE_NONE)
@@ -792,7 +830,7 @@ enum {
 } while (0)
 
 #define FTM_INIT_NOTIFY_INFO(_ni, _sn) do {\
-	memset(_ni, 0, sizeof(*(_ni))); \
+	bzero(_ni, sizeof(*(_ni))); \
 	(_ni)->sn = (_sn); \
 } while (0)
 
@@ -850,13 +888,17 @@ enum {
 #endif /* BCMDBG */
 
 /* for availability */
-#define FTM_AVAIL_SLOTS_INC		8
+#define FTM_AVAIL_SLOTS_INC				8u
 
-#define FTM_SESSION_TSF_SCAN_ACTIVE_TIME_MS 10
-#define FTM_SESSION_TSF_SCAN_PASSIVE_TIME_MS 200
-#define FTM_SESSION_TSF_SCAN_NUM_PROBES 2
-#define FTM_SESSION_TSF_SCAN_RETRY_MS 100
-#define FTM_SESSION_MSCH_BURST_ALLOWED_RETRY_MS 1
+#define FTM_SESSION_TSF_SCAN_ACTIVE_TIME_MS		10u
+#define FTM_SESSION_TSF_SCAN_PASSIVE_TIME_MS		200u
+#define FTM_SESSION_TSF_SCAN_NUM_PROBES			2u
+#define FTM_SESSION_TSF_SCAN_RETRY_MS			100u
+#define FTM_SESSION_MSCH_BURST_ALLOWED_RETRY_MS		1u
+#define FTM_SESSION_TSF_SCAN_RETRY_MAX_ATTEMPT		3u
+
+#define FTM_SESSION_SCAN_RETRIES_DONE(attempt) ((attempt) > \
+		FTM_SESSION_TSF_SCAN_RETRY_MAX_ATTEMPT)
 
 #define FTM_STATE_SET_BURST_DURATION(_st) FTM_INIT_INTVL(&(_st)->retry_after, \
 				(_st)->burst_end - (_st)->burst_start, WL_PROXD_TMU_MICRO_SEC)
@@ -915,6 +957,15 @@ typedef struct ftm_scb ftm_scb_t;
 /* buffer used to compose tpk data for hashing */
 #define FTM_TPK_BUF_LEN 128
 
+#ifdef EVENT_LOG_COMPILE
+#define TOF_PRINTF(x) do { \
+	if (EVENT_LOG_IS_LOG_ON(EVENT_LOG_TAG_PROXD_INFO)) \
+	EVENT_LOG_COMPACT_CAST_PAREN_ARGS(EVENT_LOG_TAG_PROXD_INFO, x); \
+} while (0)
+#else /* EVENT_LOG_COMPILE */
+#define TOF_PRINTF(x)   printf x
+#endif /* EVENT_LOG_COMPILE */
+
 /* prototypes */
 
 extern const pdburst_callbacks_t pdftm_burst_callbacks;
@@ -947,6 +998,9 @@ int pdftm_start_session(pdftm_session_t *sn);
 /* stop a session */
 int pdftm_stop_session(pdftm_session_t *sn, wl_proxd_status_t status);
 
+/* check if session is on chan */
+bool pdftm_session_is_onchan(pdftm_session_t *sn);
+
 /* resolve tx bsscfg for session */
 wlc_bsscfg_t* pdftm_get_session_tx_bsscfg(const pdftm_session_t *sn);
 
@@ -964,13 +1018,16 @@ uint16 pdftm_resolve_num_ftm(pdftm_t *ftm, wl_proxd_session_flags_t flags,
 /* convert tsf to/from local/session; local arg refers to input tsf */
 uint64 pdftm_convert_tsf(const pdftm_session_t *sn, uint64 tsf, bool local);
 
+/* state record */
+void pdftm_record_session_state(pdftm_session_t *sn);
+
 /* state update */
 int pdftm_change_session_state(pdftm_session_t *sn,
 	wl_proxd_status_t status, wl_proxd_session_state_t new_state);
 
 /* get burst parameters */
 int pdftm_get_burst_params(pdftm_session_t *sn,
-	const uint8 *req, int req_len, const wlc_d11rxhdr_t *req_wrxh,
+	const uint8 *req, uint req_len, const wlc_d11rxhdr_t *req_wrxh,
 	ratespec_t req_rspec, pdburst_params_t *params);
 
 /* transmit ftm frame */
@@ -996,16 +1053,16 @@ int pdftm_end_sched(pdftm_t *ftm);
 int pdftm_sched_process_session_end(pdftm_t *ftm, pdftm_session_idx_t start,
 	pdftm_session_idx_t end);
 int pdftm_sched_session(pdftm_t *ftm, pdftm_session_t *sn);
-int vs_prep_mf_buf(uint8 *body, int body_max, int len, pdburst_session_info_t *bsi,
-	pdftm_session_t *sn, pdburst_frame_type_t type, int *prev_ie_len,
-	int *vs_ie_len);
+int vs_prep_mf_buf(uint8 *body, uint body_max, uint len, pdburst_session_info_t *bsi,
+	pdftm_session_t *sn, pdburst_frame_type_t type, uint *prev_ie_len,
+	uint *vs_ie_len);
 
 /* utils */
 uint64 pdftm_div64(uint64 val, uint16 div);
 bcm_tlv_t* pdftm_tlvdup(pdftm_t *ftm, const bcm_tlv_t *tlv);
 uint64 pdftm_get_pmu_tsf(pdftm_t *ftm);
 /* burst support */
-int pdftm_setup_burst(pdftm_t *ftm, pdftm_session_t *sn, const uint8 *req, int req_len,
+int pdftm_setup_burst(pdftm_t *ftm, pdftm_session_t *sn, const uint8 *req, uint req_len,
 	const wlc_d11rxhdr_t *req_wrxh, ratespec_t req_rspec);
 
 /* notify protocol */
@@ -1021,7 +1078,7 @@ uint16 pdftm_resolve_ftm_sep(pdftm_t *ftm, wl_proxd_session_flags_t flags,
 int pdftm_validate_ratespec(pdftm_t *ftm, pdftm_session_t *sn);
 
 /* determine if proxd needs to be enabled */
-bool pdftm_need_proxd(pdftm_t *ftm);
+bool pdftm_need_proxd(pdftm_t *ftm, uint flag);
 
 /* get session result. space for num_rtt samples must be allocated */
 int pdftm_get_session_result(pdftm_t *ftm, pdftm_session_t *sn,
@@ -1059,7 +1116,7 @@ void pdftm_dump_session(const pdftm_t *ftm, const pdftm_session_t *sn,
 void pdftm_dump_session_config(wl_proxd_session_id_t sid,
     const pdftm_session_config_t *sncfg, struct bcmstrbuf *b);
 void pdftm_dump_ranging_ctx(const wlc_ftm_ranging_ctx_t *rctx, struct bcmstrbuf *b);
-void pdftm_dump_pkt_body(pdftm_t *ftm, const uint8 *body, int body_len,
+void pdftm_dump_pkt_body(pdftm_t *ftm, const uint8 *body, uint body_len,
 	struct bcmstrbuf *b);
 #endif /* BCMDBG || FTM_DONGLE_DEBUG */
 
@@ -1078,17 +1135,50 @@ int pdftm_session_trig_tsf_update(pdftm_session_t *sn,
 void pdftm_bsscfg_clear_options(pdftm_t *ftm,
 	wlc_bsscfg_t *bsscfg);
 
+#ifdef WL_RANGE_SEQ
+#define FTM_DEFAULT_TARGET_BITFLIPS     0xFFFF
+#define FTM_DEFAULT_TARGET_SNR          0xFFFF
+extern wl_proxd_phy_error_t
+ftm_vs_tgt_snr_bitfips(pdburst_method_ctx_t ctx, uint16 snr_thresh,
+	uint16 bitflip_thresh, wl_proxd_snr_t *tof_target_snr,
+	wl_proxd_bitflips_t *tof_target_bitflips);
+
+extern void
+ftm_vs_reset_target_side_data(pdburst_method_ctx_t ctx);
+#endif /* WL_RANGE_SEQ */
+
 /* vendor support */
 int pdftm_vs_get_frame_len(void *ctx, pdburst_frame_type_t type,
 	const pdburst_session_info_t *bsi);
 int pdftm_vs_prep_tx(void *ctx, pdburst_frame_type_t type,
-	uint8 *body, int body_max, int *body_len, pdburst_session_info_t *bsi);
+	uint8 *body, uint body_max, uint *body_len, pdburst_session_info_t *bsi);
 int pdftm_vs_rx(pdburst_method_ctx_t ctx, pdburst_frame_type_t type,
-	const uint8 *body, int body_len, pdburst_session_info_t *bsi);
+	const uint8 *body, uint body_len, pdburst_session_info_t *bsi);
+
+#ifdef WL_RANGE_SEQ
+extern int pdftm_vs_info_update(pdftm_session_t *sn, ftm_vs_info_t vsinfo);
+extern int pdftm_process_vs(pdftm_t *ftm, pdftm_session_t *sn,
+		uint8 meas_type, const uint8 **body, int * body_len);
+extern bcm_tlv_t *pdftm_find_vs(pdftm_t *ftm, pdftm_session_t *sn,
+		uint8 meas_type, uint8 *body, uint * body_len);
+extern int pdftm_get_vs_len(pdftm_t * ftm, pdftm_session_t *sn, uint8 *body, int body_len);
+extern int pdftm_vs_len(pdburst_method_ctx_t ctx, pdburst_frame_type_t type);
+extern void pdftm_update_session_cfg_flags(pdburst_method_ctx_t ctx, bool seq_en);
+extern bool pdftm_get_session_cfg_flag(pdburst_method_ctx_t ctx, bool seq_en);
+#endif /* WL_RANGE_SEQ */
 
 #define FTM_VENDOR_IE_HDR_LEN 7
+#ifdef WL_RANGE_SEQ
+#define VS_IE_ID                0xDD
+#define REQ_TLV_LEN     sizeof(ftm_vs_seq_params_t) + sizeof(ftm_vs_req_params_t) + \
+		FTM_VENDOR_IE_HDR_LEN + (2 * TLV_HDR_LEN)
+
+#define MEAS_TLV_LEN sizeof(ftm_vs_sec_params_t) + sizeof(ftm_vs_meas_info_t) + \
+	sizeof(ftm_vs_timing_params_t) + (3 * TLV_HDR_LEN) + FTM_VENDOR_IE_HDR_LEN
+#else
 #define MEAS_TLV_LEN sizeof(ftm_vs_sec_params_t) + sizeof(ftm_vs_meas_info_t) + \
 	(2 * TLV_HDR_LEN) + FTM_VENDOR_IE_HDR_LEN
+#endif /* WL_RANGE_SEQ */
 #define MEAS_INFO_IE_TLV_LEN sizeof(ftm_vs_meas_info_t) + (1 * TLV_HDR_LEN) + FTM_VENDOR_IE_HDR_LEN
 
 /* FTM vendor OUI and type - Can be customized here */
@@ -1107,7 +1197,7 @@ void  pdftm_scb_dump(void *ctx, scb_t *scb, struct bcmstrbuf *b);
 #define PDFTM_SCB_DUMP NULL
 #endif /* BCMDBG */
 
-#define FTM_SCB_PTR(ftm, scb) (ftm_scb_t **)SCB_CUBBY(scb, ftm->scb_cubby_h)
+#define FTM_SCB_PTR(ftm, scb) (ftm_scb_t **)SCB_CUBBY(scb, (ftm)->scbh)
 #define FTM_SCB(ftm, scb) (*FTM_SCB_PTR(ftm, scb))
 
 ftm_scb_t* pdftm_scb_alloc(pdftm_t *ftm, scb_t *scb, bool *created);
@@ -1132,10 +1222,16 @@ int ftm_session_validate_chanspec(pdftm_t *ftm, pdftm_session_t *sn);
 int ftm_proto_get_ftm1_params(pdftm_t * ftm, pdftm_session_t * sn, int req_err,
 	dot11_ftm_params_t * params);
 
+void * pdftm_session_get_burstp(wlc_info_t *wlc, struct ether_addr *peer, uint8 flag);
+
+#define FTM_DEFAULT_TARGET_BITFLIPS	0xFFFF
+#define FTM_DEFAULT_TARGET_SNR		0xFFFF
 extern wl_proxd_phy_error_t
 ftm_vs_tgt_snr_bitfips(pdburst_method_ctx_t ctx, uint16 snr_thresh,
 	uint16 bitflip_thresh, wl_proxd_snr_t *tof_target_snr,
 	wl_proxd_bitflips_t *tof_target_bitflips);
+extern void
+ftm_vs_reset_target_side_data(pdburst_method_ctx_t ctx);
 
 #define TIMING_TLV_START_DELTA_MAX 330 /* 330 us */
 #define TIMING_TLV_START_SEQ_TIME 273  /* 273 us */

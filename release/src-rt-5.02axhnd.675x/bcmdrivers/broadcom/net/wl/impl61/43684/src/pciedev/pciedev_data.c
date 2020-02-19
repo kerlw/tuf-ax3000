@@ -195,6 +195,8 @@ uint releasing_not_needed_rxcpl_buffer = 0;
 bool
 pciedev_msgbuf_intr_process(struct dngl_bus *pciedev)
 {
+	pciedev_ctrl_resp_q_t *resp_q = pciedev->ctrl_resp_q;
+
 	/* Host->Dongle --> DoorBell Rang
 	* Doorbell intr can be triggered either due to
 	* data written to data ring or control ring on host side
@@ -209,7 +211,7 @@ pciedev_msgbuf_intr_process(struct dngl_bus *pciedev)
 	 * so process the items in the queue
 	 * then read host buffer
 	 */
-	if (pciedev_ctrl_resp_q_avail(pciedev) <
+	if (WRITE_SPACE_AVAIL(resp_q->r_indx, resp_q->w_indx, resp_q->depth) <
 		(PCIEDEV_CNTRL_CMPLT_Q_IOCTL_ENTRY +
 		PCIEDEV_CNTRL_CMPLT_Q_STATUS_ENTRY +
 		CTRL_SUB_BUFCNT)) {
@@ -786,7 +788,7 @@ pciedev_schedule_flow_ring_read_buffer(struct dngl_bus *pciedev)
 			/* Check write pointer for the open interface ports of the flow
 			 * ring and mark it for pending pkt pull
 			 */
-			if (((flow_ring->status & FLOW_RING_PORT_CLOSED) &&
+			if (((flow_ring->status & FLOW_RING_CLOSED) &&
 				(!(flow_ring->flow_info.flags & FLOW_RING_FLAG_INFORM_PKTPEND) ||
 				(flow_ring->flow_info.flags & FLOW_RING_FLAG_LAST_TIM))) ||
 				(flow_ring->status & FLOW_RING_FAST_DELETE_ACTIVE) ||
@@ -801,7 +803,7 @@ pciedev_schedule_flow_ring_read_buffer(struct dngl_bus *pciedev)
 			if (flow_ring->status & FLOW_RING_SUP_PENDING)
 				goto nextnode;
 
-			if ((flow_ring->status & FLOW_RING_PORT_CLOSED)) {
+			if ((flow_ring->status & FLOW_RING_CLOSED)) {
 				if ((flow_ring->flow_info.flags & FLOW_RING_FLAG_INFORM_PKTPEND) &&
 					!(flow_ring->flow_info.flags & FLOW_RING_FLAG_LAST_TIM)) {
 					/* informs WL subsystem about the TIM_SET operation */
@@ -952,7 +954,7 @@ nextnode:
 			/* Check write pointer for the open interface ports of the flow
 			 * ring and mark it for pending pkt pull
 			 */
-			if (((flow_ring->status & FLOW_RING_PORT_CLOSED) &&
+			if (((flow_ring->status & FLOW_RING_CLOSED) &&
 				(!(flow_ring->flow_info.flags & FLOW_RING_FLAG_INFORM_PKTPEND) ||
 				(flow_ring->flow_info.flags & FLOW_RING_FLAG_LAST_TIM))) ||
 				(flow_ring->status & FLOW_RING_FAST_DELETE_ACTIVE) ||
@@ -1159,7 +1161,7 @@ pciedev_flow_schedule_timerfn(dngl_timer_t *t)
 			flow_ring->flow_info.maxpktcnt =
 				prioring->maxpktcnt[flow_ring->flow_info.ifindex];
 
-			if ((flow_ring->status & FLOW_RING_PORT_CLOSED)) {
+			if ((flow_ring->status & FLOW_RING_CLOSED)) {
 				if ((flow_ring->status & FLOW_RING_PKT_PENDING) &&
 					(flow_ring->flow_info.flags
 					& FLOW_RING_FLAG_INFORM_PKTPEND) &&
@@ -6718,10 +6720,10 @@ void pciedev_upd_flr_if_state(struct dngl_bus * pciedev, uint8 ifindex, bool ope
 				continue;
 			}
 			if (!open) {
-				flow_ring->status |= FLOW_RING_PORT_CLOSED;
+				flow_ring->status |= FLOW_RING_IF_CLOSED;
 				PCIEDEV_FLOW_PORT_CLOSE_TS(flow_ring, time_now);
 			} else {
-				flow_ring->status &= ~FLOW_RING_PORT_CLOSED;
+				flow_ring->status &= ~FLOW_RING_IF_CLOSED;
 				PCIEDEV_FLOW_PORT_OPEN_TS(flow_ring, time_now);
 				/*
 				 * When the port opens, we need to trigger

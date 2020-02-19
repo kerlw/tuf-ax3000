@@ -27,7 +27,7 @@ prebuilt_files = $(shell find . -name *$(BRCM_CHIP)-$(ORIG_PROFILE_ARCH) -print)
 check_prebuilt:
 	$(info check_prebuilt: BRCM_CHIP=$(BRCM_CHIP) ORIG_PROFILE_ARCH=$(ORIG_PROFILE_ARCH))
 	$(foreach f,$(prebuilt_files),$(shell cp -pf $(f) $(subst _saved-$(shell echo $(BRCM_CHIP)-$(ORIG_PROFILE_ARCH)),,$(f))))
-	$(info WLTEST=$(WLTEST) BUILD_BCM_WLAN_NO_MFGBIN=$(BUILD_BCM_WLAN_NO_MFGBIN))
+	$(info WLTEST=$(WLTEST) BUILD_HND_MFG=$(BUILD_HND_MFG) BUILD_BCM_WLAN_NO_MFGBIN=$(BUILD_BCM_WLAN_NO_MFGBIN))
 	if [ -d $(DONGLE_FW_PATH)/mfg ]; then \
 		mkdir -p $(INSTALL_DIR)/etc/wlan/dhd; \
 		cp -rf $(DONGLE_FW_PATH)/mfg $(INSTALL_DIR)/etc/wlan/dhd; \
@@ -44,12 +44,12 @@ check_prebuilt:
 		cp -f $(ALLSRCBASE)/main/components/router/hnd/hnd_mfgtest.ko \
 			$(INSTALL_DIR)/lib/modules/$(LINUX_VER_STR)/extra; \
 	fi ;
-ifdef WLTEST
-	if [ "$(WLTEST)" == "1" ] && [ -f $(ALLSRCBASE)/main/src/wl/linux/prebuilt/wl_mfgtest.o ]; then \
-		cp -f $(ALLSRCBASE)/main/src/wl/linux/prebuilt/wl_mfgtest.o \
-			$(ALLSRCBASE)/main/src/wl/linux/prebuilt/wl.o; \
+	if [ "$(WLTEST)" == "1" ] || [ "$(BUILD_HND_MFG)" == "y" ]; then \
+		if [ -f $(ALLSRCBASE)/main/src/wl/linux/prebuilt/wl_mfgtest.o ]; then \
+			cp -f $(ALLSRCBASE)/main/src/wl/linux/prebuilt/wl_mfgtest.o \
+				$(ALLSRCBASE)/main/src/wl/linux/prebuilt/wl.o; \
+		fi ; \
 	fi ;
-endif
 
 oldconfig:
 	$(MAKE) -C $(HNDDRIVER_BASE) oldconfig
@@ -63,7 +63,6 @@ pciefd: version
 bcm_headers_install:
 	@echo "impl5x/Makefile: bcm_headers_install"
 	@echo "WLTEST=$(WLTEST)  BUILD_HND_MFG=$(BUILD_HND_MFG)  BUILD_BCM_WLAN_NO_MFGBIN=$(BUILD_BCM_WLAN_NO_MFGBIN)"
-ifdef WLTEST
 	if [ "$(WLTEST)" == "1" ] || [ "$(BUILD_HND_MFG)" == "y" ]; then \
 		if [ -f $(ALLSRCBASE)/main/components/router/hnd_wl/wl.ko ] && [ -d $(INSTALL_DIR)/lib/modules/$(LINUX_VER_STR)/extra ]; then \
 			echo "linking wl_mfgtest.ko to generated wl.ko in fs as well as copying prebuilt."; \
@@ -76,8 +75,6 @@ ifdef WLTEST
 			cp -vf $(ALLSRCBASE)/main/components/router/hnd_wl/wl.ko \
 				$(ALLSRCBASE)/main/components/router/hnd_wl/wl_mfgtest.ko_saved-$(BRCM_CHIP)-$(ORIG_PROFILE_ARCH); \
 		fi ; \
-	fi ;
-	if [ "$(WLTEST)" == "1" ] || [ "$(BUILD_HND_MFG)" == "y" ]; then \
 		if [ -f $(ALLSRCBASE)/main/components/router/hnd/hnd.ko ] && [ -d $(INSTALL_DIR)/lib/modules/$(LINUX_VER_STR)/extra ]; then \
 			echo "linking hnd_mfgtest.ko to generated hnd.ko in fs as well as copying prebuilt."; \
 			rm -fv $(INSTALL_DIR)/lib/modules/$(LINUX_VER_STR)/extra/hnd_mfgtest.ko; \
@@ -87,17 +84,22 @@ ifdef WLTEST
 			cp -vf $(ALLSRCBASE)/main/components/router/hnd/hnd.ko \
 				$(ALLSRCBASE)/main/components/router/hnd/hnd_mfgtest.ko_saved-$(BRCM_CHIP)-$(ORIG_PROFILE_ARCH); \
 		fi ; \
-	fi ;
-	if [ "$(WLTEST)" == "1" ] || [ "$(BUILD_HND_MFG)" == "y" ]; then \
-		if ls $(ALLSRCBASE)/sys/src/dongle/bin/*/rtecdc.bin >& /dev/null && [ -d $(INSTALL_DIR)/etc/wlan/dhd/mfg ]; then \
-			echo "copying generated rtecdc.bin to mfg/rtecdc.bin in fs as well as prebuilt."; \
-			cp -vrf $(ALLSRCBASE)/sys/src/dongle/bin/* \
-				$(INSTALL_DIR)/etc/wlan/dhd/mfg/; \
-			cp -vrf $(ALLSRCBASE)/sys/src/dongle/bin/* \
-				$(ALLSRCBASE)/sys/src/dongle/mfg/; \
+		if ls $(ALLSRCBASE)/sys/src/dongle/bin/*/rtecdc.bin >& /dev/null; then \
+			if [ -d $(ALLSRCBASE)/43684 ] && [ -d $(INSTALL_DIR)/etc/wlan/dhd/mfg ]; then \
+				echo "with dongle src, copying generated rtecdc.bin to mfg/rtecdc.bin in fs as well as prebuilt."; \
+				cp -vrf $(ALLSRCBASE)/sys/src/dongle/bin/* \
+					$(INSTALL_DIR)/etc/wlan/dhd/mfg/; \
+				cp -vrf $(ALLSRCBASE)/sys/src/dongle/bin/* \
+					$(ALLSRCBASE)/sys/src/dongle/mfg/; \
+			fi ; \
+			if test ! -d $(ALLSRCBASE)/43684; then \
+				echo "no dongle src, copying prebuilt mfgtest rtecdc.bin to fs."; \
+				mkdir -p $(INSTALL_DIR)/etc/wlan/dhd; \
+				cp -vrf $(ALLSRCBASE)/sys/src/dongle/mfg/* \
+					$(INSTALL_DIR)/etc/wlan/dhd/; \
+			fi ; \
 		fi ; \
 	fi ;
-endif
 	if [ "$(BUILD_BCM_WLAN_NO_MFGBIN)" == "y" ]; then \
 		rm -fv $(INSTALL_DIR)/lib/modules/$(LINUX_VER_STR)/extra/wl_mfgtest.ko; \
 		rm -fv $(INSTALL_DIR)/lib/modules/$(LINUX_VER_STR)/extra/hnd_mfgtest.ko; \

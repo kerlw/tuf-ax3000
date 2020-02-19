@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_rrm.c 775302 2019-05-27 11:48:20Z $
+ * $Id: wlc_rrm.c 777286 2019-07-25 19:43:30Z $
  */
 
 /**
@@ -124,6 +124,9 @@
 #ifdef WLMCNX
 #include <wlc_mcnx.h>
 #endif // endif
+#ifdef MFP
+#include <wlc_mfp.h>
+#endif // endif
 #include <wlc_stf.h>
 #ifdef WLAMSDU
 #include <wlc_amsdu.h>
@@ -179,6 +182,7 @@
 #define RRM_NREQ_FLAGS_CIVICLOC_PRESENT		0x2
 #define RRM_NREQ_FLAGS_OWN_REPORT		0x4
 #define RRM_NREQ_FLAGS_BSS_PREF			0x8
+#define RRM_NREQ_FLAGS_COLOCATED_BSSID		0x10 /* add colocated BSSID subelement */
 
 /* Radio Measurement states */
 #define WLC_RRM_IDLE                     0 /* Idle */
@@ -236,6 +240,7 @@ enum {
 	IOV_RRM_FRNG = 21,
 	IOV_RRM_NBR_SCAN = 22,
 	IOV_RRM_NBR_REPORT = 23,
+	IOV_RRM_NBR = 24,
 	IOV_RRM_LAST
 };
 
@@ -267,6 +272,7 @@ static const bcm_iovar_t rrm_iovars[] = {
 #ifdef WL_FTM_11K
 #if defined(WL_PROXDETECT) && defined(WL_FTM)
 	{"rrm_frng", IOV_RRM_FRNG, (IOVF_SET_UP), 0, IOVT_BUFFER, 0},
+	{"rrm_nbr", IOV_RRM_NBR, 0, 0, IOVT_BUFFER, 0},
 #endif /* WL_PROXDETECT && WL_FTM */
 #endif /* WL_FTM_11K */
 	{"rrm_nbr_scan", IOV_RRM_NBR_SCAN, 0, 0, IOVT_UINT8, 0},
@@ -446,10 +452,17 @@ static void wlc_rrm_send_statreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	statreq_t *statreq);
 static void wlc_rrm_send_txstrmreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	txstrmreq_t *txstrmreq);
+#ifdef WL_PROXDETECT
+static int wlc_rrm_send_lcireq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
+	lci_req_t *lcireq);
+static int wlc_rrm_send_civicreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
+	civic_req_t *civicreq);
+#else
 static void wlc_rrm_send_lcireq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	lcireq_t *lcireq);
 static void wlc_rrm_send_civicreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	civicreq_t *civicreq);
+#endif // endif
 static void wlc_rrm_send_locidreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	locidreq_t *locidreq);
 static int rrm_config_get(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
@@ -481,6 +494,8 @@ static void wlc_rrm_recv_civicreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	dot11_meas_req_loc_t *rmreq_civic, wlc_rrm_req_t *req);
 static void wlc_rrm_recv_locidreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	dot11_meas_req_loc_t *rmreq_locid, wlc_rrm_req_t *req);
+static uint8 * wlc_rrm_create_colocatedbssid_ie(wlc_rrm_info_t *rrm_info,
+	uint8 *data_ptr, int *buflen);
 
 static rrm_config_fn_t rrmconfig_cmd_fn[] = {
 	NULL, /* WL_RRM_CONFIG_NONE */
@@ -516,7 +531,7 @@ static void wlc_rrm_sta_assoc_state_upd(void *ctx, bss_assoc_state_data_t *assoc
 static void wlc_rrm_recv_nrreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb,
 	uint8 *body, int body_len);
 static void wlc_rrm_send_nbrrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb,
-	wlc_ssid_t *ssid, int addtype);
+	wlc_ssid_t *ssid, uint8 flags, int addtype);
 static void wlc_rrm_get_neighbor_list(wlc_rrm_info_t *rrm_info, nbr_rpt_elem_t *nbr_elements,
 	uint16 list_cnt, rrm_bsscfg_cubby_t *rrm_cfg);
 static void wlc_rrm_del_neighbor(wlc_rrm_info_t *rrm_info, struct ether_addr *ea,
@@ -528,6 +543,12 @@ static void wlc_rrm_add_neighbor(wlc_rrm_info_t *rrm_info, nbr_rpt_elem_t *nbr_e
 	struct wlc_if *wlcif, rrm_bsscfg_cubby_t *rrm_cfg, int addtype);
 static uint16 _wlc_rrm_get_neighbor_count(wlc_rrm_info_t *rrm_info,
 	rrm_bsscfg_cubby_t *rrm_cfg, int addtype);
+void wlc_rrm_add_neighbor_chanspec(nbr_rpt_elem_t *nbr_elt, rrm_bsscfg_cubby_t *rrm_cfg);
+void wlc_rrm_add_neighbor_ssid(nbr_rpt_elem_t *nbr_elt, rrm_bsscfg_cubby_t *rrm_cfg);
+int wlc_rrm_add_neighbor_lci(wlc_rrm_info_t *rrm_info, struct ether_addr *nbr_bss,
+	uint8 *opt_lci, int len, rrm_bsscfg_cubby_t *rrm_cfg);
+int wlc_rrm_add_neighbor_civic(wlc_rrm_info_t *rrm_info, struct ether_addr *nbr_bss,
+	uint8 *opt_civic, int len, rrm_bsscfg_cubby_t *rrm_cfg);
 static void wlc_rrm_add_regclass_neighbor_count(wlc_rrm_info_t *rrm_info, rrm_nbr_rep_t *nbr_rep,
 	bool *channel_added, rrm_bsscfg_cubby_t *rrm_cfg);
 static uint16 wlc_rrm_get_reg_count(wlc_rrm_info_t *rrm_info, rrm_bsscfg_cubby_t *rrm_cfg);
@@ -625,9 +646,9 @@ static int wlc_rrm_parse_rrmcap_ie(void *ctx, wlc_iem_parse_data_t *data);
 #ifdef WL_FTM_11K
 #if defined(WL_PROXDETECT) && defined(WL_FTM)
 static uint8 * wlc_rrm_create_lci_meas_element(uint8 *ptr, rrm_bsscfg_cubby_t *rrm_cfg,
-	rrm_nbr_rep_t *nbr_rep, int *buflen);
+	rrm_nbr_rep_t *nbr_rep, int *buflen, uint8 flags);
 static uint8 * wlc_rrm_create_civic_meas_element(uint8 *ptr, rrm_bsscfg_cubby_t *rrm_cfg,
-	rrm_nbr_rep_t *nbr_rep, int *buflen);
+	rrm_nbr_rep_t *nbr_rep, int *buflen, uint8 flags);
 static int rrm_frng_set(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	void *p, uint plen, void *a, int alen);
 static int wlc_rrm_recv_frngreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
@@ -638,6 +659,8 @@ static int wlc_rrm_send_frngreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	uint8 *data, int len);
 static int wlc_rrm_send_frngrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	uint8 *data, int len);
+static int wlc_rrm_set_frngdir(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
+	uint8 *data, int len);
 static int wlc_rrm_create_frngrep_element(uint8 **ptr, rrm_bsscfg_cubby_t *rrm_cfg,
 	frngrep_t *frngrep);
 static void wlc_rrm_frngreq_free(wlc_rrm_info_t *rrm_info);
@@ -646,7 +669,10 @@ typedef int (*rrm_frng_fn_t)(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 
 static rrm_frng_fn_t rrmfrng_cmd_fn[] = {
 	NULL, /* WL_RRM_FRNG_NONE */
-	wlc_rrm_send_frngreq, /* WL_RRM_FRNG_SET_REQ */
+	wlc_rrm_send_frngreq, /* WL_RRM_FRNG_SET_REQ send range request */
+	wlc_rrm_send_frngrep, /* WL_RRM_FRNG_SET_REP app manually send range report */
+	wlc_rrm_set_frngdir, /* WL_RRM_FRNG_SET_DIR whether driver or app handles range request */
+	NULL /* WL_RRM_FRNG_MAX */
 };
 #endif /* WL_PROXDETECT && WL_FTM */
 #endif /* WL_FTM_11K */
@@ -806,6 +832,9 @@ BCMATTACHFN(wlc_rrm_attach)(wlc_info_t *wlc)
 #endif /* WLASSOC_NBR_REQ */
 #endif /* STA */
 #endif /* WL11K_NBR_MEAS */
+
+	/* driver will handle ftm range request/report by default */
+	rrm_info->direct_ranging_mode = TRUE;
 
 	return rrm_info;
 
@@ -1315,7 +1344,8 @@ wlc_rrm_recv_rmreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb,
 }
 
 static void
-wlc_rrm_parse_response(wlc_rrm_info_t *rrm_info, struct scb *scb, dot11_rm_ie_t *ie,
+wlc_rrm_parse_response
+(wlc_rrm_info_t *rrm_info, struct scb *scb, dot11_rm_ie_t *ie,
 int len)
 {
 	bool incap = FALSE;
@@ -4404,6 +4434,129 @@ wlc_rrm_send_txstrmreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, txstrmreq_t 
 	wlc_sendmgmt(wlc, p, cfg->wlcif->qi, scb);
 }
 
+#ifdef WL_PROXDETECT
+static int
+wlc_rrm_send_lcireq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, lci_req_t *lcireq)
+{
+	int err = BCME_OK;
+	void *p;
+	uint8 *pbody;
+	int buflen;
+	dot11_rmreq_t *rmreq;
+	dot11_meas_req_loc_t *locreq;
+	struct ether_addr *da;
+	wlc_info_t *wlc = rrm_info->wlc;
+	rrm_bsscfg_cubby_t *rrm_cfg = RRM_BSSCFG_CUBBY(rrm_info, cfg);
+	uint8 *ptr;
+	dot11_ftm_range_subel_t *age_range_subel;
+	struct scb *scb;
+
+	da = &lcireq->da;
+
+	if (!isset(rrm_cfg->rrm_cap, DOT11_RRM_CAP_LCIM))
+		return BCME_UNSUPPORTED;
+
+	if (lcireq->subject == DOT11_FTM_LOCATION_SUBJ_THIRDPARTY)
+		return BCME_UNSUPPORTED;
+
+	/* rm frame action header + lci request header */
+	buflen = DOT11_RMREQ_LEN + DOT11_MNG_IE_MREQ_LCI_FIXED_LEN + TLV_HDR_LEN;
+
+	if (lcireq->max_age) {
+		buflen += sizeof(dot11_ftm_range_subel_t);
+	}
+
+	if ((p = wlc_rrm_prep_gen_request(rrm_info, cfg, da, buflen, &pbody)) == NULL)
+		return BCME_ERROR;
+
+	rmreq = (dot11_rmreq_t *)pbody;
+	rmreq->category = DOT11_ACTION_CAT_RRM;
+	rmreq->action = DOT11_RM_ACTION_RM_REQ;
+	WLC_RRM_UPDATE_TOKEN(rrm_info->req_token);
+	rmreq->token = rrm_info->req_token;
+	rmreq->reps = 0;
+
+	locreq = (dot11_meas_req_loc_t *)&rmreq->data[0];
+	locreq->id = DOT11_MNG_MEASURE_REQUEST_ID;
+	locreq->len = DOT11_MNG_IE_MREQ_LCI_FIXED_LEN;
+	WLC_RRM_UPDATE_TOKEN(rrm_info->req_elt_token);
+	locreq->token = rrm_info->req_elt_token;
+	locreq->mode = 0;
+	locreq->type = DOT11_MEASURE_TYPE_LCI;
+	locreq->req.lci.subject = lcireq->subject;
+
+	if (lcireq->max_age) {
+		ptr = (uint8 *)locreq;
+		ptr += DOT11_MNG_IE_MREQ_LCI_FIXED_LEN + TLV_HDR_LEN;
+		age_range_subel = (dot11_ftm_range_subel_t *) ptr;
+
+		age_range_subel->id = DOT11_FTM_RANGE_SUBELEM_ID;
+		age_range_subel->len = DOT11_FTM_RANGE_SUBELEM_LEN;
+		store16_ua((uint8 *)&age_range_subel->max_age, lcireq->max_age);
+		ptr += sizeof(*age_range_subel);
+		locreq->len += DOT11_FTM_RANGE_SUBELEM_LEN + TLV_HDR_LEN;
+	}
+
+	scb = wlc_scbfind(wlc, cfg, &lcireq->da);
+	wlc_sendmgmt(wlc, p, cfg->wlcif->qi, scb);
+
+	return err;
+}
+
+static int
+wlc_rrm_send_civicreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, civic_req_t *civicreq)
+{
+	int err = BCME_OK;
+	void *p;
+	uint8 *pbody;
+	int buflen;
+	dot11_rmreq_t *rmreq;
+	dot11_meas_req_loc_t *locreq;
+	struct ether_addr *da;
+	struct scb *scb;
+	wlc_info_t *wlc = rrm_info->wlc;
+	rrm_bsscfg_cubby_t *rrm_cfg = RRM_BSSCFG_CUBBY(rrm_info, cfg);
+
+	da = &civicreq->da;
+
+	if (!isset(rrm_cfg->rrm_cap, DOT11_RRM_CAP_CIVIC_LOC))
+		return BCME_UNSUPPORTED;
+
+	if (civicreq->subject == DOT11_FTM_LOCATION_SUBJ_THIRDPARTY)
+		return BCME_UNSUPPORTED;
+
+	/* rm frame action header + civic request header */
+	buflen = DOT11_RMREQ_LEN + DOT11_MNG_IE_MREQ_CIVIC_FIXED_LEN + TLV_HDR_LEN;
+
+	if ((p = wlc_rrm_prep_gen_request(rrm_info, cfg, da, buflen, &pbody)) == NULL)
+		return BCME_ERROR;
+
+	rmreq = (dot11_rmreq_t *)pbody;
+	rmreq->category = DOT11_ACTION_CAT_RRM;
+	rmreq->action = DOT11_RM_ACTION_RM_REQ;
+	WLC_RRM_UPDATE_TOKEN(rrm_info->req_token);
+	rmreq->token = rrm_info->req_token;
+	rmreq->reps = 0;
+
+	locreq = (dot11_meas_req_loc_t *)&rmreq->data[0];
+	locreq->id = DOT11_MNG_MEASURE_REQUEST_ID;
+	locreq->len = DOT11_MNG_IE_MREQ_CIVIC_FIXED_LEN;
+	WLC_RRM_UPDATE_TOKEN(rrm_info->req_elt_token);
+	locreq->token = rrm_info->req_elt_token;
+	locreq->mode = 0;
+	locreq->type = DOT11_MEASURE_TYPE_CIVICLOC;
+	locreq->req.civic.subject = civicreq->subject;
+	locreq->req.civic.type = civicreq->type;
+	locreq->req.civic.siu = civicreq->si_units;
+	locreq->req.civic.si = civicreq->service_interval;
+
+	scb = wlc_scbfind(wlc, cfg, &civicreq->da);
+	wlc_sendmgmt(wlc, p, cfg->wlcif->qi, scb);
+
+	return err;
+}
+
+#else
 static void
 wlc_rrm_send_lcireq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, lcireq_t *lcireq)
 {
@@ -4485,6 +4638,7 @@ wlc_rrm_send_civicreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, civicreq_t *c
 	scb = wlc_scbfind(wlc, cfg, da);
 	wlc_sendmgmt(wlc, p, cfg->wlcif->qi, scb);
 }
+#endif /* WL_PROXDETECT */
 
 static void
 wlc_rrm_send_locidreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, locidreq_t *locidreq)
@@ -4552,7 +4706,7 @@ wlc_rrm_create_nbrrep_element(rrm_bsscfg_cubby_t *rrm_cfg, uint8 **ptr,
 	*ptr += TLV_HDR_LEN + DOT11_NEIGHBOR_REP_IE_FIXED_LEN;
 	buflen -= TLV_HDR_LEN + DOT11_NEIGHBOR_REP_IE_FIXED_LEN;
 
-	if (flags & RRM_NREQ_FLAGS_BSS_PREF) {
+	if (flags & RRM_NREQ_FLAGS_BSS_PREF && nbr_rep->nbr_elt.bss_trans_preference) {
 		/* Add preference subelement */
 		pref = (dot11_ngbr_bsstrans_pref_se_t*) *ptr;
 		pref->sub_id = DOT11_NGBR_BSSTRANS_PREF_SE_ID;
@@ -4574,13 +4728,13 @@ wlc_rrm_create_nbrrep_element(rrm_bsscfg_cubby_t *rrm_cfg, uint8 **ptr,
 	if (flags & RRM_NREQ_FLAGS_LCI_PRESENT) {
 		buflen = MIN(buflen, BUFLEN(*ptr, bufend));
 		*ptr = wlc_rrm_create_lci_meas_element(*ptr, rrm_cfg, nbr_rep,
-				&buflen);
+				&buflen, flags);
 	}
 
 	if (flags & RRM_NREQ_FLAGS_CIVICLOC_PRESENT) {
 		buflen = MIN(buflen, BUFLEN(*ptr, bufend));
 		*ptr = wlc_rrm_create_civic_meas_element(*ptr, rrm_cfg, nbr_rep,
-				&buflen);
+				&buflen, flags);
 	}
 #endif /* WL_FTM_11K */
 	/* update neighbor report length */
@@ -4841,7 +4995,7 @@ wlc_rrm_nbr_scancb(void *arg, int status, wlc_bsscfg_t *cfg)
 	BCM_REFERENCE(ncnt);  /* needed for internal builds */
 	WL_RRM(("%s: auto learned Neighbor Count = %d - call send report \n ", __FUNCTION__, ncnt));
 	scb = wlc_scbfind(wlc, cfg, &rrm_cfg->da);
-	wlc_rrm_send_nbrrep(rrm_info, cfg, scb, NULL, NBR_ADD_DYNAMIC);
+	wlc_rrm_send_nbrrep(rrm_info, cfg, scb, NULL, 0, NBR_ADD_DYNAMIC);
 }
 
 static void
@@ -4852,10 +5006,13 @@ wlc_rrm_recv_nrreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb,
 	dot11_rm_action_t *rmreq;
 	rrm_bsscfg_cubby_t *rrm_cfg = NULL;
 	wlc_ssid_t ssid;
+	uint8 flags = 0;
 	int bcmerr = 0;
 	int tlv_len;
 	bcm_tlv_t *tlv = NULL;
 	uint8 *tlvs;
+	dot11_meas_req_loc_t *ie;
+	int len;
 
 	rrm_cfg = RRM_BSSCFG_CUBBY(rrm_info, cfg);
 	ASSERT(rrm_cfg != NULL);
@@ -4899,6 +5056,85 @@ wlc_rrm_recv_nrreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb,
 		}
 	}
 
+	tlv = (bcm_tlv_t *)rmreq->data;
+	len = body_len - DOT11_RM_ACTION_LEN;
+
+	/* for each measurement request, calc the length of the report in the response */
+	while (len > TLV_HDR_LEN) {
+		tlv_len = TLV_HDR_LEN + tlv->len;
+		if (tlv->id == DOT11_MNG_SSID_ID) {
+			/*
+			SSID element can be present in a neighbor request to
+			request a neighbor list for a specifid SSID.
+			*/
+			ssid.SSID_len = MIN(DOT11_MAX_SSID_LEN, tlv->len);
+				bcopy(tlv->data, ssid.SSID, ssid.SSID_len);
+			WL_TMP(("wl%d: %s: Found SSID element, len %d, SSID \"%s\"\n",
+				wlc->pub->unit, __FUNCTION__, ssid.SSID_len, ssid.SSID));
+		} else if (tlv->id == DOT11_MNG_MEASURE_REQUEST_ID) {
+			ie = (dot11_meas_req_loc_t *)tlv;
+			WL_TMP(("wl%d: %s: Found Measure Request, len %d\n", wlc->pub->unit,
+				__FUNCTION__, ie->len));
+			if (ie->len < DOT11_MNG_IE_MREQ_MIN_LEN) {
+				WL_ERROR(("wl%d: %s: Measure Request len %d too short\n",
+					wlc->pub->unit, __FUNCTION__, ie->len));
+				goto nrreq_next_tlv;
+			}
+			if ((ie->mode & DOT11_MEASURE_MODE_ENABLE) != 0) {
+				WL_ERROR(("wl%d: %s: Measure mode 0x%x, ENABLE not 0\n",
+					wlc->pub->unit, __FUNCTION__, ie->mode));
+				goto nrreq_next_tlv;
+			}
+			if (ie->type != DOT11_MEASURE_TYPE_LCI &&
+				ie->type != DOT11_MEASURE_TYPE_CIVICLOC) {
+				WL_ERROR(("wl%d: %s: Measure type 0x%d, not LCI or CIVIC\n",
+					wlc->pub->unit, __FUNCTION__, ie->type));
+				goto nrreq_next_tlv;
+			}
+#ifdef WL_FTM_11K
+			if (ie->type == DOT11_MEASURE_TYPE_LCI) {
+				if (ie->req.lci.subject != DOT11_FTM_LOCATION_SUBJ_REMOTE) {
+					WL_ERROR(("wl%d: %s: LCI Measurement subject 0x%d,"
+						" not REMOTE\n", wlc->pub->unit, __FUNCTION__,
+						ie->req.lci.subject));
+					goto nrreq_next_tlv;
+				}
+				rrm_cfg->lci_token = ie->token;
+				flags |= RRM_NREQ_FLAGS_LCI_PRESENT;
+			}
+			if (ie->type == DOT11_MEASURE_TYPE_CIVICLOC) {
+				if (ie->req.civic.subject != DOT11_FTM_LOCATION_SUBJ_REMOTE) {
+					WL_ERROR(("wl%d: %s: Civic Measurement subject 0x%d,"
+						" not REMOTE\n", wlc->pub->unit, __FUNCTION__,
+						ie->req.civic.subject));
+					goto nrreq_next_tlv;
+				}
+				rrm_cfg->civic_token = ie->token;
+				flags |= RRM_NREQ_FLAGS_CIVICLOC_PRESENT;
+			}
+#endif /* WL_FTM_11K */
+		} else {
+			WL_ERROR(("wl%d: %s: TLV ID 0x%d, not SSID or Measurement Request\n",
+				wlc->pub->unit, __FUNCTION__, tlv->id));
+			goto nrreq_next_tlv;
+		}
+
+nrreq_next_tlv:
+		tlv = (bcm_tlv_t *)((int8*)tlv + tlv_len);
+		len -= tlv_len;
+	}
+
+	if (isset(cfg->ext_cap, DOT11_EXT_CAP_FTM_RESPONDER)) {
+		if (isset(rrm_cfg->rrm_cap, DOT11_RRM_CAP_LCIM) &&
+			(flags & RRM_NREQ_FLAGS_LCI_PRESENT)) {
+			flags |= RRM_NREQ_FLAGS_OWN_REPORT;
+		}
+		if (isset(rrm_cfg->rrm_cap, DOT11_RRM_CAP_CIVIC_LOC) &&
+			(flags & RRM_NREQ_FLAGS_CIVICLOC_PRESENT)) {
+			flags |= RRM_NREQ_FLAGS_OWN_REPORT;
+		}
+	}
+
 	WL_RRM(("%s: ssid len=%d, SSID=%s\n", __FUNCTION__, ssid.SSID_len, ssid.SSID));
 
 	if (rrm_cfg->nbr_scan) {
@@ -4911,13 +5147,13 @@ wlc_rrm_recv_nrreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb,
 	}
 
 	/* Send static list here - the scancb will send the dynamic list */
-	wlc_rrm_send_nbrrep(rrm_info, cfg, scb, &ssid, NBR_ADD_STATIC);
+	wlc_rrm_send_nbrrep(rrm_info, cfg, scb, &ssid, flags, NBR_ADD_STATIC);
 }
 
 /* Send Neighbor Report Response */
 static void
 wlc_rrm_send_nbrrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb,
-	wlc_ssid_t *ssid, int addtype)
+	wlc_ssid_t *ssid, uint8 flags, int addtype)
 {
 	wlc_info_t *wlc;
 	uint rep_count = 0;
@@ -4928,9 +5164,11 @@ wlc_rrm_send_nbrrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb
 	void *p;
 	uint8 *ptr, *bufend;
 	uint16 list_cnt = 0;
-	uint8 flags = 0;
 	rrm_scb_info_t *scb_info = RRM_SCB_INFO(rrm_info, scb);
 	rrm_bsscfg_cubby_t *rrm_cfg = RRM_BSSCFG_CUBBY(rrm_info, cfg);
+	bool ssid_self_match = TRUE;
+	rrm_nbr_rep_t *nbr_rep_self;
+	int scb_sec_len = 0;
 
 	ASSERT(rrm_cfg != NULL);
 
@@ -4940,6 +5178,7 @@ wlc_rrm_send_nbrrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb
 	wlc = rrm_info->wlc;
 
 	nbr_rep = RRM_NBR_REP_HEAD(rrm_cfg, addtype);
+	nbr_rep_self = rrm_cfg->nbr_rep_self;
 
 #ifdef BCMDBG
 	wlc_rrm_dump_neighbors(rrm_info, cfg, addtype);
@@ -4958,15 +5197,29 @@ wlc_rrm_send_nbrrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb
 		}
 	}
 
-	if (rep_count == 0 && list_cnt == 0) {
+	/* Add own BSSID to neighbor list if certain conditions are met */
+	if (flags & RRM_NREQ_FLAGS_OWN_REPORT) {
+		if (ssid != NULL && ssid->SSID_len > 0) {
+			/* if ssid is specified and does not match entry, skip */
+			/* SSID_len of 0 means wildcard */
+			if ((ssid->SSID_len != cfg->SSID_len) ||
+				(memcmp(cfg->SSID, &ssid->SSID,
+				ssid->SSID_len) != 0)) {
+				ssid_self_match = FALSE;
+				WL_TMP(("wl%d: %s: SSID element present, and does not match self\n",
+					wlc->pub->unit, __FUNCTION__));
+			}
+		}
+	}
+	if (rep_count == 0 && list_cnt == 0 &&
+		!(ssid_self_match && (flags & RRM_NREQ_FLAGS_OWN_REPORT))) {
+		/* must send a neighbor report response with zero neighbor reports */
 		WL_ERROR(("wl%d: %s: Neighbor Report element is empty\n",
 			wlc->pub->unit, __FUNCTION__));
 	}
 
-	rrm_req_len = DOT11_RM_ACTION_LEN +
-		(rep_count + list_cnt) * (TLV_HDR_LEN + DOT11_NEIGHBOR_REP_IE_FIXED_LEN +
-		TLV_HDR_LEN + DOT11_NGBR_BSSTRANS_PREF_SE_LEN +
-		TLV_HDR_LEN + DOT11_WIDE_BW_IE_LEN);
+	/* too many optional elements to count up, fixup the length at the end */
+	rrm_req_len = ETHER_MAX_DATA;
 
 	p = wlc_frame_get_action(wlc, &rrm_cfg->da,
 	                       &cfg->cur_etheraddr, &cfg->BSSID,
@@ -4985,7 +5238,7 @@ wlc_rrm_send_nbrrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb
 	rmrep->token = rrm_cfg->dialog_token;
 	ptr = rmrep->data;
 
-	flags = RRM_NREQ_FLAGS_BSS_PREF;
+	flags |= RRM_NREQ_FLAGS_BSS_PREF;
 	/* add neighbors obtained from beacon report */
 	nbr_rep = scb_info->nbr_rep_head;
 
@@ -5025,11 +5278,43 @@ wlc_rrm_send_nbrrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb
 		nbr_rep = nbr_rep->next;
 	}
 
+	/* Add own BSSID to neighbor list if certain conditions are met */
+	if ((flags & RRM_NREQ_FLAGS_OWN_REPORT) && ssid_self_match) {
+		rrm_nbr_rep_t nbr_rep_tmp;
+
+		memset(&nbr_rep_tmp, 0, sizeof(nbr_rep_tmp));
+		nbr_rep_tmp.nbr_elt.id = DOT11_MNG_NEIGHBOR_REP_ID;
+		memcpy(&nbr_rep_tmp.nbr_elt.bssid, &cfg->BSSID, ETHER_ADDR_LEN);
+		nbr_rep_tmp.nbr_elt.bssid_info |= (DOT11_NGBR_BI_CAP_RDIO_MSMT |
+			DOT11_NGBR_BI_FTM | DOT11_NGBR_BI_SEC | DOT11_NGBR_BI_REACHABILTY);
+		if (BSS_WL11H_ENAB(wlc, cfg))
+			nbr_rep_tmp.nbr_elt.bssid_info |= DOT11_NGBR_BI_CAP_SPEC_MGMT;
+		if (BSS_N_ENAB(wlc, cfg))
+			nbr_rep_tmp.nbr_elt.bssid_info |= DOT11_NGBR_BI_HT;
+		if (BSS_VHT_ENAB(wlc, cfg))
+			nbr_rep_tmp.nbr_elt.bssid_info |= DOT11_NGBR_BI_VHT;
+
+		nbr_rep_tmp.nbr_elt.reg = wlc_get_regclass(wlc->cmi, cfg->current_bss->chanspec);
+		nbr_rep_tmp.nbr_elt.channel = CHSPEC_CHANNEL(wlc->chanspec);
+		nbr_rep_tmp.nbr_elt.phytype = (uint8) wlc->band->phytype;
+		memcpy(&nbr_rep_tmp.nbr_elt.chanspec, &wlc->chanspec, sizeof(chanspec_t));
+
+		if (nbr_rep_self) {
+			nbr_rep_tmp.opt_lci = nbr_rep_self->opt_lci;
+			nbr_rep_tmp.opt_civic = nbr_rep_self->opt_civic;
+			flags |= RRM_NREQ_FLAGS_COLOCATED_BSSID;
+		}
+
+		wlc_rrm_create_nbrrep_element(rrm_cfg, &ptr, &nbr_rep_tmp, flags, bufend);
+	}
+
 	if ((bufend - ptr) > 0) {
-		WL_ERROR(("%s: fixup Neighbor AP report response len buflen %d, unused %d\n",
-			__FUNCTION__, rrm_req_len, (int)(bufend - ptr)));
+#ifdef MFP
+		scb_sec_len = wlc_mfp_frame_get_sec_len(wlc->mfp, FC_ACTION,
+			DOT11_ACTION_CAT_RRM, &scb->ea, cfg);
+#endif // endif
 		rrm_req_len += DOT11_MGMT_HDR_LEN;
-		PKTSETLEN(wlc->osh, p, (PKTLEN(wlc->osh, p) - (bufend - ptr)));
+		PKTSETLEN(wlc->osh, p, (rrm_req_len - (bufend - ptr)) + scb_sec_len);
 	}
 	wlc_rrm_send_event(rrm_info, scb, (char *)rmrep, rrm_req_len,
 		DOT11_RM_ACTION_NR_REP, 0);
@@ -5043,6 +5328,7 @@ wlc_rrm_get_neighbor_list(wlc_rrm_info_t *rrm_info, nbr_rpt_elem_t *nbr_elt, uin
 	rrm_nbr_rep_t *nbr_rep;
 	int i;
 
+	uint8 *ptr = (uint8 *)nbr_elt;
 	nbr_rep = rrm_cfg->nbr_rep_head;
 
 	for (i = 0; i < list_cnt; i++) {
@@ -5062,6 +5348,27 @@ wlc_rrm_get_neighbor_list(wlc_rrm_info_t *rrm_info, nbr_rpt_elem_t *nbr_elt, uin
 		store16_ua((uint8 *)&nbr_elt->chanspec, nbr_rep->nbr_elt.chanspec);
 		nbr_elt->bss_trans_preference = nbr_rep->nbr_elt.bss_trans_preference;
 
+		ptr += sizeof(nbr_rpt_elem_t);
+		if (nbr_elt->flags & WL_RRM_NBR_RPT_LCI_FLAG) {
+			if (nbr_rep->opt_lci != NULL) {
+				dot11_meas_rep_t *lci_rep = (dot11_meas_rep_t *) nbr_rep->opt_lci;
+				memcpy(ptr, nbr_rep->opt_lci, lci_rep->len + TLV_HDR_LEN);
+				ptr += (lci_rep->len + TLV_HDR_LEN);
+			} else {
+				nbr_elt->flags &= ~WL_RRM_NBR_RPT_LCI_FLAG;
+			}
+		}
+
+		if (nbr_elt->flags & WL_RRM_NBR_RPT_CIVIC_FLAG) {
+			if (nbr_rep->opt_civic != NULL) {
+				dot11_meas_rep_t *civic_rep =
+					(dot11_meas_rep_t *) nbr_rep->opt_civic;
+				memcpy(ptr, nbr_rep->opt_civic, civic_rep->len + TLV_HDR_LEN);
+				ptr += (civic_rep->len + TLV_HDR_LEN);
+			} else {
+				nbr_elt->flags &= ~WL_RRM_NBR_RPT_CIVIC_FLAG;
+			}
+		}
 		nbr_rep = nbr_rep->next;
 		nbr_elt++;
 	}
@@ -5098,6 +5405,14 @@ wlc_rrm_del_neighbor(wlc_rrm_info_t *rrm_info, struct ether_addr *ea, struct wlc
 	else
 		nbr_rep_pre->next = nbr_rep->next;
 
+	if (nbr_rep->opt_lci != NULL) {
+		dot11_meas_rep_t *lci_rep = (dot11_meas_rep_t *) nbr_rep->opt_lci;
+		MFREE(rrm_info->wlc->osh, nbr_rep->opt_lci, lci_rep->len + TLV_HDR_LEN);
+	}
+	if (nbr_rep->opt_civic != NULL) {
+		dot11_meas_rep_t *civic_rep = (dot11_meas_rep_t *) nbr_rep->opt_civic;
+		MFREE(rrm_info->wlc->osh, nbr_rep->opt_civic, civic_rep->len + TLV_HDR_LEN);
+	}
 	MFREE(rrm_info->wlc->osh, nbr_rep, sizeof(rrm_nbr_rep_t));
 
 	/* Update beacons and probe responses */
@@ -5189,6 +5504,16 @@ wlc_rrm_add_neighbor(wlc_rrm_info_t *rrm_info, nbr_rpt_elem_t *nbr_elt, struct w
 		}
 		wlc_rrm_remove_regclass_nbr_cnt(rrm_info, nbr_rep, del, &channel_removed, rrm_cfg);
 		memcpy(&nbr_rep->nbr_elt, nbr_elt, sizeof(*nbr_elt));
+		if (nbr_rep->opt_lci != NULL) {
+			dot11_meas_rep_t *lci_rep = (dot11_meas_rep_t *) nbr_rep->opt_lci;
+			MFREE(rrm_info->wlc->osh, nbr_rep->opt_lci, lci_rep->len + TLV_HDR_LEN);
+			nbr_rep->opt_lci = NULL;
+		}
+		if (nbr_rep->opt_civic != NULL) {
+			dot11_meas_rep_t *civic_rep = (dot11_meas_rep_t *) nbr_rep->opt_civic;
+			MFREE(rrm_info->wlc->osh, nbr_rep->opt_civic, civic_rep->len + TLV_HDR_LEN);
+			nbr_rep->opt_civic = NULL;
+		}
 	} else {
 		bsscfg = wlc_bsscfg_find_by_wlcif(wlc, wlcif);
 		nbr_rep_cnt = wlc_rrm_get_neighbor_count(wlc, bsscfg, addtype);
@@ -5230,6 +5555,91 @@ wlc_rrm_add_neighbor(wlc_rrm_info_t *rrm_info, nbr_rpt_elem_t *nbr_elt, struct w
 	}
 }
 
+void
+wlc_rrm_add_neighbor_chanspec(nbr_rpt_elem_t *nbr_elt, rrm_bsscfg_cubby_t *rrm_cfg)
+{
+	rrm_nbr_rep_t *nbr_rep;
+
+	/* Find Neighbor Report element from list */
+	nbr_rep = rrm_cfg->nbr_rep_head;
+	while (nbr_rep) {
+		if (memcmp(&nbr_rep->nbr_elt.bssid, &nbr_elt->bssid, ETHER_ADDR_LEN) == 0)
+				break;
+		nbr_rep = nbr_rep->next;
+	}
+
+	if (nbr_rep) {
+		memcpy(&nbr_rep->nbr_elt.chanspec, &nbr_elt->chanspec, sizeof(chanspec_t));
+	} else {
+		WL_ERROR(("%s: neighbor not found\n", __FUNCTION__));
+	}
+}
+
+void
+wlc_rrm_add_neighbor_ssid(nbr_rpt_elem_t *nbr_elt, rrm_bsscfg_cubby_t *rrm_cfg)
+{
+	rrm_nbr_rep_t *nbr_rep;
+
+	/* Find Neighbor Report element from list */
+	nbr_rep = rrm_cfg->nbr_rep_head;
+	while (nbr_rep) {
+		if (memcmp(&nbr_rep->nbr_elt.bssid, &nbr_elt->bssid, ETHER_ADDR_LEN) == 0)
+				break;
+		nbr_rep = nbr_rep->next;
+	}
+
+	if (nbr_rep) {
+		memcpy(&nbr_rep->nbr_elt.ssid, &nbr_elt->ssid, sizeof(wlc_ssid_t));
+	} else {
+		WL_ERROR(("%s: neighbor not found\n", __FUNCTION__));
+	}
+}
+
+int
+wlc_rrm_add_neighbor_lci(wlc_rrm_info_t *rrm_info, struct ether_addr *nbr_bss,
+	uint8 *opt_lci, int len, rrm_bsscfg_cubby_t *rrm_cfg)
+{
+	rrm_nbr_rep_t *nbr_rep;
+
+	/* Find Neighbor Report element from list */
+	nbr_rep = rrm_cfg->nbr_rep_head;
+	while (nbr_rep) {
+		if (memcmp(&nbr_rep->nbr_elt.bssid, nbr_bss, ETHER_ADDR_LEN) == 0)
+				break;
+		nbr_rep = nbr_rep->next;
+	}
+
+	if (nbr_rep) {
+		return wlc_rrm_add_loc(rrm_info, &nbr_rep->opt_lci,
+			opt_lci, len, DOT11_MEASURE_TYPE_LCI);
+	} else {
+		WL_ERROR(("%s: neighbor not found\n", __FUNCTION__));
+		return BCME_NOTFOUND;
+	}
+}
+
+int
+wlc_rrm_add_neighbor_civic(wlc_rrm_info_t *rrm_info, struct ether_addr *nbr_bss,
+	uint8 *opt_civic, int len, rrm_bsscfg_cubby_t *rrm_cfg)
+{
+	rrm_nbr_rep_t *nbr_rep;
+
+	/* Find Neighbor Report element from list */
+	nbr_rep = rrm_cfg->nbr_rep_head;
+	while (nbr_rep) {
+		if (memcmp(&nbr_rep->nbr_elt.bssid, nbr_bss, ETHER_ADDR_LEN) == 0)
+			break;
+		nbr_rep = nbr_rep->next;
+	}
+
+	if (nbr_rep) {
+		return wlc_rrm_add_loc(rrm_info, &nbr_rep->opt_civic,
+			opt_civic, len, DOT11_MEASURE_TYPE_CIVICLOC);
+	} else {
+		WL_ERROR(("%s: neighbor not found\n", __FUNCTION__));
+		return BCME_NOTFOUND;
+	}
+}
 static void
 wlc_rrm_add_regclass_neighbor_count(wlc_rrm_info_t *rrm_info, rrm_nbr_rep_t *nbr_rep,
 	bool *channel_added, rrm_bsscfg_cubby_t *rrm_cfg)
@@ -5514,7 +5924,7 @@ wlc_rrm_ap_scb_state_upd(void *ctx, scb_state_upd_data_t *data)
 #if defined(WL_PROXDETECT) && defined(WL_FTM)
 static uint8 *
 wlc_rrm_create_lci_meas_element(uint8 *ptr, rrm_bsscfg_cubby_t *rrm_cfg,
-	rrm_nbr_rep_t *nbr_rep, int *buflen)
+	rrm_nbr_rep_t *nbr_rep, int *buflen, uint8 flags)
 {
 	dot11_meas_rep_t *lci_rep = (dot11_meas_rep_t *) ptr;
 	uint copy_len;
@@ -5573,13 +5983,22 @@ wlc_rrm_create_lci_meas_element(uint8 *ptr, rrm_bsscfg_cubby_t *rrm_cfg,
 		*buflen -= (DOT11_MNG_IE_MREP_LCI_FIXED_LEN - TLV_HDR_LEN);
 	}
 
+	/* if sending self LCI, need to add colocated bssid subelem */
+	if (flags & RRM_NREQ_FLAGS_COLOCATED_BSSID &&
+	    *buflen >= (DOT11_LCI_COLOCATED_BSSID_LIST_FIXED_LEN + (ETHER_ADDR_LEN * 2))) {
+		uint8 *colocp = wlc_rrm_create_colocatedbssid_ie(rrm_cfg->rrm_info,
+			ptr, buflen);
+		lci_rep->len += (colocp - ptr);
+		ptr = colocp;
+	}
+
 done:
 	return ptr;
 }
 
 static uint8 *
 wlc_rrm_create_civic_meas_element(uint8 *ptr, rrm_bsscfg_cubby_t *rrm_cfg,
-	rrm_nbr_rep_t *nbr_rep, int *buflen)
+	rrm_nbr_rep_t *nbr_rep, int *buflen, uint8 flags)
 {
 	dot11_meas_rep_t *civic_rep = (dot11_meas_rep_t *) ptr;
 	uint copy_len;
@@ -5636,6 +6055,15 @@ wlc_rrm_create_civic_meas_element(uint8 *ptr, rrm_bsscfg_cubby_t *rrm_cfg,
 
 		ptr += (DOT11_MNG_IE_MREP_CIVIC_FIXED_LEN - TLV_HDR_LEN);
 		*buflen -= (DOT11_MNG_IE_MREP_CIVIC_FIXED_LEN - TLV_HDR_LEN);
+	}
+	/* if sending self Civic without LCI, need to add colocated bssid subelem */
+	if (flags & RRM_NREQ_FLAGS_COLOCATED_BSSID &&
+	    !(flags & RRM_NREQ_FLAGS_LCI_PRESENT) &&
+	    *buflen >= (DOT11_LCI_COLOCATED_BSSID_LIST_FIXED_LEN + (ETHER_ADDR_LEN * 2))) {
+		uint8 *colocp = wlc_rrm_create_colocatedbssid_ie(rrm_cfg->rrm_info,
+			ptr, buflen);
+		civic_rep->len += (colocp - ptr);
+		ptr = colocp;
 	}
 done:
 	return ptr;
@@ -5749,10 +6177,23 @@ wlc_rrm_get_self_lci(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	wl_rrm_config_ioc_t *rrm_cfg_cmd = (wl_rrm_config_ioc_t *)a; /* output */
 	dot11_meas_rep_t *lci_rep;
 	rrm_bsscfg_cubby_t *rrm_cfg = RRM_BSSCFG_CUBBY(rrm_info, cfg);
+	int32 buflen = alen;
+	uint8 *data_ptr;
+	uint8 *colocp;
 
 	if (rrm_cfg->nbr_rep_self && rrm_cfg->nbr_rep_self->opt_lci) {
 		lci_rep = (dot11_meas_rep_t *)rrm_cfg->nbr_rep_self->opt_lci;
-		return wlc_rrm_get_self_data(lci_rep, rrm_cfg_cmd, alen);
+		if (wlc_rrm_get_self_data(lci_rep, rrm_cfg_cmd, alen) == BCME_OK) {
+			/* if sending self LCI, need to add colocated bssid subelem */
+			data_ptr = (uint8 *) &rrm_cfg_cmd->data[0] +
+				(lci_rep->len - DOT11_MNG_IE_MREP_FIXED_LEN);
+			buflen -= (lci_rep->len + WL_RRM_CONFIG_MIN_LENGTH -
+				DOT11_MNG_IE_MREP_FIXED_LEN);
+			colocp = wlc_rrm_create_colocatedbssid_ie(rrm_info, data_ptr, &buflen);
+			lci_rep->len += (colocp - data_ptr);
+			rrm_cfg_cmd->len += (colocp - data_ptr);
+		}
+
 	} else {
 		/* set output to unknown LCI */
 		rrm_cfg_cmd->len = DOT11_FTM_LCI_UNKNOWN_LEN;
@@ -5769,10 +6210,23 @@ wlc_rrm_get_self_civic(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	wl_rrm_config_ioc_t *rrm_cfg_cmd = (wl_rrm_config_ioc_t *)a; /* output */
 	dot11_meas_rep_t *civic_rep;
 	rrm_bsscfg_cubby_t *rrm_cfg = RRM_BSSCFG_CUBBY(rrm_info, cfg);
+	int32 buflen = alen;
+	uint8 *data_ptr;
+	uint8 *colocp;
 
 	if (rrm_cfg->nbr_rep_self && rrm_cfg->nbr_rep_self->opt_civic) {
 		civic_rep = (dot11_meas_rep_t *)rrm_cfg->nbr_rep_self->opt_civic;
-		return wlc_rrm_get_self_data(civic_rep, rrm_cfg_cmd, alen);
+		if (wlc_rrm_get_self_data(civic_rep, rrm_cfg_cmd, alen) == BCME_OK &&
+		    rrm_cfg->nbr_rep_self->opt_lci == NULL) {
+			/* if sending self Civic without LCI, need to add colocated bssid subelem */
+			data_ptr = (uint8 *) &rrm_cfg_cmd->data[0] +
+				(civic_rep->len - DOT11_MNG_IE_MREP_FIXED_LEN);
+			buflen -= (civic_rep->len + WL_RRM_CONFIG_MIN_LENGTH -
+				DOT11_MNG_IE_MREP_FIXED_LEN);
+			colocp = wlc_rrm_create_colocatedbssid_ie(rrm_info, data_ptr, &buflen);
+			civic_rep->len += (colocp - data_ptr);
+			rrm_cfg_cmd->len += (colocp - data_ptr);
+		}
 	} else {
 		/* set output to unknown civic */
 		rrm_cfg_cmd->len = DOT11_FTM_CIVIC_UNKNOWN_LEN;
@@ -5800,6 +6254,45 @@ wlc_rrm_get_self_locid(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg,
 	}
 
 	return BCME_OK;
+}
+
+static uint8 *
+wlc_rrm_create_colocatedbssid_ie(wlc_rrm_info_t *rrm_info,
+	uint8 *data_ptr, int *buflen)
+{
+	uint32 colocated_bss_sublen = 0;
+	uint16 i;
+	wlc_bsscfg_t *bsscfg;
+
+	uint32 bss_cnt = wlc_ap_bss_up_count(rrm_info->wlc);
+	if (!MBSS_ENAB(rrm_info->wlc->pub) || bss_cnt <= 1) {
+		goto done;
+	}
+
+	colocated_bss_sublen = DOT11_LCI_COLOCATED_BSSID_LIST_FIXED_LEN;
+	colocated_bss_sublen += bss_cnt * ETHER_ADDR_LEN;
+
+	if (*buflen < colocated_bss_sublen) {
+		goto done;
+	}
+
+	dot11_colocated_bssid_list_se_t *colocated_bssid_se =
+		(dot11_colocated_bssid_list_se_t *) data_ptr;
+
+	colocated_bssid_se->sub_id = DOT11_LCI_COLOCATED_BSSID_SUBELEM_ID;
+	colocated_bssid_se->length = colocated_bss_sublen - TLV_HDR_LEN;
+	colocated_bssid_se->max_bssid_ind = 0;
+	data_ptr = (uint8 *)colocated_bssid_se->bssid;
+	*buflen -= DOT11_LCI_COLOCATED_BSSID_LIST_FIXED_LEN;
+
+	FOREACH_UP_AP(rrm_info->wlc, i, bsscfg) {
+		memcpy(data_ptr, &bsscfg->BSSID, ETHER_ADDR_LEN);
+		data_ptr += ETHER_ADDR_LEN;
+		*buflen -= ETHER_ADDR_LEN;
+	}
+
+done:
+	return data_ptr;
 }
 
 /*
@@ -6379,7 +6872,7 @@ wlc_rrm_ftm_ranging_cb(wlc_info_t *wlc, wlc_ftm_t *ftm,
 	rrm_info->rrm_frng_req->frng_rep = (frngrep_t *) MALLOCZ(wlc->osh, sizeof(*frng_buf));
 	frng_buf = rrm_info->rrm_frng_req->frng_rep;
 	if (frng_buf == NULL) {
-		WL_ERROR(("%s: MALLOC failed of %d bytes\n", __FUNCTION__, sizeof(*frng_buf)));
+		WL_ERROR(("%s: MALLOC failed \n", __FUNCTION__));
 		goto done;
 	}
 
@@ -7082,6 +7575,44 @@ wlc_rrm_send_frngrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, uint8 *data, i
 }
 
 static int
+wlc_rrm_scbflag_check(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct ether_addr *da, int flag)
+{
+	wlc_info_t *wlc = rrm_info->wlc;
+	struct scb *scb;
+
+	if ((scb = wlc_scbfind(wlc, cfg, da)) == NULL) {
+		return BCME_NOTASSOCIATED;
+	}
+
+	if (!(scb->flags3 & SCB3_RRM)) {
+		return BCME_UNSUPPORTED;
+	}
+	else {
+		rrm_scb_info_t *scb_info = RRM_SCB_INFO(rrm_info, scb);
+		if (!isset(scb_info->rrm_capabilities, flag)) {
+			return BCME_UNSUPPORTED;
+		}
+	}
+	return BCME_OK;
+}
+
+static int
+wlc_rrm_set_frngdir(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, uint8 *data, int len)
+{
+	int err = BCME_OK;
+	uint8 mode = 0;
+
+	if (len != sizeof(mode)) {
+		return BCME_BADARG;
+	}
+
+	mode = data[0];
+	rrm_info->direct_ranging_mode = (bool)mode;
+
+	return err;
+}
+
+static int
 wlc_rrm_send_frngreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, uint8 *data, int len)
 {
 	void *p;
@@ -7093,11 +7624,13 @@ wlc_rrm_send_frngreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, uint8 *data, i
 	struct ether_addr *da;
 	frngreq_target_t *targets;
 	int i;
+	uint16 nbr_rep_cnt;
 	rrm_bsscfg_cubby_t *rrm_cfg = RRM_BSSCFG_CUBBY(rrm_info, cfg);
 	int err = BCME_OK;
 	frngreq_t *frngreq = (frngreq_t *)data;
 	wlc_info_t *wlc = rrm_info->wlc;
 	struct scb *scb;
+	int scb_sec_len = 0;
 
 	if (len > ((sizeof(frngreq_t) +
 		((DOT11_FTM_RANGE_ENTRY_CNT_MAX-1) * sizeof(frngreq_target_t))))) {
@@ -7120,18 +7653,23 @@ wlc_rrm_send_frngreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, uint8 *data, i
 	buflen = DOT11_RMREQ_LEN + DOT11_RMREQ_FTM_RANGE_LEN;
 	targets = (frngreq_target_t *) frngreq->targets;
 
-	/* neighbor reports -  at least 1 is required */
-	for (i = 0; i < frngreq->num_aps; i++) {
-		buflen += (DOT11_NEIGHBOR_REP_IE_FIXED_LEN + TLV_HDR_LEN);
-		if (wf_chspec_valid(targets[i].chanspec)) {
-			buflen += (TLV_HDR_LEN + DOT11_WIDE_BW_IE_LEN);
-		}
+	nbr_rep_cnt = wlc_rrm_get_neighbor_count(wlc, cfg, NBR_ADD_STATIC);
+	if (ETHER_ISNULLADDR(&targets[0].bssid) &&
+		(nbr_rep_cnt < frngreq->num_aps ||
+		nbr_rep_cnt < frngreq->min_ap_count)) {
+		WL_ERROR(("wl%d: %s IOV_RRM_FRNG: REQ: only %d APs in nbr list\n",
+				rrm_info->wlc->pub->unit,
+				__FUNCTION__, nbr_rep_cnt));
+		return BCME_BADARG;
 	}
 
-	if (frngreq->max_age != 0) {
-		buflen += (DOT11_FTM_RANGE_SUBELEM_LEN + TLV_HDR_LEN);
+	err = wlc_rrm_scbflag_check(rrm_info, cfg, da, DOT11_RRM_CAP_FTM_RANGE);
+	if (err) {
+		return err;
 	}
 
+	/* too many optional elements to count up, fixup the length at the end */
+	buflen = ETHER_MAX_DATA;
 	if ((p = wlc_frame_get_action(wlc, da,
 		&cfg->cur_etheraddr, &cfg->BSSID, buflen, &pbody, DOT11_ACTION_CAT_RRM)) == NULL) {
 		return BCME_NOMEM;
@@ -7160,19 +7698,34 @@ wlc_rrm_send_frngreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, uint8 *data, i
 	ptr = (uint8 *) freq->data;
 
 	/* add neighbor reports -  at least 1 is required */
-	for (i = 0; i < frngreq->num_aps; i++) {
-		rrm_nbr_rep_t nbr_rep;
+	if (ETHER_ISNULLADDR(&targets[0].bssid)) {
+		/* add APs from current neighbor list if none given in IOVAR */
+		rrm_nbr_rep_t *nbr_rep = rrm_cfg->nbr_rep_head;
 
-		memset(&nbr_rep, 0, sizeof(nbr_rep));
-		memcpy(&nbr_rep.nbr_elt.bssid, &targets[i].bssid, sizeof(nbr_rep.nbr_elt.bssid));
-		nbr_rep.nbr_elt.bssid_info = targets[i].bssid_info;
-		nbr_rep.nbr_elt.channel = targets[i].channel;
-		nbr_rep.nbr_elt.phytype = targets[i].phytype;
-		nbr_rep.nbr_elt.reg = targets[i].reg;
-		nbr_rep.nbr_elt.chanspec = targets[i].chanspec;
-		nbr_rep.nbr_elt.id = DOT11_MNG_NEIGHBOR_REP_ID;
+		for (i = 0; i < frngreq->num_aps; i++) {
+			wlc_rrm_create_nbrrep_element(rrm_cfg, &ptr, nbr_rep, 0, bufend);
 
-		wlc_rrm_create_nbrrep_element(rrm_cfg, &ptr, &nbr_rep, 0, bufend);
+			/* Move to the next one */
+			nbr_rep = nbr_rep->next;
+		}
+	}
+	else {
+		/* add APs from list given in IOVAR */
+		for (i = 0; i < frngreq->num_aps; i++) {
+			rrm_nbr_rep_t nbr_rep;
+
+			memset(&nbr_rep, 0, sizeof(nbr_rep));
+			memcpy(&nbr_rep.nbr_elt.bssid, &targets[i].bssid,
+			       sizeof(nbr_rep.nbr_elt.bssid));
+			nbr_rep.nbr_elt.bssid_info = targets[i].bssid_info;
+			nbr_rep.nbr_elt.channel = targets[i].channel;
+			nbr_rep.nbr_elt.phytype = targets[i].phytype;
+			nbr_rep.nbr_elt.reg = targets[i].reg;
+			nbr_rep.nbr_elt.chanspec = targets[i].chanspec;
+			nbr_rep.nbr_elt.id = DOT11_MNG_NEIGHBOR_REP_ID;
+
+			wlc_rrm_create_nbrrep_element(rrm_cfg, &ptr, &nbr_rep, 0, bufend);
+		}
 	}
 
 	/* add optional subelements in non-decreasing order */
@@ -7185,14 +7738,17 @@ wlc_rrm_send_frngreq(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, uint8 *data, i
 		ptr += sizeof(*age_range_subel);
 	}
 
-	if ((bufend - ptr) > 0) {
-		WL_ERROR(("%s: fixup FTM range request response len buflen %d, actual %d\n",
-			__FUNCTION__, buflen, (bufend - ptr)));
+	scb = wlc_scbfind(wlc, cfg, da);
+	if ((bufend - ptr) > 0 && scb != NULL) {
+#ifdef MFP
+		scb_sec_len = wlc_mfp_frame_get_sec_len(wlc->mfp, FC_ACTION,
+			DOT11_ACTION_CAT_RRM, &scb->ea, cfg);
+#endif // endif
 		buflen += DOT11_MGMT_HDR_LEN;
-		PKTSETLEN(wlc->osh, p, (PKTLEN(wlc->osh, p) - (bufend - ptr)));
+		freq->len -= (bufend - ptr);
+		PKTSETLEN(wlc->osh, p, (buflen - (bufend - ptr)) + scb_sec_len);
 	}
 
-	scb = wlc_scbfind(wlc, cfg, da);
 	wlc_sendmgmt(wlc, p, cfg->wlcif->qi, scb);
 
 	return err;
@@ -7456,7 +8012,7 @@ wlc_rrm_recv_nrrep(wlc_rrm_info_t *rrm_info, wlc_bsscfg_t *cfg, struct scb *scb,
 	rrm_bsscfg_cubby_t *rrm_cfg = RRM_BSSCFG_CUBBY(rrm_info, cfg);
 	chanspec_t ch;
 	chanspec_t chanspec_list[MAXCHANNEL];
-	int channel_num = 0;
+	uint channel_num = 0;
 
 	ASSERT(rrm_cfg != NULL);
 	if (!isset(rrm_cfg->rrm_cap, DOT11_RRM_CAP_NEIGHBOR_REPORT)) {
@@ -7614,6 +8170,7 @@ wlc_rrm_doiovar(void *hdl, uint32 actionid,
 			0;
 		cap_avail.cap[4] = DOT11_RRM_CAP_CIVIC_LOC_ENAB |
 			DOT11_RRM_CAP_IDENT_LOC_ENAB |
+			DOT11_RRM_CAP_FTM_RANGE_ENAB |
 			0;
 		for (i = 0; i < DOT11_RRM_CAP_LEN; i++)
 			rrm_cap->cap[i] &= cap_avail.cap[i];
@@ -7900,7 +8457,11 @@ wlc_rrm_doiovar(void *hdl, uint32 actionid,
 
 	case IOV_SVAL(IOV_RRM_LCI_REQ):
 	{
+#ifdef WL_PROXDETECT
+		lci_req_t lcireq;
+#else
 		lcireq_t lcireq;
+#endif // endif
 
 		if (!isset(rrm_cfg->rrm_cap, DOT11_RRM_CAP_LCIM))
 			return BCME_UNSUPPORTED;
@@ -7912,7 +8473,11 @@ wlc_rrm_doiovar(void *hdl, uint32 actionid,
 
 	case IOV_SVAL(IOV_RRM_CIVIC_REQ):
 	{
+#ifdef WL_PROXDETECT
+		civic_req_t civicreq;
+#else
 		civicreq_t civicreq;
+#endif // endif
 
 		if (!isset(cfg->ext_cap, DOT11_EXT_CAP_CIVIC_LOC))
 			return BCME_UNSUPPORTED;
@@ -8076,6 +8641,100 @@ wlc_rrm_doiovar(void *hdl, uint32 actionid,
 	case IOV_GVAL(IOV_RRM_NBR_SCAN):
 	{
 		*(uint8 *)a = rrm_cfg->nbr_scan;
+		break;
+	}
+	case IOV_SVAL(IOV_RRM_NBR):
+	{
+		uint8 *opt_civic = NULL;
+		uint8 *opt_lci = NULL;
+		nbr_rpt_elem_t nbr_elt;
+		struct ether_addr *nbr_bss;
+		char *cmdname = a;
+		char *ab = (char *) a;
+
+		if (!isset(rrm_cfg->rrm_cap, DOT11_RRM_CAP_NEIGHBOR_REPORT)) {
+			WL_ERROR(("wl%d: %s IOV_RRM_NBR: neighbor report"
+				" capability disabled\n", rrm_info->wlc->pub->unit,
+				__FUNCTION__));
+			return BCME_UNSUPPORTED;
+		}
+
+		a = (void *) &ab[strlen(cmdname)+1];
+		alen -= (strlen(cmdname)+1);
+
+		if (strcmp(cmdname, "civic") == 0) {
+			if (alen < (sizeof(struct ether_addr) + DOT11_FTM_CIVIC_UNKNOWN_LEN)) {
+				WL_ERROR(("wl%d: %s IOV_RRM_NBR: CIVIC: alen %d too short\n",
+					rrm_info->wlc->pub->unit, __FUNCTION__, alen));
+				return BCME_BADARG;
+			}
+
+			nbr_bss = (struct ether_addr *) a;
+			alen -= sizeof(struct ether_addr);
+
+			if (alen > 0) {
+				opt_civic = (uint8 *) a;
+				opt_civic += sizeof(struct ether_addr);
+			}
+
+			return wlc_rrm_add_neighbor_civic(rrm_info, nbr_bss, opt_civic,
+				alen, rrm_cfg);
+		}
+		else if (strcmp(cmdname, "lci") == 0) {
+			if (alen < (sizeof(struct ether_addr) + DOT11_FTM_LCI_UNKNOWN_LEN)) {
+				WL_ERROR(("wl%d: %s IOV_RRM_NBR: LCI: alen %d too short\n",
+					rrm_info->wlc->pub->unit, __FUNCTION__, alen));
+				return BCME_BADARG;
+			}
+
+			nbr_bss = (struct ether_addr *) a;
+			alen -= sizeof(struct ether_addr);
+
+			if (alen > 0) {
+				opt_lci = (uint8 *) a;
+				opt_lci += sizeof(struct ether_addr);
+			}
+
+			return wlc_rrm_add_neighbor_lci(rrm_info, nbr_bss, opt_lci,
+				alen, rrm_cfg);
+		} else if (strcmp(cmdname, "ssid") == 0) {
+			/* ssid */
+			memset(&nbr_elt, 0, sizeof(nbr_rpt_elem_t));
+
+			if (alen != sizeof(nbr_elt)) {
+				WL_ERROR(("wl%d: %s IOV_RRM_NBR: SSID: alen %d too short\n",
+					rrm_info->wlc->pub->unit, __FUNCTION__, alen));
+				return BCME_BADARG;
+			}
+
+			memcpy(&nbr_elt, a, alen);
+
+			if (nbr_elt.version == WL_RRM_NBR_RPT_VER) {
+				wlc_rrm_add_neighbor_ssid(&nbr_elt, rrm_cfg);
+			}
+			else {
+				err = BCME_VERSION;
+			}
+		} else if (strcmp(cmdname, "chanspec") == 0) {
+			/* wide bandwidth channel */
+			memset(&nbr_elt, 0, sizeof(nbr_rpt_elem_t));
+
+			if (alen != sizeof(nbr_elt)) {
+				WL_ERROR(("wl%d: %s IOV_RRM_NBR: chanspec: alen %d too short\n",
+					rrm_info->wlc->pub->unit, __FUNCTION__, alen));
+				return BCME_BADARG;
+			}
+
+			memcpy(&nbr_elt, a, alen);
+
+			if (nbr_elt.version == WL_RRM_NBR_RPT_VER) {
+				wlc_rrm_add_neighbor_chanspec(&nbr_elt, rrm_cfg);
+			}
+			else {
+				err = BCME_VERSION;
+			}
+		}
+
 		break;
 	}
 #endif /* WL11K_AP */
@@ -8936,7 +9595,14 @@ wlc_rrm_begin(wlc_rrm_info_t *rrm_info)
 #ifdef WL_FTM_11K
 #if defined(WL_PROXDETECT) && defined(WL_FTM)
 		case DOT11_MEASURE_TYPE_FTMRANGE:
-			wlc_rrm_begin_ftm(rrm_info);
+			if (rrm_info->direct_ranging_mode) {
+				wlc_rrm_begin_ftm(rrm_info);
+			}
+			else {
+				WL_INFORM(("wl%d: %s: direct ranging disabled "
+					"waiting for app action; type %d in request token %d\n",
+					wlc->pub->unit, __FUNCTION__, req->type, rrm_state->token));
+			}
 			break;
 #endif /* WL_PROXDETECT && WL_FTM */
 #endif /* WL_FTM_11K */

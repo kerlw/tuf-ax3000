@@ -5976,7 +5976,7 @@ int start_firewall(int wanunit, int lanunit)
 
 leave:
 	file_unlock(lock);
-
+	run_custom_script("firewall-start", 0, wan_if, NULL);
 	return 0;
 }
 
@@ -6005,3 +6005,4 @@ void enable_ip_forward(void)
 #endif
 #endif
 }
+

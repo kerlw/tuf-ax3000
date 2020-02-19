@@ -315,6 +315,10 @@ extern bool	_pciedev_hostready;
 #define FLOW_RING_PKT_PENDING		(1 << 1)
 /** flow control related, set eg when WL is in power save mode */
 #define FLOW_RING_PORT_CLOSED		(1 << 2)
+/** flow control related, set eg when WL IF is closed to for example scan */
+#define FLOW_RING_IF_CLOSED		(1 << 3)
+/** Combination flag to check if flow ring is closed */
+#define FLOW_RING_CLOSED		(FLOW_RING_PORT_CLOSED | FLOW_RING_IF_CLOSED)
 /**
  * set when host requested to delete a ring but the applicable ring still contains packets, ring
  * will be deleted once packets are flushed by the dongle.
@@ -922,6 +926,7 @@ typedef struct amsdu_sup_pktlist {
 typedef struct pciedev_ctrl_resp_q {
 	uint8	w_indx;
 	uint8	r_indx;
+	uint8	depth;
 	uint8	status;
 	uint8	num_flow_ring_delete_resp_pend;
 	uint8	num_flow_ring_flush_resp_pend;

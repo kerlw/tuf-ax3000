@@ -19,7 +19,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: siutils.c 775502 2019-06-02 00:23:30Z $
+ * $Id: siutils.c 777286 2019-07-25 19:43:30Z $
  */
 
 #include <bcm_cfg.h>
@@ -7692,6 +7692,9 @@ si_pmu_avb_clk_set(si_t *sih, osl_t *osh, bool set_flag)
 	switch (CHIPID(sih->chip)) {
 		case BCM43460_CHIP_ID:
 		case BCM4360_CHIP_ID:
+		case BCM4366_CHIP_ID:
+		case BCM43684_CHIP_ID:
+		case BCM63178_CHIP_ID:
 			si_pmu_avbtimer_enable(sih, osh, set_flag);
 			break;
 		default:

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_txiqlocal.c 775501 2019-06-02 00:18:19Z $
+ * $Id: phy_ac_txiqlocal.c 778100 2019-08-22 14:02:37Z $
  */
 
 #include <typedefs.h>
@@ -144,6 +144,7 @@ typedef struct {
 	uint8 initindex;
 	bool casc_gctrl;
 	int16 target_tssi_set[4];
+	bool reset_loftcoefs_prerxcal;
 } txiqcal_params_t;
 
 typedef struct acphy_tx_fdiqi_ctl_struct {
@@ -329,6 +330,9 @@ BCMATTACHFN(phy_ac_txiqlocal_populate_params)(phy_ac_txiqlocal_info_t *iqcal_inf
 	/* Pre RX IQ cal coeffs */
 	uint16 cmds_RESTART_PRERX[] = { 0x084, 0x056};
 	uint16 cmds_REFINE_PRERX[] = { 0x073, 0x045};
+
+	/* Reset LOFT comp coeffs before prerx cal */
+	uint8 reset_loftcoefs_prerxcal = 0;
 
 	if (RADIOID_IS(pi->pubpi->radioid, BCM2069_ID) &&
 			(RADIO2069_MAJORREV(pi->pubpi->radiorev) == 1) &&
@@ -551,6 +555,9 @@ BCMATTACHFN(phy_ac_txiqlocal_populate_params)(phy_ac_txiqlocal_info_t *iqcal_inf
 		num_cmds_restart_prerx = num_cmds_restart;
 		cmd_refine_prerx_ptr = cmd_restart_ptr;
 		num_cmds_refine_prerx = num_cmds_restart;
+		if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+			reset_loftcoefs_prerxcal = 1;
+		}
 	} else {
 		cmd_refine_ptr = cmds_REFINE;
 		num_cmds_refine = ARRAYSIZE(cmds_REFINE);
@@ -593,6 +600,7 @@ BCMATTACHFN(phy_ac_txiqlocal_populate_params)(phy_ac_txiqlocal_info_t *iqcal_inf
 	params->num_cmds_refine_fdiq  = num_cmds_refine_fdiq;
 	params->num_cmds_restart_fdiq = num_cmds_restart_fdiq;
 	params->tone_freq        = 4000;
+	params->reset_loftcoefs_prerxcal = reset_loftcoefs_prerxcal;
 
 	memcpy(params->target_tssi_set, target_tssi_set, sizeof(target_tssi_set));
 
@@ -1678,7 +1686,7 @@ wlc_phy_txcal_radio_setup_acphy_20698(phy_ac_txiqlocal_info_t *ti, uint8 Biq2byp
 static void
 wlc_phy_txcal_radio_setup_acphy_20704(phy_ac_txiqlocal_info_t *ti, uint8 Biq2byp)
 {
-	/* 20704_procs.tcl r785868: 20704_tx_iqlo_cal_radio_setup */
+	/* 20704_procs.tcl r830494: 20704_tx_iqlo_cal_radio_setup */
 
 	/* This stores off and sets Radio-Registers for Tx-iqlo-Calibration;
 	 *
@@ -1742,8 +1750,6 @@ wlc_phy_txcal_radio_setup_acphy_20704(phy_ac_txiqlocal_info_t *ti, uint8 Biq2byp
 					0x1)
 				MOD_RADIO_REG_20704_ENTRY(pi, LPF_OVR2, core, ovr_lpf_sw_bq1_bq2,
 					0x1)
-				MOD_RADIO_REG_20704_ENTRY(pi, TXDAC_REG1, core, iqdac_lowcm_en, 0x1)
-				MOD_RADIO_REG_20704_ENTRY(pi, TXDAC_REG0, core, iqdac_attn,	0x3)
 			RADIO_REG_LIST_EXECUTE(pi, core);
 
 			if (CHSPEC_IS5G(pi->radio_chanspec)) {
@@ -2132,7 +2138,7 @@ wlc_phy_txcal_radio_setup_acphy_20707(phy_ac_txiqlocal_info_t *ti, uint8 Biq2byp
 static void
 wlc_phy_txcal_radio_setup_acphy_20709(phy_ac_txiqlocal_info_t *ti, uint8 Biq2byp)
 {
-	/* 20709_procs.tcl r803517: 20709_tx_iqlo_cal_radio_setup */
+	/* 20709_procs.tcl r830494: 20709_tx_iqlo_cal_radio_setup */
 	/* This stores off and sets Radio-Registers for Tx-iqlo-Calibration;
 	 *
 	 * Note that Radio Behavior controlled via RFCtrl is handled in the
@@ -2197,22 +2203,9 @@ wlc_phy_txcal_radio_setup_acphy_20709(phy_ac_txiqlocal_info_t *ti, uint8 Biq2byp
 					logen_rx_rccr_pu, 0x1)
 				MOD_RADIO_REG_20709_ENTRY(pi, LOGEN_CORE_OVR0, core,
 					ovr_logen_rx_rccr_pu, 0x1)
-				MOD_RADIO_REG_20709_ENTRY(pi, TXDAC_REG0, core,
-					iqdac_buf_cmsel, 0x0)
-				MOD_RADIO_REG_20709_ENTRY(pi, TXDAC_REG1, core,
-					iqdac_lowcm_en, 0x1)
-				MOD_RADIO_REG_20709_ENTRY(pi, TXDAC_REG0, core,
-					iqdac_attn, 0x3)
 			RADIO_REG_LIST_EXECUTE(pi, core);
 		} else {
-			RADIO_REG_LIST_START
-				MOD_RADIO_REG_20709_ENTRY(pi, TXDAC_REG0, core,
-					iqdac_buf_cmsel, 0x0)
-				MOD_RADIO_REG_20709_ENTRY(pi, TXDAC_REG1, core,
-					iqdac_lowcm_en, 0x0)
-				MOD_RADIO_REG_20709_ENTRY(pi, TXDAC_REG0, core,
-					iqdac_attn, 0x0)
-			RADIO_REG_LIST_EXECUTE(pi, core);
+			/* alpf default position during txiqlocal is in Tx path! */
 		}
 
 		if (CHSPEC_IS2G(pi->radio_chanspec)) {
@@ -5046,16 +5039,16 @@ phy_ac_txiqlocal(phy_info_t *pi, uint8 searchmode, bool Biq2byp, bool last_phase
 		wlc_phy_cal_txiqlo_coeffs_acphy(pi, CAL_COEFF_WRITE, coeff_ptr + 5*core + 0,
 		                                TB_START_COEFFS_AB, core);
 		/* Restart or refine with Biq2byp option should not touch
-		 * d,e,f coeffs
+		 * d,e,f coeffs. Can be bypassed due to: BCAWLAN-209401
 		 */
 
-		if (ti->prerxcal == 0) {
-		wlc_phy_cal_txiqlo_coeffs_acphy(pi, CAL_COEFF_WRITE, coeff_ptr + 5*core + 2,
-		                                TB_START_COEFFS_D,  core);
-		wlc_phy_cal_txiqlo_coeffs_acphy(pi, CAL_COEFF_WRITE, coeff_ptr + 5*core + 3,
-		                                TB_START_COEFFS_E,  core);
-		wlc_phy_cal_txiqlo_coeffs_acphy(pi, CAL_COEFF_WRITE, coeff_ptr + 5*core + 4,
-		                                TB_START_COEFFS_F,  core);
+		if (ti->prerxcal == 0 || ti->paramsi->reset_loftcoefs_prerxcal) {
+			wlc_phy_cal_txiqlo_coeffs_acphy(pi, CAL_COEFF_WRITE, coeff_ptr + 5*core + 2,
+			                            TB_START_COEFFS_D,  core);
+			wlc_phy_cal_txiqlo_coeffs_acphy(pi, CAL_COEFF_WRITE, coeff_ptr + 5*core + 3,
+			                            TB_START_COEFFS_E,  core);
+			wlc_phy_cal_txiqlo_coeffs_acphy(pi, CAL_COEFF_WRITE, coeff_ptr + 5*core + 4,
+			                            TB_START_COEFFS_F,  core);
 		}
 	}
 #ifdef WLC_TXFDIQ

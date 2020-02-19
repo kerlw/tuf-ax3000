@@ -1,4 +1,4 @@
-﻿BOM=BOM
+BOM=BOM
 AiMesh_Desc=AiMesh 整合多台华硕路由器组成 AiMesh 系统，为您提供强大的家庭网络覆盖和集中式网络管理。
 AiMesh_Desc2=您可以点击网络地图中的\"搜索\"按钮搜索您的 AiMesh 节点。<br>若附近有可以添加至 AiMesh 系统的可用 AiMesh 节点，将会显示在可用 AiMesh 节点列表中。
 AiMesh_Desc3=若您无法搜索到任何附近可用的 AiMesh 节点：
@@ -3665,3 +3665,5 @@ UU_Accelerator=网易UU加速器
 UU_Accelerator_desc=UU路由器插件为三大主机PS4、Switch、Xbox One提供加速。可实现多台主机同时加速，NAT类型All Open。畅享全球联机超快感！
 [###MODEL_DEP###][TUF-AX3000]UU_Accelerator_desc=UU路由器插件为三大主机（PS4、Switch、Xbox One）和PC端游提供加速。可实现多设备同时加速，畅享全球联机超快感！
 [###MODEL_DEP###][GT-AC2900][GT-AC5300][GT-AX11000][GT-AXY16000]UU_Accelerator_desc=UU路由器插件为三大主机（PS4、Switch、Xbox One）、PC端游和手游提供加速。可实现多设备同时加速，畅享全球联机超快感！
+Softcenter=软件中心
+Softcenter_tool=工具箱

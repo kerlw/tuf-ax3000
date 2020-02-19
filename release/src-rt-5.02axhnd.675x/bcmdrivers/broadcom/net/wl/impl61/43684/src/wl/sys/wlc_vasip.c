@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_vasip.c 775549 2019-06-04 04:40:02Z $
+ * $Id: wlc_vasip.c 777791 2019-08-09 23:07:16Z $
  */
 
 #include <wlc_cfg.h>
@@ -924,7 +924,7 @@ BCMRAMFN(wlc_vasip_support)(wlc_hw_info_t *wlc_hw, uint32 *vasipver, bool nopi)
 			__FUNCTION__, wlc_hw->unit, *vasipver));
 		return TRUE;
 	} else if (*vasipver == 3) {
-		if (D11REV_GE(wlc_hw->corerev, 65) && D11REV_LE(wlc_hw->corerev, 130)) {
+		if (D11REV_GE(wlc_hw->corerev, 65) && D11REV_LE(wlc_hw->corerev, 131)) {
 			WL_TRACE(("%s: wl%d: vasipver %d\n",
 				__FUNCTION__, wlc_hw->unit, *vasipver));
 			return TRUE;

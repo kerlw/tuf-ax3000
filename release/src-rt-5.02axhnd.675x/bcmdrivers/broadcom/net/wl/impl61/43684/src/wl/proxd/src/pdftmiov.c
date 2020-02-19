@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: pdftmiov.c 690872 2017-03-18 01:55:00Z $
+ * $Id: pdftmiov.c 777979 2019-08-19 23:14:13Z $
  */
 
 #include "pdftmpvt.h"
@@ -76,6 +76,9 @@ PACKER_DECL(session_info);
 PACKER_DECL(session_status);
 PACKER_DECL(counters);
 PACKER_DECL(rtt_result);
+#ifdef WL_RANGE_SEQ
+PACKER_DECL(rtt_result_v2);
+#endif /* WL_RANGE_SEQ */
 PACKER_DECL(sessions);
 PACKER_DECL(ftm_req);
 #ifdef WL_FTM_RANGE
@@ -91,6 +94,9 @@ PACKER_DECL(tune);
 	const ftm_iov_tlv_dig_info_t *tlv_info);
 
 GETLEN_DECL(rtt_result);
+#ifdef WL_RANGE_SEQ
+GETLEN_DECL(rtt_result_v2);
+#endif /* WL_RANGE_SEQ */
 GETLEN_DECL(sessions);
 GETLEN_DECL(ftm_req);
 #ifdef WL_FTM_11K
@@ -154,8 +160,16 @@ static const ftm_iov_tlv_dig_info_t ftm_iov_tlv_dig_info[] = {
 	DIGOFF(tlv_data.out.session_status), PACKFN(session_status)},
 	{WL_PROXD_TLV_ID_COUNTERS, sizeof(wl_proxd_counters_t),
 	DIGOFF(tlv_data.out.counters), PACKFN(counters)},
+#ifdef WL_RANGE_SEQ
+	{WL_PROXD_TLV_ID_RTT_RESULT, OFFSETOF(wl_proxd_rtt_result_t, rtt),
+#else
 	{WL_PROXD_TLV_ID_RTT_RESULT_V2, OFFSETOF(wl_proxd_rtt_result_t, rtt),
+#endif /* WL_RANGE_SEQ */
 	DIGOFF(tlv_data.out.rtt_result), PACKFN2(rtt_result)},
+#ifdef WL_RANGE_SEQ
+	{WL_PROXD_TLV_ID_RTT_RESULT_V2, OFFSETOF(wl_proxd_rtt_result_v2_t, rtt),
+	DIGOFF(tlv_data.out.rtt_result), PACKFN2(rtt_result_v2)},
+#endif /* WL_RANGE_SEQ */
 	{WL_PROXD_TLV_ID_SESSION_ID_LIST, OFFSETOF(wl_proxd_session_id_list_t, ids),
 	DIGOFF(tlv_data.config.sid_list), PACKFN2(sessions)},
 	{WL_PROXD_TLV_ID_FTM_REQ, sizeof(dot11_ftm_req_t), /* protocol request - not aligned */
@@ -374,6 +388,7 @@ ftm_iov_unpack_tlv(void *ctx, const uint8 *buf, uint16 id, uint16 len)
 	int err = BCME_OK;
 	const ftm_iov_tlv_dig_info_t *tlv_info;
 	uint8 *data_dst;
+	uint32 dst_ptr_size = sizeof(uint8*);
 
 	ASSERT(ctx != NULL && buf != NULL);
 
@@ -391,7 +406,7 @@ ftm_iov_unpack_tlv(void *ctx, const uint8 *buf, uint16 id, uint16 len)
 	 * buf points to data in xtlv that will be valid as long as xtlv buffer is
 	 */
 	data_dst = (uint8 *)dig + tlv_info->dig_off;
-	memcpy(data_dst, &buf, sizeof(uint8 *));
+	memcpy(data_dst, &buf, dst_ptr_size);
 
 done:
 	FTM_LOG_STATUS(dig->ftm, err, (("wl%d: %s: status %d processing tlv %d len %d\n",
@@ -495,7 +510,6 @@ ftm_iov_set_enable(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_session_id_t sid
 		/* security not enabled by default */
 	} else {
 		pdftm_bsscfg_clear_options(ftm, bsscfg);
-		ftm_cmn->config->flags &= ~(WL_PROXD_FLAG_RX_ENABLED | WL_PROXD_FLAG_SECURE);
 		pdftm_free_sessions(ftm, bsscfg, FALSE);
 #ifdef WLRSDB
 		if (RSDB_ENAB(wlc->pub) && wlc_bsscfg_primary(wlc)) {
@@ -506,8 +520,11 @@ ftm_iov_set_enable(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_session_id_t sid
 			}
 		}
 #endif /* WLRSDB */
-		if (!pdftm_need_proxd(ftm))
+		if (!pdftm_need_proxd(ftm, FTM_BSSCFG_OPTION_TX)) {
+			ftm_cmn->config->flags &=
+				~(WL_PROXD_FLAG_RX_ENABLED | WL_PROXD_FLAG_SECURE);
 			proxd_enable(ftm->wlc, FALSE);
+		}
 	}
 
 	wlc_bsscfg_set_ext_cap(bsscfg, DOT11_EXT_CAP_FTM_INITIATOR, enable);
@@ -689,6 +706,10 @@ ftm_iov_session_config_from_dig(pdftm_t *ftm, const ftm_iov_tlv_digest_t *tlv_di
 		scb = wlc_scbfind_dualband(ftm->wlc, bsscfg, &dig->tpk_ftm->peer);
 		if (scb) {
 			ftm_scb = FTM_SCB(ftm, scb);
+			if (ftm_scb->len < FTM_TPK_MAX_LEN) {
+				err = BCME_BUFTOOSHORT;
+				goto done;
+			}
 			memcpy(ftm_scb->tpk, dig->tpk_ftm->tpk, FTM_TPK_MAX_LEN);
 		}
 		++cnt;
@@ -730,11 +751,15 @@ ftm_iov_config(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_session_id_t sid,
 		uint32 mask;
 		uint32 flags;
 		uint bit_pos;
+		ftm_cmn->config->scratch_flags = ftm_cmn->config->flags;
 		flags = ltoh32_ua(dig->tlv_data.config.flags);
 		if (dig->tlv_data.config.flags_mask)
 			mask = ltoh32_ua(dig->tlv_data.config.flags_mask);
 		else
 			mask = WL_PROXD_FLAG_ALL;
+
+		FTM_UPDATE_FLAGS(ftm_cmn->config->scratch_flags, flags, mask);
+		mask &= ~(WL_PROXD_FLAG_RX_ENABLED | WL_PROXD_FLAG_SECURE);
 		FTM_UPDATE_FLAGS(ftm_cmn->config->flags, flags, mask);
 		/* note: per bss options are configured via method, but stored in
 		 * per/bss space (currently ftm->enabled_bss)
@@ -744,21 +769,28 @@ ftm_iov_config(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_session_id_t sid,
 		 * we don't optimize for no change of rx enable state.
 		 */
 		bit_pos = FTM_BSSCFG_OPTION_BIT(bsscfg, FTM_BSSCFG_OPTION_RX);
-		if (FTM_RX_ENABLED(ftm_cmn->config->flags)) {
+		if (FTM_RX_ENABLED(ftm_cmn->config->scratch_flags)) {
+			ftm_cmn->config->flags |= WL_PROXD_FLAG_RX_ENABLED;
 			setbit(ftm_cmn->enabled_bss, bit_pos);
 		} else {
 			clrbit(ftm_cmn->enabled_bss, bit_pos);
 		}
+		if (!pdftm_need_proxd(ftm, FTM_BSSCFG_OPTION_RX)) {
+			ftm_cmn->config->flags &= ~WL_PROXD_FLAG_RX_ENABLED;
+		}
+		wlc_bsscfg_set_ext_cap(bsscfg, DOT11_EXT_CAP_FTM_RESPONDER,
+			isset(ftm_cmn->enabled_bss, bit_pos));
 
 		bit_pos = FTM_BSSCFG_OPTION_BIT(bsscfg, FTM_BSSCFG_OPTION_SECURE);
-		if (FTM_SECURE(ftm_cmn->config->flags)) {
+		if (FTM_SECURE(ftm_cmn->config->scratch_flags)) {
+			ftm_cmn->config->flags |= WL_PROXD_FLAG_SECURE;
 			setbit(ftm_cmn->enabled_bss, bit_pos);
 		} else {
 			clrbit(ftm_cmn->enabled_bss, bit_pos);
 		}
-
-		wlc_bsscfg_set_ext_cap(bsscfg, DOT11_EXT_CAP_FTM_RESPONDER,
-			FTM_RX_ENABLED(ftm_cmn->config->flags));
+		if (!pdftm_need_proxd(ftm, FTM_BSSCFG_OPTION_SECURE)) {
+			ftm_cmn->config->flags &= ~WL_PROXD_FLAG_SECURE;
+		}
 
 		if (!BSSCFG_HAS_NOIF(bsscfg) && bsscfg->up &&
 			(BSSCFG_AP(bsscfg) || !bsscfg->BSS)) {
@@ -832,6 +864,10 @@ ftm_iov_session_config(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_session_id_t
 	err = ftm_iov_session_config_from_dig(ftm, dig, sncfg, bsscfg);
 	if (err != BCME_OK)
 		goto done;
+
+	if (sncfg->flags & WL_PROXD_SESSION_FLAG_NAN_BSS) {
+		sn->flags |= FTM_SESSION_DELETE_ON_STOP;
+	}
 
 	err = pdftm_change_session_state(sn, BCME_OK, WL_PROXD_SESSION_STATE_CONFIGURED);
 	if (err != BCME_OK)
@@ -938,7 +974,7 @@ ftm_iov_clear_counters(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_session_id_t
 	if (err != BCME_OK)
 		goto done;
 
-	memset(ftm_cmn->cnt, 0, sizeof(*ftm_cmn->cnt));
+	bzero(ftm_cmn->cnt, sizeof(*ftm_cmn->cnt));
 done:
 	return err;
 }
@@ -965,7 +1001,7 @@ ftm_iov_clear_session_counters(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_sess
 		goto done;
 	}
 
-	memset(sn->cnt, 0, sizeof(*sn->cnt));
+	bzero(sn->cnt, sizeof(*sn->cnt));
 done:
 	return err;
 }
@@ -980,6 +1016,17 @@ ftm_iov_delete_session(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_session_id_t
 	if (err != BCME_OK)
 		goto done;
 
+#ifdef WL_RANGE_SEQ
+	/* The sequence of commands to trigger ranging requires us to issue ftm delete
+	 * request first. This deletes the previous session states. For the first session,
+	 * however, there is no previous session state created. So, instead of flagging
+	 * it as an error, we continue with valid status
+	 */
+	if (!FTM_SESSION_FOR_SID(ftm, sid)) {
+		err = BCME_OK;
+		goto done;
+	}
+#endif /* WL_RANGE_SEQ */
 	if (!FTM_BSSCFG_FTM_ENABLED(ftm->ftm_cmn, bsscfg)) {
 		err = BCME_DISABLED;
 		goto done;
@@ -1431,16 +1478,19 @@ ftm_iov_pack_rtt_sample(const ftm_iov_tlv_digest_t *dig, uint8 **buf,
 		(const uint8 *)&s->tof_tgt_snr, sizeof(s->tof_tgt_snr));
 	ftm_iov_pack_uint16(dig, buf,
 		(const uint8 *)&s->tof_tgt_bitflips, sizeof(s->tof_tgt_bitflips));
-
-	ftm_iov_pack_uint32(dig, buf, (const uint8 *)&s->tof_tgt_phy_error,
-		sizeof(s->tof_tgt_phy_error));
-	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&s->tof_tgt_snr, sizeof(s->tof_tgt_snr));
-	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&s->tof_tgt_bitflips,
-		sizeof(s->tof_tgt_bitflips));
 	ftm_iov_pack_uint8(dig, buf, (const uint8 *)&s->coreid, sizeof(s->coreid));
 	ftm_iov_pack_uint8(dig, buf, (const uint8 *)&s->pad, sizeof(s->pad));
 	ftm_iov_pack_uint32(dig, buf, (const uint8 *)&s->chanspec, sizeof(s->chanspec));
 }
+
+#ifdef WL_RANGE_SEQ
+static void
+ftm_iov_pack_rtt_sample_v2(const ftm_iov_tlv_digest_t *dig, uint8 **buf,
+	const wl_proxd_rtt_sample_t *s, uint32 chanspec)
+{
+	ftm_iov_pack_rtt_sample(dig, buf, s);
+}
+#endif /* WL_RANGE_SEQ */
 
 static uint16
 ftm_iov_get_rtt_result_len(const ftm_iov_tlv_digest_t *dig,
@@ -1455,6 +1505,69 @@ ftm_iov_get_rtt_result_len(const ftm_iov_tlv_digest_t *dig,
 	len += (r->num_rtt + 1) * sizeof(wl_proxd_rtt_sample_t);
 	return len;
 }
+
+#ifdef WL_RANGE_SEQ
+static uint16
+ftm_iov_get_rtt_result_v2_len(const ftm_iov_tlv_digest_t *dig,
+	const ftm_iov_tlv_dig_info_t *tlv_info)
+{
+	BCM_REFERENCE(tlv_info);
+	uint16 len;
+	const wl_proxd_rtt_result_t *r;
+
+	r = dig->tlv_data.out.rtt_result;
+	len = OFFSETOF(wl_proxd_rtt_result_v2_t, rtt);
+	/* avg_rtt is the first element of rtt[] */
+	len += (r->num_rtt + 1u) * sizeof(wl_proxd_rtt_sample_v2_t);
+	return len;
+}
+
+static void
+ftm_iov_pack_rtt_result_v2(const ftm_iov_tlv_digest_t *dig, uint8 **buf,
+	const uint8 *data, int len)
+{
+	const wl_proxd_rtt_result_t *r;
+	const wl_proxd_rtt_sample_t *samples;
+	int i;
+	uint32 chanspec = 0;
+	uint16 version = WL_PROXD_RTT_RESULT_VERSION_2;
+	uint16 length = sizeof(wl_proxd_rtt_result_v2_t) -
+		OFFSETOF(wl_proxd_rtt_result_v2_t, sid);
+
+	ASSERT(len >= (int)OFFSETOF(wl_proxd_rtt_result_v2_t, rtt));
+	r = (const wl_proxd_rtt_result_t *)data;
+
+	ftm_iov_pack_uint16(dig, buf, (const uint8*)&version, sizeof(version));
+	ftm_iov_pack_uint16(dig, buf, (const uint8*)&length, sizeof(length));
+	ftm_iov_pack_uint16(dig, buf, (const uint8*)&r->sid, sizeof(uint16));
+	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&r->flags, sizeof(uint16));
+	ftm_iov_pack_uint32(dig, buf, (const uint8 *)&r->status, sizeof(uint32));
+	ftm_iov_pack_uint8(dig, buf, (const uint8 *)&r->peer, sizeof(r->peer));
+	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&r->state, sizeof(wl_proxd_session_state_t));
+	ftm_iov_pack_intvl(dig, buf, (const uint8 *)&r->u.retry_after, sizeof(r->u.retry_after));
+	ftm_iov_pack_uint32(dig, buf, (const uint8 *)&r->avg_dist, sizeof(uint32));
+	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&r->sd_rtt, sizeof(uint16));
+	ftm_iov_pack_uint8(dig, buf, (const uint8 *)&r->num_valid_rtt, sizeof(uint8));
+	ftm_iov_pack_uint8(dig, buf, (const uint8 *)&r->num_ftm, sizeof(uint8));
+	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&r->burst_num, sizeof(uint16));
+	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&r->num_rtt, sizeof(uint16));
+	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&r->num_meas, sizeof(uint16));
+	ftm_iov_pack_uint8(dig, buf, (const uint8 *)&r->pad, sizeof(r->pad));
+
+	ASSERT(dig->session->ftm_state != NULL);
+
+	chanspec = dig->session->config->burst_config->chanspec;
+
+	/* avg_rtt is the first element */
+	ftm_iov_pack_rtt_sample_v2(dig, buf, &r->rtt[0], chanspec);
+
+	samples = dig->session->ftm_state->rtt;
+	/* note: num_rtt taken from input, as it is not needed in all cases */
+	for (i = 0; i < MIN(dig->session->ftm_state->num_rtt, r->num_rtt); ++i) {
+		ftm_iov_pack_rtt_sample_v2(dig, buf, &samples[i], chanspec);
+	}
+}
+#endif /* WL_RANGE_SEQ */
 
 static void
 ftm_iov_pack_rtt_result(const ftm_iov_tlv_digest_t *dig, uint8 **buf,
@@ -1473,7 +1586,7 @@ ftm_iov_pack_rtt_result(const ftm_iov_tlv_digest_t *dig, uint8 **buf,
 	STATIC_ASSERT(sizeof(r->burst_num) == sizeof(uint16));
 	STATIC_ASSERT(sizeof(r->num_rtt) == sizeof(uint16));
 
-	ASSERT(len >= OFFSETOF(wl_proxd_rtt_result_t, rtt));
+	ASSERT(len >= (int)OFFSETOF(wl_proxd_rtt_result_t, rtt));
 	r = (const wl_proxd_rtt_result_t *)data;
 
 	ftm_iov_pack_uint16(dig, buf, (const uint8 *)&r->version, sizeof(r->version));
@@ -1532,7 +1645,7 @@ ftm_iov_pack_default_sessions(const ftm_iov_tlv_digest_t *dig, uint8 **buf,
 	uint8 *buf_nsn;
 
 	pdftm_cmn_t *ftm_cmn;
-	ASSERT(len >= OFFSETOF(wl_proxd_session_id_list_t, ids));
+	ASSERT(len >= (int)OFFSETOF(wl_proxd_session_id_list_t, ids));
 
 	BCM_REFERENCE(data);
 	ftm = dig->ftm;
@@ -1665,6 +1778,7 @@ ftm_iov_session_config_to_dig(pdftm_t *ftm, wlc_bsscfg_t *bsscfg,
 	pdftm_iov_tlv_config_digest_t *dig;
 	uint bit_pos;
 	pdftm_cmn_t *ftm_cmn = ftm->ftm_cmn;
+	ftm_cmn->config->scratch_flags = ftm_cmn->config->flags;
 
 	dig = &tlv_dig->tlv_data.config;
 
@@ -1689,17 +1803,17 @@ ftm_iov_session_config_to_dig(pdftm_t *ftm, wlc_bsscfg_t *bsscfg,
 	/* following inherited from method */
 	bit_pos = FTM_BSSCFG_OPTION_BIT(bsscfg, FTM_BSSCFG_OPTION_RX);
 	if (isset(ftm_cmn->enabled_bss, bit_pos))
-		ftm_cmn->config->flags |= WL_PROXD_FLAG_RX_ENABLED;
+		ftm_cmn->config->scratch_flags |= WL_PROXD_FLAG_RX_ENABLED;
 	else
-		ftm_cmn->config->flags &= ~WL_PROXD_FLAG_RX_ENABLED;
+		ftm_cmn->config->scratch_flags &= ~WL_PROXD_FLAG_RX_ENABLED;
 
 	bit_pos = FTM_BSSCFG_OPTION_BIT(bsscfg, FTM_BSSCFG_OPTION_SECURE);
 	if (isset(ftm_cmn->enabled_bss, bit_pos))
-		ftm_cmn->config->flags |= WL_PROXD_FLAG_SECURE;
+		ftm_cmn->config->scratch_flags |= WL_PROXD_FLAG_SECURE;
 	else
-		ftm_cmn->config->flags &= ~WL_PROXD_FLAG_SECURE;
+		ftm_cmn->config->scratch_flags &= ~WL_PROXD_FLAG_SECURE;
 
-	dig->flags = &ftm_cmn->config->flags;
+	dig->flags = &ftm_cmn->config->scratch_flags;
 	dig->debug_mask = &ftm_cmn->config->debug;
 
 #undef BCF
@@ -2580,7 +2694,7 @@ pdftm_iov_dig_reset(pdftm_t *ftm, pdftm_session_t *sn, pdftm_iov_tlv_digest_t *d
 {
 	ASSERT(FTM_VALID(ftm));
 	if (dig) {
-		memset(dig, 0, sizeof(*dig));
+		bzero(dig, sizeof(*dig));
 		dig->ftm = ftm;
 		dig->session = sn;
 	}

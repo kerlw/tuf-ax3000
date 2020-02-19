@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_macdbg.c 776593 2019-07-03 09:35:44Z $
+ * $Id: wlc_macdbg.c 777507 2019-08-04 04:45:11Z $
  */
 
 /*
@@ -574,10 +574,13 @@ BCMATTACHFN(wlc_macdbg_detach)(wlc_macdbg_info_t *macdbg)
 			(sizeof(macdbg->d11cnts[0]) * macdbg->d11print_sz));
 	}
 	macdbg->d11print_sz = 0;
+#endif /* BCMDBG || BCMDBG_DUMP */
+#if defined(BCMDBG) || defined(BCMDBG_DUMP) || defined(DUMP_D11CNTS) || \
+	defined(WL_MACDBG)
 	if (macdbg->smpl_info) {
 		MFREE(wlc->osh, macdbg->smpl_info, sizeof(wl_maccapture_params_t));
 	}
-#endif /* BCMDBG || BCMDBG_DUMP */
+#endif /* BCMDBG || BCMDBG_DUMP || DUMP_D11CNTS || WL_MACDBG */
 #if defined(WLC_HOSTPMAC)
 	if (macdbg->ed11regs) {
 		wlc_event_free(wlc->eventq, macdbg->ed11regs);
@@ -652,12 +655,15 @@ BCMATTACHFN(wlc_macdbg_attach)(wlc_info_t *wlc)
 	if (wlc_macdbg_init_printlist(macdbg) != BCME_OK) {
 		goto fail;
 	}
+#endif /* BCMDBG || BCMDBG_DUMP || DUMP_D11CNTS */
+#if defined(BCMDBG) || defined(BCMDBG_DUMP) || defined(DUMP_D11CNTS) || \
+	defined(WL_MACDBG)
 	if ((macdbg->smpl_info = MALLOCZ(wlc->osh, sizeof(wl_maccapture_params_t))) == NULL) {
 		WL_ERROR(("wl%d: %s: smp_info memory alloc. failed\n",
 				wlc->pub->unit, __FUNCTION__));
 		goto fail;
 	}
-#endif /* BCMDBG || BCMDBG_DUMP */
+#endif /* BCMDBG || BCMDBG_DUMP || DUMP_D11CNTS || WL_MACDBG */
 
 #if defined(BCMDBG) || defined(BCMDBG_DUMP)
 	wlc_dump_register(pub, "dma", (dump_fn_t)wlc_dump_dma, (void *)wlc);

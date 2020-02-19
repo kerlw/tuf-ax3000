@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_chanmgr.c 776734 2019-07-08 14:23:21Z $
+ * $Id: phy_ac_chanmgr.c 777964 2019-08-16 18:33:23Z $
  */
 
 #include <wlc_cfg.h>
@@ -4789,6 +4789,8 @@ wlc_phy_set_reg_on_reset_majorrev32_33_37_47_51_129(phy_info_t *pi)
 		WRITE_PHYREG(pi, txfilt160st2a1, 0xc8d);
 		WRITE_PHYREG(pi, txfilt160st2a2, 0x10d);
 		WRITE_PHYREG(pi, txfilt160finescale, 0xad);
+		/* align 11ag bw160 scaling to 11ac/11ax */
+		WRITE_PHYREG(pi, txfilt160dupfinescale, 0xa0);
 	}
 }
 
@@ -5982,8 +5984,11 @@ wlc_phy_set_reg_on_reset_acphy(phy_info_t *pi)
 		!ACMAJORREV_128(pi->pubpi->phy_rev)) {
 		/* RTL default value was off by 3dB  for 40MHz */
 		WRITE_PHYREG(pi, per_user_rssi_bw_offset_dB, 0x369);
-		/* constant_qdB = 187 and enable digGain_comp */
-		WRITE_PHYREG(pi, per_user_rssi_constant_qdB, 0x4BB);
+		/* constant_qdB = 187
+		   disable digGain_comp for 43684 and 63178 due to HW bug
+		   6710 and 6715 have the bug fixed, can enable digGain_comp seperately
+		*/
+		WRITE_PHYREG(pi, per_user_rssi_constant_qdB, 0xBB);
 	}
 
 }
@@ -7406,23 +7411,6 @@ wlc_phy_set_regtbl_on_band_change_acphy(phy_info_t *pi)
 		if (ACMAJORREV_4(pi->pubpi->phy_rev) &&
 			RADIOID_IS(pi->pubpi->radioid, BCM20693_ID))
 			wlc_phy_config_bias_settings_20693(pi);
-	}
-
-	/* knoise rxgain overrides for 43684 */
-	if (ACMAJORREV_47(pi->pubpi->phy_rev)) {
-		if (CHSPEC_IS5G(pi->radio_chanspec)) {
-			wlapi_bmac_write_shm(pi->sh->physhim, M_RXGAIN_HI(pi), 0x7de);
-			wlapi_bmac_write_shm(pi->sh->physhim, M_RXGAIN_LO(pi), 0x9e);
-			wlapi_bmac_write_shm(pi->sh->physhim, M_RXGAINOVR2_VAL(pi), 0x0);
-			wlapi_bmac_write_shm(pi->sh->physhim, M_LPFGAIN_HI(pi), 0x2);
-			wlapi_bmac_write_shm(pi->sh->physhim, M_LPFGAIN_LO(pi), 0x0);
-		} else {
-			wlapi_bmac_write_shm(pi->sh->physhim, M_RXGAIN_HI(pi), 0x3dd);
-			wlapi_bmac_write_shm(pi->sh->physhim, M_RXGAIN_LO(pi), 0x9d);
-			wlapi_bmac_write_shm(pi->sh->physhim, M_RXGAINOVR2_VAL(pi), 0x7);
-			wlapi_bmac_write_shm(pi->sh->physhim, M_LPFGAIN_HI(pi), 0x2);
-			wlapi_bmac_write_shm(pi->sh->physhim, M_LPFGAIN_LO(pi), 0x0);
-		}
 	}
 
 #ifdef WL_EAP_NOISE_MEASUREMENTS
@@ -12050,7 +12038,7 @@ wlc_phy_tx_farrow_setup_28nm(phy_info_t *pi, uint16 dac_rate_mode)
 	}
 
 	/* Assign more extra bits for DAC Resampler ratio */
-	if (ACMAJORREV_51(pi->pubpi->phy_rev))
+	if ((ACMAJORREV_51(pi->pubpi->phy_rev)) || (ACMAJORREV_128(pi->pubpi->phy_rev)))
 		mu_extra_bits = 3;
 	if (ACMAJORREV_129(pi->pubpi->phy_rev))
 		mu_extra_bits = 8;

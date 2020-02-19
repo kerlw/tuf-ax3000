@@ -33,7 +33,7 @@ if [ ! -f "$VERSION_TEMPLATE" ]; then
 fi
 
 # Following SVNURL should be expanded on checkout
-SVNURL='$HeadURL: http://bcawlan-svn.sj.broadcom.net/svn/bcawlan/proj/tags/KUDU/KUDU_REL_17_10_99_7/src/tools/release/mkversion.sh $'
+SVNURL='$HeadURL: http://bcawlan-svn.sj.broadcom.net/svn/bcawlan/proj/tags/KUDU/KUDU_REL_17_10_99_1301/src/tools/release/mkversion.sh $'
 
 # .gclient_info is created by gclient checkout/sync steps
 # and contains "DEPS='<deps-url1> <deps-url2> ..." entry

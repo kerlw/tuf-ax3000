@@ -16,7 +16,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wlfc_proto.h 774110 2019-04-10 13:50:52Z $
+ * $Id: wlfc_proto.h 777121 2019-07-19 16:20:33Z $
  *
  */
 
@@ -394,9 +394,6 @@ typedef enum {
 #define FLOW_RING_CREATE	1
 #define FLOW_RING_DELETE	2
 #define FLOW_RING_FLUSH		3
-#define FLOW_RING_OPEN		4
-#define FLOW_RING_CLOSED	5
-#define FLOW_RING_FLUSHED	6
 #define FLOW_RING_TIM_SET	7
 #define FLOW_RING_TIM_RESET	8
 #define FLOW_RING_FLUSH_TXFIFO	9

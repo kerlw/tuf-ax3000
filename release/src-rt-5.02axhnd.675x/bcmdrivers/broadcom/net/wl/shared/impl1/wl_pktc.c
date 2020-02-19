@@ -627,6 +627,8 @@ void wl_pktc_detach(struct wl_info *wl)
 	}
 
 	fdb_check_expired_wl_hook = NULL;
+	wl_pktc_req_hook = NULL;
+	wl_pktc_del_hook = NULL;
 }
 
 int wl_pktc_init(wl_if_t *wlif, struct net_device *dev)

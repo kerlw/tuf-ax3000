@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_tx.c 776968 2019-07-15 10:47:02Z $
+ * $Id: wlc_tx.c 777947 2019-08-15 23:53:39Z $
  *
  */
 
@@ -5530,6 +5530,9 @@ wlc_prep_sdu_fast(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, struct scb *scb,
 	ASSERT(SCB_AMPDU(scb));
 	ASSERT(!SCB_ISMULTI(scb));
 
+	prio = SCB_QOS(scb) ? (uint8)PKTPRIO(sdu) : 0;
+	ASSERT(prio <= MAXPRIO);
+
 	/* 1x or fragmented frames will force slow prep */
 	pktlen = pkttotlen(wlc->osh, sdu);
 	if ((WLPKTTAG(sdu)->flags &
@@ -8441,7 +8444,6 @@ wlc_d11hdrs_rev40(wlc_info_t *wlc, void *p, struct scb *scb, uint txparams_flags
 
 	if (RSPEC_ACTIVE(rspec_override)) {
 		ratesel_rates.rspec[0] = rspec_override;
-		rspec_history = TRUE;
 	} else if ((parms.type == FC_TYPE_MNG) ||
 		(parms.type == FC_TYPE_CTL) ||
 		((parms.pkttag)->flags & WLF_8021X) ||
@@ -10093,20 +10095,6 @@ wlc_tx_fill_rate_info_block_internal(wlc_info_t *wlc, scb_t *scb, wlc_bsscfg_t *
 	wlc_tx_d11_rev128_phy_txctl_calc(wlc, bsscfg, rate_info_block, rspec,
 		preamble_type, curpwr, txpwrs);
 
-/*	if (WLC_PHY_AS_80P80(wlc, wlc->chanspec) && !RSPEC_IS160MHZ(rspec) &&
-		!RSPEC_ISOFDM(rspec)) {
-		phyctl = wlc_stf_d11hdrs_phyctl_txcore_80p80phy(wlc, phyctl);
-	}
-
-	WLC_PHYCTLBW_OVERRIDE(phyctl, D11AC_PHY_TXC_BW_MASK, phyctl_bwo);
-*/
-#ifdef WL_PROXDETECT
-	if (PROXD_ENAB(wlc->pub) && wlc_proxd_frame(wlc, parms->pkttag)) {
-		/* TOF measurement pkts use only primary antenna to tx */
-		//TODO: wlc_proxd_tx_conf(wlc, &phyctl, mch, parms->pkttag);
-	}
-#endif /* WL_PROXDETECT */
-
 	/* for fallback bw */
 	if (fbw != FBW_BW_INVALID) {
 		uint8 txpwr = txpwrs.pbw[fbw - FBW_BW_20MHZ][TXBF_OFF_IDX];
@@ -10119,14 +10107,6 @@ wlc_tx_fill_rate_info_block_internal(wlc_info_t *wlc, scb_t *scb, wlc_bsscfg_t *
 		rate_info_block->FbwCtl = htol16(rate_info_block->FbwCtl);
 	}
 
-/*	WLC_PHYCTLBW_OVERRIDE(phyctl, D11AC_PHY_TXC_PRIM_SUBBAND_MASK, phyctl_sbwo);
-*/
-#ifdef WL_PROXDETECT
-	if (PROXD_ENAB(wlc->pub) && wlc_proxd_frame(wlc, parms->pkttag)) {
-		/* TOF measurement pkts use initiator's subchannel to tx */
-		//TODO: wlc_proxd_tx_conf_subband(wlc, &phyctl, parms->pkttag);
-	}
-#endif /* WL_PROXDETECT */
 	return rspec;
 } /* wlc_tx_fill_rate_info_block_internal */
 
@@ -10589,8 +10569,8 @@ wlc_d11hdrs_rev128(wlc_info_t *wlc, void *p, struct scb *scb, uint txparams_flag
 			ASSERT(rstore != NULL);
 		}
 		rspec = WLC_RATELINKMEM_GET_RSPEC(rstore,
-				special_rate_block & (D11_REV128_RATE_SPECRATEIDX_MASK >>
-				D11_REV128_RATE_SPECRATEIDX_SHIFT));
+				(special_rate_block & (D11_REV128_RATE_SPECRATEIDX_MASK >>
+				D11_REV128_RATE_SPECRATEIDX_SHIFT)));
 	}
 	WL_TRACE(("rspec: 0x%x (rspec override: 0x%x)\n", rspec, rspec_override));
 
@@ -10858,6 +10838,21 @@ wlc_d11hdrs_rev128(wlc_info_t *wlc, void *p, struct scb *scb, uint txparams_flag
 		mch2 = mucidx << MCTL2_MCIDX_SHIFT;
 	}
 #endif /* WL_MU_TX */
+
+#ifdef WL_PROXDETECT
+	if (PROXD_ENAB(wlc->pub) && wlc_proxd_frame(wlc, parms.pkttag)) {
+		uint16 phyctl;
+		phyctl = wlc_axphy_fixed_txctl_calc_word_0(wlc,
+			rspec, preamble_type);
+		WL_INFORM(("wlc_d11hdrs_rev128: proxd enab, rspec 0x%x, bottom packetid 0x%08x\n",
+			rspec, parms.pkttag->shared.packetid));
+		/* TOF measurement pkts use only primary antenna to tx */
+		wlc_proxd_tx_conf(wlc, &phyctl, &mch, parms.pkttag);
+
+		/* TOF measurement pkts use initiator's subchannel to tx */
+		wlc_proxd_tx_conf_subband(wlc, &phyctl, parms.pkttag);
+	}
+#endif /* WL_PROXDETECT */
 
 	/* Compute and fill TXH fields */
 	wlc_tx_fill_txd_rev128(wlc, scb, txh, mcl, mch, &parms, frameid, link_idx, tid, rate_idx,
