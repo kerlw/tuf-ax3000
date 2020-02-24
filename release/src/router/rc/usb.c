@@ -286,6 +286,7 @@ void add_usb_host_module(void)
 #else
 	if (nvram_get_int("usb_usb3") == 1) {
 #ifdef RTCONFIG_HND_ROUTER
+		modprobe(USB30_MOD);
 		modprobe("xhci-plat-hcd");
 #ifdef RTCONFIG_HND_ROUTER_AX
 		modprobe("xhci-pci");
@@ -303,6 +304,7 @@ void add_usb_host_module(void)
 		modprobe(USB20_MOD);
 #else
 #ifdef RTCONFIG_HND_ROUTER
+		modprobe(USB20_MOD);
 		modprobe("ehci-platform");
 #ifdef RTCONFIG_HND_ROUTER_AX
 		modprobe("ehci-pci");
@@ -324,6 +326,7 @@ void add_usb_host_module(void)
 	}
 	if (nvram_get_int("usb_ohci") == 1) {
 #ifdef RTCONFIG_HND_ROUTER
+		modprobe(USBOHCI_MOD);
 		modprobe("ohci-platform");
 #ifdef RTCONFIG_HND_ROUTER_AX
 		modprobe("ohci-pci");
@@ -1905,6 +1908,8 @@ int mount_partition(char *dev_name, int host_num, char *dsc_name, char *pt_name,
 
 	if ((type = detect_fs_type(dev_name)) == NULL)
 		return 0;
+
+	find_label_or_uuid(dev_name, the_label, uuid);
 
 	run_custom_script("pre-mount", 120, dev_name, type);
 

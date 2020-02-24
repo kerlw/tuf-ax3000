@@ -104,13 +104,9 @@
 	apply.axMode = function(){
 		postDataModel.insert(axModeObj);
 		if(!$("#axMode_checkbox").is(":checked")){
-			qisPostData.wl0_11ax= 0;
+			qisPostData.wl0_11ax = 0;
 			qisPostData.wl1_11ax = 0;
 			qisPostData.wl2_11ax = 0;
-		}
-
-		if(wl0_11ax_orig == qisPostData.wl0_11ax){
-			postDataModel.remove(axModeObj);
 		}
 
 		if(isSupport("boostkey")){

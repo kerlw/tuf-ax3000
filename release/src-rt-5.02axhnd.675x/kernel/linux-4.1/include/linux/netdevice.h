@@ -81,8 +81,13 @@ extern struct sk_buff *bcm_iqoshdl_wrapper(struct net_device *dev, void *pNBuff)
 
 
 //#define B_IQOS_CTMARK_SHIFT		32
-#define B_IQOS_SET_CTMARK(skb, m) (((struct sk_buff*)(skb))->priority = m)
-#define B_IQOS_GET_CTMARK(p) 	((p)->priority)
+#define B_IQOS_LOG_SKBMARK(skb, ct, skbm) \
+	do {((struct nf_conn *)(ct))->cb.skb_mark = (skbm); \
+	*(unsigned long *)&(skbm) = (unsigned long)(ct);} while (0)
+
+#define B_IQOS_RESTORE_SKBMARK(skb, ct) \
+	do {(ct) = ((struct nf_conn *)(*(unsigned long *)&(skb)->mark)); \
+		(skb)->mark = ((struct nf_conn *)(ct))->cb.skb_mark;} while (0)
 
 #define DEVQXMIT  (1 << 15)
 #define PKTDEVQXMIT(skb) \

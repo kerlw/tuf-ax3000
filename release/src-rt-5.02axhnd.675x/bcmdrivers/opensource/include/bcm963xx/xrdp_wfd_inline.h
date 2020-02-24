@@ -61,8 +61,8 @@ typedef union {
     struct {
         uint32_t chain_id:16;
         uint32_t reserved0:5;
-        uint32_t tx_prio:3;
         uint32_t iq_prio:1;
+        uint32_t tx_prio:3;
         uint32_t is_chain:1;
         uint32_t reserved1:6;
         /*
@@ -544,7 +544,7 @@ static inline struct sk_buff *single_packet_read_and_handle(uint32_t qid, wfd_ob
     if ((skb->wl.ucast.nic.is_ucast = info.is_ucast))
     {
         skb->wl.ucast.nic.wl_chainidx = wl_nic.chain_id;
-        *tx_prio = GET_WLAN_PRIORITY(wl_nic.tx_prio); /* No IQPRIO */
+        *tx_prio = wl_nic.tx_prio; /* No IQPRIO */
         encode_val = wl_nic.word >> WFD_NIC_WLAN_PRIORITY_START_IN_WORD;
         DECODE_WLAN_PRIORITY_MARK(encode_val, skb->mark);
     }
@@ -629,8 +629,10 @@ static uint32_t wfd_bulk_skb_get(unsigned long qid, unsigned long budget, void *
             mcast_count++;
         }
 
+        PKTFWD_ASSERT(pktlist_prio == LINUX_GET_PRIO_MARK(skb->mark));
         PKTFWD_ASSERT(pktlist_dest <= PKTLIST_MCAST_ELEM);
         PKTFWD_ASSERT(pktlist_prio <  PKTLIST_PRIO_MAX);
+
         __pktlist_add_pkt(pktlist_context, /* add to local pktlist */
                 pktlist_prio, pktlist_dest,
                 chain_id, skb, SKBUFF_PTR); /* mcast chain_id audit? */

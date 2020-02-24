@@ -69,18 +69,6 @@ function initial(){
             .attr('target', '_blank')
             .attr('style', 'color:#FC0;text-decoration:underline;')
             .attr('href', 'https://www.asus.com/support/FAQ/1037422/');
-
-		if(wl_unit == '1'){
-			var _he_mode = document.form.wl1_11ax.value;
-		}
-		else if(wl_unit == '2'){
-			var _he_mode = document.form.wl2_11ax.value;
-		}
-		else{
-			var _he_mode = document.form.wl0_11ax.value;
-		}
-
-		document.form.he_mode.value = _he_mode;
 	}
 
 	if(bw_160_support){
@@ -319,6 +307,12 @@ function initial(){
 	}
 	controlHideSSIDHint();
 	controlAXOnlyHint();
+
+	if(band5g_11ax_support){
+		if(based_modelid != 'RT-AX92U' || (wl_unit != '0' && wl_unit != '1')){
+			$("#twt_field").show();
+		}
+	}
 }
 
 function change_wl_nmode(o){
@@ -341,29 +335,13 @@ function change_wl_nmode(o){
 		if(o.value == '0' || o.value == '8'){
 			if (based_modelid != 'RT-AX92U' || (wl_unit != '0' && wl_unit != '1')) {
 				$("#he_mode_field").show();
-				document.form.wl0_11ax.disabled = false;
-				document.form.wl1_11ax.disabled = false;
-				if (band5g2_support) {
-					document.form.wl2_11ax.disabled = false;
-				}
 			}
 		}
 		else if(o.value == '9'){		// AX only
 			$("#he_mode_field").show();
-			document.form.wl0_11ax.disabled = false;
-			document.form.wl1_11ax.disabled = false;
-			if (band5g2_support) {
-				document.form.wl2_11ax.disabled = false;
-			}
 		}
 		else{
 			$("#he_mode_field").hide();
-			document.form.wl0_11ax.disabled = true;
-			document.form.wl1_11ax.disabled = true;
-			if (band5g2_support) {
-				document.form.wl2_11ax.disabled = true;
-			}
-			
 		}
 	}
 
@@ -450,7 +428,7 @@ function genBWTable(_unit){
 				based_modelid == "RT-AC66U" || 
 				based_modelid == "RT-AC3200" || 
 				based_modelid == "RT-AC3100" || based_modelid == "RT-AC88U" || based_modelid == "RT-AX88U" || based_modelid == "RT-AC86U" || based_modelid == "GT-AC2900" ||
-				based_modelid == "RT-AC5300" || based_modelid == "GT-AC5300" || based_modelid == "GT-AX11000" || based_modelid == "RT-AX92U" || based_modelid == "RT-AX95Q" || based_modelid == "RT-AX58U" || based_modelid == "TUF-AX3000" || based_modelid == "RT-AX56U" ||
+				based_modelid == "RT-AC5300" || based_modelid == "GT-AC5300" || based_modelid == "GT-AX11000" || based_modelid == "RT-AX92U" || based_modelid == "RT-AX95Q" || based_modelid == "RT-AX58U" || based_modelid == "TUF-AX3000" || based_modelid == "RT-AX82U" || based_modelid == "RT-AX56U" ||
 				based_modelid == "RT-AC53U") && document.form.wl_nmode_x.value == 1){		//N only
 				bws = [0, 1, 2];
 				bwsDesc = ["20/40 MHz", "20 MHz", "40 MHz"];
@@ -1009,45 +987,14 @@ function regen_5G_mode(obj,flag){	//please sync to initial() : //Change wireless
 		}
 		else if(band5g_11ax_support){
 			obj.options[0] = new Option("<#Auto#>", 0);
-			if(based_modelid == "RT-AX92U" && flag == 1){
+			if((based_modelid == "RT-AX92U" || based_modelid == "RT-AX95Q") && flag == 1){
 				obj.options[1] = new Option("N/AC mixed", 8);
 				obj.options[2] = new Option("Legacy", 2);
-			}
-			else if(based_modelid == "RT-AX95Q" && flag == 1){
-				obj.options[1] = new Option("N/AC mixed", 8);
-				obj.options[2] = new Option("Legacy", 2);
-			}
-			else if((based_modelid == "RT-AX58U" || based_modelid == "TUF-AX3000") && flag == 1){
-				obj.options[1] = new Option("N/AC mixed", 8);
-				obj.options[2] = new Option("Legacy", 2);
-			}
-			else if(based_modelid == "RT-AX56U" && flag == 1){
-				obj.options[1] = new Option("N/AC mixed", 8);
-				obj.options[2] = new Option("Legacy", 2);
-			}
-			else if(based_modelid == "RT-AX92U" && flag == 2){
-				obj.options[1] = new Option("AX only", 9);
-				obj.options[2] = new Option("N/AC/AX mixed", 8);
-				obj.options[3] = new Option("Legacy", 2);
-			}
-			else if(based_modelid == "RT-AX95Q" && flag == 2){
-				obj.options[1] = new Option("AX only", 9);
-				obj.options[2] = new Option("N/AC/AX mixed", 8);
-				obj.options[3] = new Option("Legacy", 2);
-			}
-			else if((based_modelid == "RT-AX58U" || based_modelid == "TUF-AX3000") && flag == 2){
-				obj.options[1] = new Option("AX only", 9);
-				obj.options[2] = new Option("N/AC/AX mixed", 8);
-				obj.options[3] = new Option("Legacy", 2);
-			}
-			else if(based_modelid == "RT-AX56U" && flag == 2){
-				obj.options[1] = new Option("AX only", 9);
-				obj.options[2] = new Option("N/AC/AX mixed", 8);
-				obj.options[3] = new Option("Legacy", 2);
 			}
 			else{
-				obj.options[1] = new Option("N/AC/AX mixed", 8);
-				obj.options[2] = new Option("Legacy", 2);
+				obj.options[1] = new Option("AX only", 9);
+				obj.options[2] = new Option("N/AC/AX mixed", 8);
+				obj.options[3] = new Option("Legacy", 2);
 			}			
 		}
 		else{
@@ -1435,26 +1382,11 @@ function enable_160MHz(obj){
 }
 
 function he_frame_mode(obj) {
-	if (obj.value != '0') {
-		document.form.wl0_11ax.value = "1";
-		document.form.wl1_11ax.value = "1";
-		if (band5g2_support) {
-			document.form.wl2_11ax.value = "1";
-		}
-	}
-	else {
-		if (wl_unit != 0) {
-			$("#enable_160mhz")[0].checked = false
-			enable_160MHz($("#enable_160mhz")[0]);
-			document.form.acs_dfs_checkbox.checked = false;
-			document.form.acs_dfs.value = 0;
-		}
-
-		document.form.wl0_11ax.value = "0";
-		document.form.wl1_11ax.value = "0";
-		if (band5g2_support) {
-			document.form.wl2_11ax.value = "0";
-		}
+	if (obj.value == '0' && wl_unit != 0) {
+		$("#enable_160mhz")[0].checked = false
+		enable_160MHz($("#enable_160mhz")[0]);
+		document.form.acs_dfs_checkbox.checked = false;
+		document.form.acs_dfs.value = 0;		
 	}
 }
 var band1_enable_bw_160 = '<% nvram_get("wl1_bw_160"); %>';
@@ -2212,9 +2144,9 @@ function handleMFP(){
 				</th>
 				<td>
 					<div style="width:465px;display:flex;align-items: center;">
-						<select name="he_mode" class="input_option" onChange="he_frame_mode(this);">
-							<option value="1"><#WLANConfig11b_WirelessCtrl_button1name#></option>
-							<option value="0"><#WLANConfig11b_WirelessCtrl_buttonname#></option>
+						<select name="wl_11ax" class="input_option" onChange="he_frame_mode(this);">
+							<option value="1" <% nvram_match("wl_11ax", "1","selected"); %>><#WLANConfig11b_WirelessCtrl_button1name#></option>
+							<option value="0" <% nvram_match("wl_11ax", "0","selected"); %>><#WLANConfig11b_WirelessCtrl_buttonname#></option>
 						</select>
 						<span id="he_mode_faq" style="padding: 0 10px"><#WLANConfig11b_HE_Frame_Mode_faq#></span>
 					</div>
@@ -2229,6 +2161,19 @@ function handleMFP(){
 						<select name="wl_mbo_enable" class="input_option" onChange="handleMFP();">
 							<option value="1" <% nvram_match("wl_mbo_enable", "1","selected"); %>><#WLANConfig11b_WirelessCtrl_button1name#></option>
 							<option value="0" <% nvram_match("wl_mbo_enable", "0","selected"); %>><#WLANConfig11b_WirelessCtrl_buttonname#></option>
+						</select>
+					</div>
+				</td>
+			</tr>
+			<tr id="twt_field" style="display:none">
+				<th>
+					<a class="hintstyle" href="javascript:void(0);" onClick="">Target Wake Time</a>
+				</th>
+				<td>
+					<div style="width:465px;display:flex;align-items: center;">
+						<select name="wl_twt" class="input_option">
+							<option value="1" <% nvram_match("wl_twt", "1","selected"); %>><#WLANConfig11b_WirelessCtrl_button1name#></option>
+							<option value="0" <% nvram_match("wl_twt", "0","selected"); %>><#WLANConfig11b_WirelessCtrl_buttonname#></option>
 						</select>
 					</div>
 				</td>

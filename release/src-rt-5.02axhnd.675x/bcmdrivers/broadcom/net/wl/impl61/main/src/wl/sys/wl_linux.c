@@ -2390,7 +2390,8 @@ wl_free(wl_info_t *wl)
 #endif /* PKTC_TBL && !BCM_PKTFWD */
 
 #if defined(DPSTA) && ((defined(STA) && defined(DWDS)) || defined(PSTA))
-	dpsta_unregister(wl->pub->unit);
+	if (wl->pub)
+		dpsta_unregister(wl->pub->unit);
 #endif
 
 #ifndef NAPI_POLL
@@ -4964,6 +4965,7 @@ wl_sendup(wl_info_t *wl, wl_if_t *wlif, void *p, int numpkt)
 #endif /* BCM_GMAC3 */
 #ifdef DPSTA
 	wlc_bsscfg_t *bsscfg = wlc_bsscfg_find_by_wlcif(wl->wlc, NULL);
+	struct net_device *dev;
 #endif // endif
 #ifdef WL_AIR_IQ
 	bcm_event_t *msg;
@@ -5041,6 +5043,7 @@ wl_sendup(wl_info_t *wl, wl_if_t *wlif, void *p, int numpkt)
 
 #ifdef DPSTA
 	BCM_REFERENCE(bsscfg);
+	dev = skb->dev;
 	if (skb->dev == wl->dev) {
 		if (PSTA_ENAB(wl->pub) || DWDS_ENAB(bsscfg) || MAP_ENAB(bsscfg) ||
 			WET_ENAB(wl->wlc)) {
@@ -5133,6 +5136,21 @@ sendup_next:
 
 #if defined(PKTC_TBL)
 #if !defined(WL_EAP_WLAN_ONLY_UL_PKTC)
+#ifdef DPSTA
+	/* remove chaining if skb->dev is changed to dpsta in dpsta_recv */
+	if (skb->dev != dev) {
+		void *nskb = NULL;
+		dev = skb->dev;
+		FOREACH_CHAINED_PKT(skb, nskb) {
+			PKTCLRCHAINED(wl->osh, skb);
+			PKTCCLRFLAGS(skb);
+			skb->dev = dev;
+			wl_sendup_ex(wl, skb);
+		}
+		return;
+	}
+	else
+#endif /* DPSTA */
 	if (!brcm_specialpkt) {
 		if (wl_rxchainhandler(wl, skb) == BCME_OK)
 			return;

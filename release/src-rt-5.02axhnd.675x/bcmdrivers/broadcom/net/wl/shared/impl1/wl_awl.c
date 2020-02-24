@@ -269,6 +269,7 @@ typedef struct wl_awl_rx {
 	unsigned long a2w_flt_packets;
 	unsigned long a2w_fwd_packets;
 	unsigned long a2w_fwd_calls;
+	unsigned long a2w_drp_packets;
 } wl_awl_rx_t;
 
 /**
@@ -423,11 +424,13 @@ wl_awl_rx_sendup(struct wl_info *wl, struct sk_buff *skb)
 	}
 #endif /* CONFIG_BCM_SPDSVC || CONFIG_BCM_SPDSVC_MODULE */
 
+	PKTSETFCDONE(skb);
 #ifdef BCM_BLOG
 	if (wl_handle_blog_sinit(wl, skb) == PKT_DONE) {
 		return PKT_DONE;
 	}
 #endif /* BCM_BLOG */
+	PKTCLRFCDONE(skb);
 
 #if !defined(WL_AWL_FILTER_INTRABSS)
 	/* process intra-bss packets as they are not handled in bridge or wl_linux */
@@ -613,6 +616,8 @@ wl_awl_process_slowpath_rxpkts(struct wl_info *wl)
 	pktlist_t *pktlist;
 	int npkts, ppkts = 0;
 	struct sk_buff *skb = NULL;
+	wl_if_t *if_list;
+	bool dev_matched;
 
 	awl = WL_AWL_CB(wl);
 
@@ -641,9 +646,27 @@ wl_awl_process_slowpath_rxpkts(struct wl_info *wl)
 	while (npkts--) {
 	    struct sk_buff* nskb = skb->prev;
 	    skb->next = skb->prev = NULL;
-	    /* Process the flow-miss packets */
-	    wl_awl_rx_sendup(wl, skb);
-	    awl->rx.a2w_fwd_packets++;
+	    /* Audit the wlif */
+	    if_list = wl->if_list;
+	    dev_matched = FALSE;
+	    while (if_list) {
+	        if (skb->dev == if_list->dev) {
+	            dev_matched = TRUE;
+	            break;
+	        }
+	        if_list = if_list->next;
+	    }
+	    if (!dev_matched) {
+	        WL_AWL_ERROR("%s: wl%d: drop packets skb->dev %s\n", __FUNCTION__,
+	            wl->unit, skb->dev ? skb->dev->name : "NULL");
+	        PKTFREE(wl->pub->osh, skb, FALSE);
+	        awl->rx.a2w_drp_packets++;
+	    }
+	    else {
+	        /* Process the flow-miss packets */
+	        wl_awl_rx_sendup(wl, skb);
+	        awl->rx.a2w_fwd_packets++;
+	    }
 	    awl->rx.a2w_fwd_calls++;
 	    skb = nskb;
 	}
@@ -810,9 +833,10 @@ wl_awl_dump(struct wl_info *wl, struct bcmstrbuf *b)
 	    awl->rx.w2a_rx_packets, awl->rx.w2a_flt_packets,
 	    awl->rx.w2a_fwd_packets, awl->rx.w2a_fwd_calls,
 	    awl->rx.w2a_chn_packets, awl->rx.w2a_max_chn);
-	bcm_bprintf(b, " A2W List [rxd %lu drp %lu fwd %lu cls %lu]\n",
+	bcm_bprintf(b, " A2W List [rxd %lu flt %lu fwd %lu cls %lu drp %lu ]\n",
 	    awl->rx.a2w_rx_packets, awl->rx.a2w_flt_packets,
-	    awl->rx.a2w_fwd_packets, awl->rx.a2w_fwd_calls);
+	    awl->rx.a2w_fwd_packets, awl->rx.a2w_fwd_calls,
+	    awl->rx.a2w_drp_packets);
 }
 
 /**
@@ -837,6 +861,7 @@ wl_awl_clr_stats(struct wl_info * wl)
 	awl->rx.a2w_flt_packets = 0;
 	awl->rx.a2w_fwd_packets = 0;
 	awl->rx.a2w_fwd_calls = 0;
+	awl->rx.a2w_drp_packets = 0;
 
 	return;
 }

@@ -828,8 +828,8 @@ acsd_main_loop(struct timeval *tv)
 			}
 		}
 
-		if (!acs_is_mode_check(c_info->name)) {
-			ACSD_INFO("avoid channel switch when ACSD is not in AP mode \n");
+		if (c_info->wet_enabled && acs_check_assoc_scb(c_info)) {
+			ACSD_INFO("avoid channel switch when ACSD is in WET mode and scb associated\n");
 			return;
 		}
 
@@ -1272,9 +1272,9 @@ acsd_watchdog(uint ticks)
 		}
 		bgdfs = c_info->acs_bgdfs;
 
-		if (!acs_is_mode_check(c_info->name)) {
+		if (c_info->wet_enabled && acs_check_assoc_scb(c_info)) {
 			ACSD_INFO("%s: do not perform scan or no channel change,"
-				" when ACSD is not in AP mode\n", c_info->name);
+				" when ACSD is in WET mode and scb associated\n", c_info->name);
 			continue;
 		}
 

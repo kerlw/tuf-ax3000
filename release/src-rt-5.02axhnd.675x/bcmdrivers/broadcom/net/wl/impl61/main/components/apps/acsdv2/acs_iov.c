@@ -431,6 +431,11 @@ int acs_update_driver(acs_chaninfo_t * c_info)
 	   we need to ask the driver to do some updates (beacon, probes, etc..).
 	*/
 	if (c_info->txop_channel_select == 0) {
+		if (c_info->wet_enabled && acs_check_assoc_scb(c_info)) {
+			ACSD_INFO("%s: skip acs_update when ACSD is in WET mode and scb associated\n", c_info->name);
+			return BCME_ASSOCIATED;
+		}
+
 		ret = wl_iovar_setint(c_info->name, "acs_update", htod32((uint)param));
 		ACS_ERR(ret, "acs update failed\n");
 	}

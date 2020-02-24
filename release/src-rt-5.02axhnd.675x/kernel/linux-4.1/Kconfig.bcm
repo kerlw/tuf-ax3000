@@ -399,9 +399,6 @@ config BCM_ARCHER_GSO
 config BCM_ARCHER_SIM
 	bool "Archer Simulation"
 
-config BCM_PKTRUNNER_WAR_SKIP_TUN
-	bool "Runner workaround to skip TUN device"
-
 config BCM_LTE
 	tristate "BCM LTE WAN support"
 	depends on BCM963138 || BCM963381

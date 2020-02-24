@@ -59,6 +59,8 @@
 #include <wlc_bsscfg.h>
 
 #define WLC_SCB_REPLAY_LIMIT 64	/* Maximal successive reply failure */
+#define WLC_SCB_MAX_TX_RETRY_FAIL_CNT 300 /* Maximal successive tx retry failure */
+#define WLC_SCB_MAX_TX_RETRY_FAIL_DUR 60 /* Maximal duration (sec) of tx retry failure */
 
 typedef struct wlc_scb_stats {
 	uint32 tx_pkts;			/**< # of packets transmitted (ucast) */
@@ -85,6 +87,8 @@ typedef struct wlc_scb_stats {
 	uint32 tx_pkts_fw_retries;
 	uint32 tx_pkts_fw_retry_exhausted;
 	uint32 rx_succ_replay_failures;	/**< # of successive replay failure  */
+	uint32 tx_succ_retry_failures;	/**< # of successive tx retry failure */
+	uint32 tx_retry_fail_dur;	/**< # of tx retry failure duration in second */
 
 } wlc_scb_stats_t;
 struct scb_trf_info {

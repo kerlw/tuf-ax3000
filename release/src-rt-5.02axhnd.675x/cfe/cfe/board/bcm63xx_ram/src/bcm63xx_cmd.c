@@ -5833,10 +5833,12 @@ void bcm63xx_run_ex(int breakIntoCfe, int skip_check_memcfg, int autorun)
         if (BpGetBootloaderPowerOnLedGpio(&gpio) != BP_SUCCESS)
 #if defined(RTAX95Q)
             gpio = 16 | BP_ACTIVE_LOW;
-#elif defined(RTAX58U) || defined(TUFAX3000)
+#elif defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
             gpio = 23 | BP_ACTIVE_LOW;	// use WPS LED instead
 #elif defined(RTAX56U)
             gpio = 16 | BP_ACTIVE_LOW;
+#else // RT-AX86U, RT-AX68U
+            gpio = 4 | BP_ACTIVE_LOW;
 #endif
 
         /* Wait forever for an image */

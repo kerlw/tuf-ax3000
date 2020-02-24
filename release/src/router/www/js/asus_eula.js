@@ -62,6 +62,8 @@ var ASUS_EULA = {
 	"check": function(eula_type){
 		if(!ASUS_EULA.status(eula_type)){
 			ASUS_EULA.show(eula_type);
+			$("#alert_" + eula_type + "_EULA").parent().css('position', 'absolute');
+			setTimeout(function(){cal_panel_block("alert_" + eula_type + "_EULA", 0.25);},1);
 			return false;
 		}
 		else{
@@ -91,6 +93,7 @@ var ASUS_EULA = {
 			.load(eula_type + "_eula.htm", function(data){
 				$("#cancelBtn").click(function(){
 					ASUS_EULA.disagree(eula_type);
+					$("#alert_" + eula_type + "_EULA").parent().css('position', '');
 				})
 
 				$("#applyBtn").click(function(){

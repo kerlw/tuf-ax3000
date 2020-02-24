@@ -68,7 +68,9 @@ struct tail_t {
 	uint16_t  sn;
 	uint16_t  en;
 	char pid[MAX_PID_LEN];
-	uint8_t pad[36];	/* Padding up to MAX_TAIL_LEN */
+	uint32_t en2;
+	uint8_t pad2[31];
+	uint8_t flag;
 } tail;
 
 /***************************************************************************
@@ -113,6 +115,8 @@ int main(int argc, char **argv)
     tail.sn = (uint16_t)v1;
     sscanf(RT_EXTENDNO, "%d-%*s", &v1);
     tail.en = (uint16_t)v1;
+    tail.en2 = (uint32_t)v1;
+    tail.flag = 1;
 
     /* check if it is little endian system first */
     if( argc > 4 )

@@ -2443,7 +2443,7 @@ unsigned int netdev_calc(char *ifname, char *ifname_desc, unsigned long *rx, uns
 				*rx2 = backup_rx;
 				*tx2 = backup_tx;				
 				/* Cherry Cho modified for RT-AC3200 Bug#202 in 2014/11/4. */	
-				unit = get_wan_unit("eth0");
+				unit = get_wan_unit(WAN_IF_ETH);
 
 #ifdef RTCONFIG_DUALWAN			
 				if ( (unit == wan_primary_ifunit()) || ( !strstr(nvram_safe_get("wans_dualwan"), "none") && nvram_match("wans_mode", "lb")) )
@@ -2481,7 +2481,7 @@ unsigned int netdev_calc(char *ifname, char *ifname_desc, unsigned long *rx, uns
 			get_realtek_wan_bytecount(tx, rx);			
 #endif//end sherry}
 #if !defined(RTCONFIG_BCM5301X_TRAFFIC_MONITOR) && !defined(HND_ROUTER)
-			if(strlen(modelvlan) && !strcmp(ifname, "eth0"))
+			if(strlen(modelvlan) && !strcmp(ifname, WAN_IF_ETH))
 			{
 				backup_rx = *rx;
 				backup_tx = *tx;
@@ -4287,5 +4287,19 @@ int get_index_page(char *page, int size)
 		strlcpy(page, "GameDashboard.asp", size);
 	else
 		strlcpy(page, "index.asp", size);
+	return 0;
+}
+
+int amazon_wss_ap_isolate_support(char *prefix)
+{
+	char gn_wbl_en[32] = {0};
+
+	/* not amazon_wss interface */
+	if (strcmp(prefix, "wl0.2_")) return 0;
+
+	/* amazon_ffs is enabled */
+	snprintf(gn_wbl_en, sizeof(gn_wbl_en), "%sgn_wbl_enable", prefix);
+	if (nvram_match(gn_wbl_en, "1")) return 1;
+
 	return 0;
 }

@@ -4,7 +4,8 @@
 #define LE_ACME_CERT_HOME        "/jffs/.le"
 #define LE_ACME_ACC_KEY          "account.key"
 #define LE_ACME_ACC_CONF         "account.conf"
-#define LE_ACME_DOMAIN_FULLCHAIN "fullchain.cer"
+#define LE_ACME_DOMAIN_KEY       "domain.key"
+#define LE_ACME_DOMAIN_FULLCHAIN "fullchain.pem"
 
 //certificate
 typedef enum {

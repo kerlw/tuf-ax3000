@@ -49,6 +49,9 @@ int (*fdb_check_expired_dhd_hook)(unsigned char *addr,
                                  struct net_device * net_device) = NULL;
 #endif
 
+#ifdef CONFIG_BRIDGE_OOP
+extern unsigned int broop;
+#endif
 
 static struct kmem_cache *br_fdb_cache __read_mostly;
 static struct net_bridge_fdb_entry *fdb_find(struct hlist_head *head,
@@ -915,6 +918,9 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 	if (likely(fdb)) {
 		/* attempt to update an entry for a local interface */
 		if (unlikely(fdb->is_local)) {
+#ifdef CONFIG_BRIDGE_OOP
+			broop = 1;
+#endif
 			if (net_ratelimit())
 				br_info(br, "received packet on %s with "
 					"own address as source address\n",

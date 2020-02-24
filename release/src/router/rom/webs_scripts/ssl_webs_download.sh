@@ -25,8 +25,9 @@ update_url=`cat /tmp/update_url`
 # current firmware information
 firmware_path=`nvram get firmware_path`
 get_productid=`nvram get productid`
+get_odmpid=`nvram get odmpid`
 odmpid_support=`nvram get webs_state_odm`
-if [ "$odmpid_support" == "1" ]; then
+if [ "$odmpid_support" == "1" ] || [ "$odmpid_support" == "$get_odmpid" ]; then
 	get_productid=`nvram get odmpid`
 fi
 get_productid=`echo $get_productid | sed s/+/plus/;`	#replace 'plus' to '+' for one time

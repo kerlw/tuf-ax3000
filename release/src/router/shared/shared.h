@@ -160,6 +160,12 @@
 #define WLREADY			"wlready"
 #endif
 
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+#define WAN_IF_ETH	"eth4"
+#else
+#define WAN_IF_ETH	"eth0"
+#endif
+
 /**
  * skb->mark usage
  * 1.	bit 28~31:	Load-balance rule, IPTABLES_MARK_LB_*
@@ -180,6 +186,10 @@
 #define IS_BW_QOS()             (nvram_get_int("qos_enable") == 1 && nvram_get_int("qos_type") == 2)   // Bandwidth limiter
 #define IS_GFN_QOS()            (nvram_get_int("qos_enable") == 1 && nvram_get_int("qos_type") == 3)   // GeForce NOW QoS (Nvidia)
 #define IS_NON_AQOS()           (nvram_get_int("qos_enable") == 1 && nvram_get_int("qos_type") != 1)   // non A.QoS = others QoS (T.QoS / bandwidth monitor ... etc.)
+
+/* Guest network */
+#define GUEST_INIT_MARKNUM 10   /*10 ~ 30 for Guest Network. */
+#define INITIAL_MARKNUM    30   /*30 ~ X  for LAN . */
 
 #ifdef RTCONFIG_INTERNAL_GOBI
 #define DEF_SECOND_WANIF	"usb"
@@ -809,6 +819,12 @@ enum {
 	MODEL_RTAX95Q,
 	MODEL_RTAX58U,
 	MODEL_RTAX56U,
+	MODEL_SHAC1300,
+	MODEL_RPAC92,
+	MODEL_ZENWIFICD6R,
+	MODEL_ZENWIFICD6N,
+	MODEL_RTAX86U,
+	MODEL_RTAX68U,
 	MODEL_MAX
 };
 
@@ -996,6 +1012,9 @@ enum led_id {
 #endif
 #ifdef HND_ROUTER
 	LED_WAN_NORMAL,
+#endif
+#ifdef RTCONFIG_EXTPHY_BCM84880
+	LED_EXTPHY,
 #endif
 	LED_2G,
 	LED_5G,
@@ -1522,6 +1541,9 @@ extern int led_control_atomic(int which, int mode);
 extern uint32_t gpio_dir(uint32_t gpio, int dir);
 extern uint32_t set_gpio(uint32_t gpio, uint32_t value);
 extern uint32_t get_gpio(uint32_t gpio);
+#if defined(RTCONFIG_HND_ROUTER_AX_6710) || defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+extern uint32_t get_gpio2(uint32_t gpio);
+#endif
 extern int get_switch_model(void);
 #if defined(RTCONFIG_ALPINE) || defined(RTCONFIG_LANTIQ)
 extern uint32_t get_phy_status(int wan_unit);
@@ -1584,6 +1606,8 @@ extern int get_maxassoc(char *ifname);
 extern int wl_add_ie(int unit, uint32 pktflag, int ielen, uchar *oui, uchar *data);
 extern void wl_del_ie_with_oui(int unit, uchar *oui);
 extern void wait_connection_finished(int band);
+extern int add_interface_for_acsd(int unit);
+extern int need_to_start_acsd();
 #endif
 #if defined(RTCONFIG_LANTIQ)
 extern int get_wl_sta_list(void);
@@ -1735,7 +1759,10 @@ extern int get_fa_rev(void);
 extern int get_fa_dump(void);
 #endif
 #ifdef HND_ROUTER
-#if defined(RTCONFIG_HND_ROUTER_AX_675X)
+#if defined(RTCONFIG_HND_ROUTER_AX_6710)
+extern uint32_t hnd_get_phy_status(char *ifname);
+extern uint32_t hnd_get_phy_speed(char *ifname);
+#elif defined(RTCONFIG_HND_ROUTER_AX_675X)
 extern uint32_t hnd_get_phy_status(int port);
 extern uint32_t hnd_get_phy_speed(int port);
 #else
@@ -1752,7 +1779,7 @@ extern int with_non_dfs_chspec(char *wif);
 extern chanspec_t select_band1_chspec_with_same_bw(char *wif, chanspec_t chanspec);
 extern chanspec_t select_band4_chspec_with_same_bw(char *wif, chanspec_t chanspec);
 extern chanspec_t select_chspec_with_band_bw(char *wif, int band, int bw, chanspec_t chanspec);
-extern void wl_list_5g_chans(int unit, int band, char *buf, int len);
+extern void wl_list_5g_chans(int unit, int band, int war, char *buf, int len);
 extern int wl_cap(int unit, char *cap_check);
 #endif
 #ifdef RTCONFIG_AMAS
@@ -2156,7 +2183,7 @@ static inline int turbo_led_control(int onoff)
 static inline int turbo_led_control(__attribute__ ((unused)) int onoff) { return 0; }
 #endif
 
-#if defined(RTCONFIG_LED_BTN) || defined(RTCONFIG_WPS_ALLLED_BTN) || defined(RTCONFIG_TURBO_BTN)
+#if defined(RTCONFIG_LED_BTN) || defined(RTCONFIG_WPS_ALLLED_BTN) || defined(RTCONFIG_TURBO_BTN) || (!defined(RTCONFIG_WIFI_TOG_BTN) && !defined(RTCONFIG_QCA))
 static inline int inhibit_led_on(void) { return !nvram_get_int("AllLED"); }
 #else
 static inline int inhibit_led_on(void) { return 0; }
@@ -2638,6 +2665,8 @@ extern int wl_set_wifiscan(char *ifname, int val);
 extern int wl_set_mcsindex(char *ifname, int *is_auto, int *idx, char *idx_type, int *stream);
 #endif
 
+extern int amazon_wss_ap_isolate_support(char *prefix);
+
 #if defined(RTCONFIG_BCM_CLED)
 enum {
 	BCM_CLED_RED = 0,
@@ -2649,6 +2678,7 @@ enum {
 };
 enum {
 	BCM_CLED_STEADY_NOBLINK = 0,
+	BCM_CLED_STEADY_NOBLINK_DIM,
 	BCM_CLED_STEADY_BLINK,
 	BCM_CLED_PULSATING,
 	BCM_CLED_MODE_END

@@ -853,15 +853,17 @@ void PowerCLEDOn(void)
     *cled_led_g_reg = (LED_G_BRIGHTNESS << 6);
     *cled_led_b_reg = (LED_B_BRIGHTNESS << 6);
 #else
-	*cled_led_r_reg = 0x0003e002;
+	/* Red: 30 */
+	*cled_led_r_reg = 0x00000000;
 	*cled_led_r_reg_1 = 0x00a34a32;
 	*cled_led_r_reg_2 = 0x00000c34;
 	*cled_led_r_reg_3 = 0x00000000;
-	*cled_led_g_reg = 0x0003e002;
+	/* Green: 128 (cannot support 255) */
+	*cled_led_g_reg = 0x00036002;
 	*cled_led_g_reg_1 = 0x00a34a32;
 	*cled_led_g_reg_2 = 0x00000c34;
 	*cled_led_g_reg_3 = 0x00000000;
-	*cled_led_b_reg = 0x00032080;
+	*cled_led_b_reg = 0x00000000;
 	*cled_led_b_reg_1 = 0x00a34a32;
 	*cled_led_b_reg_2 = 0x00000c34;
 	*cled_led_b_reg_3 = 0x00000000;
@@ -876,8 +878,8 @@ void PowerCLEDOn(void)
     *cled_act_cfg = 0x20004000;
 	cfe_sleep(CFE_HZ * 3);
 #endif
-	/* GPIO 14, 15, 29 */
-    *cled_act_cfg = 0x2000C000;
+	/* GPIO 14, 15, 16, 29 */
+    *cled_act_cfg = 0x2001C000;
 	// cfe_usleep(LED_START_DELAY);
 	// cfe_sleep(CFE_HZ * 3);
 #endif
@@ -1035,10 +1037,12 @@ static int RstBtnPressed(void)
     int buttonPressed = 0, irqActiveHigh = 0;
 #if defined(RTAX95Q)
     unsigned short gpioPin = 9;
-#elif defined(RTAX58U) || defined(TUFAX3000)
+#elif defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
     unsigned short gpioPin = 0;
 #elif defined(RTAX56U)
     unsigned short gpioPin = 9;
+#else // RT-AX86U, RT-AX68U
+    unsigned short gpioPin = 31;
 #endif
 
     if (irqActiveHigh)
@@ -1056,10 +1060,12 @@ static int checkForSesBtnWirelessHold(void)
     int ActiveHigh = 0;
 #if defined(RTAX95Q)
     unsigned short gpioPin = 8;
-#elif defined(RTAX58U) || defined(TUFAX3000)
+#elif defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
     unsigned short gpioPin = 1;
 #elif defined(RTAX56U)
     unsigned short gpioPin = 8;
+#else // RT-AX86U, RT-AX68U
+    unsigned short gpioPin = 2;
 #endif
 
     while (1) {
@@ -1145,10 +1151,12 @@ void board_final_init(int force_cfe)
         if (BpGetBootloaderPowerOnLedGpio(&gpio) != BP_SUCCESS)
 #if defined(RTAX95Q)
             gpio = 16 | BP_ACTIVE_LOW;
-#elif defined(RTAX58U) || defined(TUFAX3000)
+#elif defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
             gpio = 23 | BP_ACTIVE_LOW;	// use WPS LED instead
 #elif defined(RTAX56U)
             gpio = 16 | BP_ACTIVE_LOW;
+#else // RT-AX86U, RT-AX68U
+            gpio = 4 | BP_ACTIVE_LOW;
 #endif
 
         /* Wait forever for an image */

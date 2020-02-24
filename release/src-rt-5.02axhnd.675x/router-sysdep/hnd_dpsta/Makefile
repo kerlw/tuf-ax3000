@@ -19,6 +19,8 @@
 #
 # $Id$
 #
+include ../../.config
+
 obj-${CONFIG_BCM_WLAN} := dpsta.o
 
 DPSTA_BASE_DIR := $(firstword $(wildcard ../../../../components/router-sysdep/dpsta	\
@@ -44,14 +46,22 @@ ifneq (,$(wildcard $(src)/$(DPSTASRC)/*.c))
   EXTRA_CFLAGS += -DHAVE_NET_DEVICE_OPS
   # BCA build identifier
   EXTRA_CFLAGS += -DBCMDRIVER -DBCA_HNDROUTER
+  EXTRA_CFLAGS += -Wno-date-time
   dpsta-objs := $(DPSTAOBJ) dpsta_ksyms.o
 else # DPSTASRC not exist
   # Otherwise, assume prebuilt object module(s) in src/dpsta/linux directory
   prebuilt := dpsta.o
+ifeq ($(HND_ROUTER_AX_6710),y)
+  dpsta-objs := $(SRCBASE_OFFSET)/dpsta/linux.4908/$(prebuilt)
+  ifeq (,$(wildcard $(src)/$(dpsta-objs)))
+    dpsta-objs := $(DPSTASRC)/linux.4908/$(prebuilt)
+  endif
+else
   dpsta-objs := $(SRCBASE_OFFSET)/dpsta/linux/$(prebuilt)
   ifeq (,$(wildcard $(src)/$(dpsta-objs)))
     dpsta-objs := $(DPSTASRC)/linux/$(prebuilt)
   endif
+endif
 endif
 
 PHONY += $(src)/dpsta_ksyms.c

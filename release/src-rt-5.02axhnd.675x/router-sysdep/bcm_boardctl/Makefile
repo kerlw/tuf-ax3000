@@ -34,6 +34,8 @@ clean:
 $(LIB): $(OBJS) force_oal
 	$(CC) -shared $(BCM_LD_FLAGS) -Wl,--whole-archive,-soname,$(notdir $@) \
 	    -o $@ $(OBJS) $(OALDIR)/oal.a -Wl,--no-whole-archive
+	mkdir -p $(HEADER_INSTALL_DIR)
+	install -p -m 444 -t $(HEADER_INSTALL_DIR) $(addprefix $(mdir)/,$(HEADERS))
 
 # At this level, we don't know if anything in oaldir has changed, so always go
 # down into that dir and do a make.

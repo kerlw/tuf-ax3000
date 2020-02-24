@@ -565,6 +565,11 @@ static int rctest_main(int argc, char *argv[])
 		else if (strcmp(argv[1], "gpior") == 0) {
 			printf("%d\n", get_gpio(atoi(argv[2])));
 		}
+#if defined(RTCONFIG_HND_ROUTER_AX_6710) || defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+		else if (strcmp(argv[1], "gpio2r") == 0) {
+			printf("%d\n", get_gpio2(atoi(argv[2])));
+		}
+#endif
 #ifndef HND_ROUTER
 		else if (strcmp(argv[1], "gpiod") == 0) {
 			if (argc>=4) gpio_dir(atoi(argv[2]), atoi(argv[3]));
@@ -606,6 +611,16 @@ static int rctest_main(int argc, char *argv[])
 #ifdef RTCONFIG_ASUSCTRL
 		else if (strcmp(argv[1], "asusctrl") == 0) {
 			printf("ignore=%d, en=%d, flag=(0x%x)\n", asus_ctrl_ignore(), asus_ctrl_en(atoi(argv[2])), nvram_get_hex("asusctrl_flags"));
+		}
+#endif
+#ifdef RTCONFIG_BROOP
+		else if (strcmp(argv[1], "broop") == 0) {
+			int i, dtime = atoi(argv[2])?:10;
+
+			for(i=0; i<dtime; ++i) {
+				sleep(1);
+				_dprintf("detect broop:%d (%d)\n", detect_broop(), i);
+			}
 		}
 #endif
 		else {
@@ -972,6 +987,9 @@ static const applets_t applets[] = {
 #ifdef RTCONFIG_ADTBW
 	{ "adtbw",			adtbw_main		},
 #endif
+#ifdef RTCONFIG_AMAS_ADTBW
+	{ "amas_adtbw",			amas_adtbw_main              },
+#endif	
 	{NULL, NULL}
 };
 
@@ -1762,6 +1780,12 @@ int main(int argc, char **argv)
 		return 0;
 	}
 #endif
+#ifdef RTCONFIG_INTERNETCTRL
+	else if (!strcmp(base, "ic")) {
+		ic_main(argc, argv);
+		return 0;
+	}
+#endif
 #if defined(CONFIG_BCMWL5) \
 		|| (defined(RTCONFIG_RALINK) && defined(RTCONFIG_WIRELESSREPEATER)) \
 		|| defined(RTCONFIG_QCA) || defined(RTCONFIG_REALTEK) \
@@ -1824,7 +1848,7 @@ int main(int argc, char **argv)
 	}
 #endif
 	else if (!strcmp(base, "add_multi_routes")) {
-		return add_multi_routes();
+		return add_multi_routes(0);
 	}
 	else if (!strcmp(base, "led_ctrl")) {
 		return(led_control(atoi(argv[1]), atoi(argv[2])));

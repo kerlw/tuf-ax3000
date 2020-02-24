@@ -736,7 +736,7 @@ acs_adjust_ctrl_chan(acs_chaninfo_t *c_info, chanspec_t chspec)
 }
 /* return TRUE if ACSD is in AP mode else return FALSE
  */
-bool
+/*bool
 acs_is_mode_check(char *osifname)
 {
 	char tmp[32], prefix[PREFIX_LEN];
@@ -755,7 +755,7 @@ acs_is_mode_check(char *osifname)
 		return FALSE;
 	}
 	return TRUE;
-}
+}*/
 
 /*
  * acs_get_txduration - get the overall tx duration
@@ -881,12 +881,18 @@ acs_init_run(acs_info_t ** acs_info_p)
 	bool radar_ignore = nvram_match("acs_zdfs_2g_ignore_radar", "1");
 	bool avail_5g = FALSE;
 #endif /* ZDSF_2G */
+	int skip_init_acs = 0;
 
 	acs_init_info(acs_info_p);
 
 #ifdef ZDFS_2G
 	(*acs_info_p)->ci_zdfs_2g  = NULL;
 #endif /* ZDSF_2G */
+
+	if (nvram_get_int("acs_skip_init_acs")) {
+		skip_init_acs = 1;
+		nvram_set_int("acs_skip_init_acs", 0);
+	}
 
 	foreach(name, nvram_safe_get("acs_ifnames"), next) {
 		c_info = NULL;
@@ -922,8 +928,11 @@ acs_init_run(acs_info_t ** acs_info_p)
 #endif /* ZDSF_2G */
 
 		if ((AUTOCHANNEL(c_info) || COEXCHECK(c_info)) &&
-			acs_is_mode_check(c_info->name) &&
 			!(c_info->wet_enabled && acs_check_assoc_scb(c_info))) {
+
+			if (skip_init_acs)
+				continue;
+
 			/* First call to pick the chanspec for exit DFS chan */
 			c_info->switch_reason = APCS_INIT;
 

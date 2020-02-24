@@ -35,15 +35,21 @@
 #define JFFS2_MTD_NAME	"brcmnand"
 #define UBI_DEV_NUM	"0"
 #define UBI_DEV_PATH	"/dev/ubi0"
+#define UBI_JFFS_PATH	"/dev/ubi0_0"
 #define LEBS		0x1F000		/* 124 KiB */
 #define NUM_OH_LEB	20		/* for ubifs overhead */
 #endif
-// AC86U/GTAC2900/GTAC5300/R7900P/R8000P
+// AC86U/GTAC2900/GTAC5300/R7900P/R8000P/AX56U/AX58U/AX82U/RAX20/RAX50
 #ifdef HND_ROUTER
+#ifdef HND_ROUTER_AX
+#define UBI_DEV_NUM	"3"
+#else
+#define UBI_DEV_NUM	"2"
+#endif
+#define UBI_DEV_PATH	"/dev/ubi"UBI_DEV_NUM
+#define UBI_JFFS_PATH	UBI_DEV_PATH"_0"
 #define PATH_MAX	512
 #define JFFS2_MTD_NAME	"misc2"
-#define UBI_DEV_NUM	"2"
-#define UBI_DEV_PATH	"/dev/ubi2"
 #define LEBS		0x1F000		/* 124 KiB */
 #define NUM_OH_LEB	20		/* for ubifs overhead */
 #endif
@@ -212,14 +218,11 @@ void start_ubifs(void)
 		nvram_set("jffs2_format", "0");
 		nvram_set("ubifs_format", "0");
 		eval("ubiformat",dev_mtd,"-y");
-#if defined(HND_ROUTER)
+
 //ubi0:rootfs ubi1:nvram ubi2:jffs or ubi0:rootfs ubi1:data ubi2:nvram ubi3:jffs
-		eval("ubiattach","-p",dev_mtd,"-d","2");
-		eval("ubimkvol","/dev/ubi2","-N", UBIFS_VOL_NAME,"-m");
-#else
-		eval("ubiattach","-p",dev_mtd,"-d","0");
-		eval("ubimkvol","/dev/ubi0","-N", UBIFS_VOL_NAME,"-m");
-#endif
+		eval("ubiattach","-p",dev_mtd,"-d",UBI_DEV_NUM);
+		eval("ubimkvol",UBI_DEV_PATH,"-N", UBIFS_VOL_NAME,"-m");
+
 		format = 1;
 	} else {
 		/* attach ubi */
@@ -234,27 +237,17 @@ void start_ubifs(void)
 			nvram_commit_x();
 		}
 	}
-#if defined(HND_ROUTER)
-	if (mount("/dev/ubi2_0", UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
-#else
-	if (mount("/dev/ubi0_0", UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
-#endif
+
+	if (mount(UBI_JFFS_PATH, UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
 		_dprintf("*** ubifs mount error\n");
 		eval("ubidetach", "-p", dev_mtd);
 		eval("ubiformat", dev_mtd, "-y");
-#if defined(HND_ROUTER)
-		eval("ubiattach","-p",dev_mtd,"-d","2");
-		eval("ubimkvol","/dev/ubi2","-N", UBIFS_VOL_NAME,"-m");
-#else
-		eval("ubiattach","-p",dev_mtd,"-d","0");
-		eval("ubimkvol","/dev/ubi0","-N", UBIFS_VOL_NAME,"-m");
-#endif
+		eval("ubiattach","-p",dev_mtd,"-d",UBI_DEV_NUM);
+		eval("ubimkvol",UBI_DEV_PATH,"-N", UBIFS_VOL_NAME,"-m");
+
 		format = 1;
-#if defined(HND_ROUTER)
-		if (mount("/dev/ubi2_0", UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
-#else
-		if (mount("/dev/ubi0_0", UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
-#endif
+
+		if (mount(UBI_JFFS_PATH, UBIFS_MNT_DIR, UBIFS_FS_TYPE, MS_NOATIME, "") != 0) {
 			_dprintf("*** ubifs 2-nd mount error\n");
 			error("mounting");
 			return;

@@ -553,7 +553,12 @@ void port_generic_stop(enetx_port_t *self)
 {
     if ((self->p.phy) && !(g_enet_flags & ENET_FLAG_IF_PHY_PWR_SYNC_DISABLE))
     {
-        phy_dev_power_set(self->p.phy, 0);
+#if 0
+        if (self->dev && strcmp(self->dev->name, "eth0"))
+            phy_dev_power_set(self->p.phy, 0);
+        else
+#endif
+            printk("%s %d skip turnning off power on %s here\n", __FUNCTION__, __LINE__, self->dev ? self->dev->name : NULL);
     }
     else
     {

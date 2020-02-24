@@ -924,7 +924,7 @@ extern void acs_check_ifname_is_virtual(char **ifname);
 extern int acs_set_far_sta_rssi(acs_chaninfo_t *c_info, int far_sta);
 extern int acs_update_rssi(acs_chaninfo_t *c_info, unsigned char *addr);
 extern bool chanim_record_chan_dwell(acs_chaninfo_t *c_info, chanim_info_t *ch_info);
-extern bool acs_is_mode_check(char *osifname);
+/*extern bool acs_is_mode_check(char *osifname);*/
 extern bool acs_nondfs_chan_check_for_bgdfs_trigger(acs_chaninfo_t *c_info, int bw);
 extern bool acs_low_power_nondfs_chan_check(acs_chaninfo_t *c_info, int bw);
 extern int acs_bgdfs_check_candidates(acs_chaninfo_t *c_info, int bw);

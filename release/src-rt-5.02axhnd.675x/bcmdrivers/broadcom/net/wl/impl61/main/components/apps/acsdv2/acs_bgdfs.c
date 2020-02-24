@@ -197,7 +197,7 @@ acs_bgdfs_attempt(acs_chaninfo_t * c_info, chanspec_t chspec, bool stunt)
 	 *  - only in EU &
 	 *  - without move (stunt to preclear only)
 	 */
-	if (FIXCHSPEC(c_info)) {
+	if (FIXCHSPEC(c_info) || (c_info->wet_enabled && acs_check_assoc_scb(c_info))) {
 		if (!c_info->country_is_edcrs_eu) {
 			ACSD_INFO("%s BGDFS ch:0x%04x not allowed in ACS_MODE_FIXCHSPEC\n",
 				c_info->name, chspec);
@@ -664,7 +664,7 @@ acs_bgdfs_ahead_trigger_scan(acs_chaninfo_t * c_info)
 	}
 
 	/* In FCC/ETSI, if on a low power Non-DFS, attempt a DFS 3+1 move */
-	if (!(FIXCHSPEC(c_info) || MONITORCHECK(c_info)) &&
+	if (!(FIXCHSPEC(c_info) || (c_info->wet_enabled && acs_check_assoc_scb(c_info)) || MONITORCHECK(c_info)) &&
 			!acs_is_dfs_chanspec(c_info, c_info->cur_chspec) &&
 			acsd_is_lp_chan(c_info, c_info->cur_chspec)) {
 		ACSD_INFO("%s: moving to DFS channel 0x%0x\n", c_info->name, chosen_chspec);

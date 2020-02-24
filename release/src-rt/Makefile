@@ -61,12 +61,22 @@ endif
 
 # declare the init var here. Don't include router's arch related var here due to it will break the multi-arch rules
 ifeq ($(HND_ROUTER),y)
+export HND_SRC := $(shell pwd | sed 's/\(.*src-rt-.*hnd.*\).*/\1/')
+export BCM_WLIMPL
 ifeq ($(HND_ROUTER_AX_675X),y)
-export BCM_CHIP := $(CUR_CHIP_PROFILE)
+export PROFILE ?= 9$(CUR_CHIP_PROFILE)GW
+include $(HND_SRC)/targets/$(PROFILE)/$(PROFILE)
+ifeq ($(BRCM_CHIP),4908)
+export HND_ROUTER_AX_6710 := y
+export BRCM_CHIP
+export BCM_CHIP := $(BRCM_CHIP)
 else
+export BCM_CHIP := $(CUR_CHIP_PROFILE)
+endif
+else
+export PROFILE ?= 94908HND
 export BCM_CHIP := 4908
 endif
-export HND_SRC := $(shell pwd | sed 's/\(.*src-rt-.*hnd.*\).*/\1/')
 export SRCBASE := $(shell pwd | sed 's/\(.*src-rt-.*hnd.*\).*/\1\/bcmdrivers\/broadcom\/net\/wl\/bcm9$(BCM_CHIP)\/main\/src/')
 export SRC_ROOT := $(HND_SRC)/../src
 export BUSYBOX := busybox-1.24.1
@@ -126,8 +136,8 @@ else
 RCSTRING=""
 RC_EXT_NO=0
 endif
-EXTENDNO1=$(shell git log --pretty=oneline asuswrt_$(KERNEL_VER).$(FS_VER).$(SERIALNO)..HEAD | wc -l)
-
+#EXTENDNO1=$(shell git log --pretty=oneline asuswrt_$(KERNEL_VER).$(FS_VER).$(SERIALNO)..HEAD | wc -l)
+EXTENDNO1=0
 ifeq ($(BRANCH),)
 include ./router/extendno.conf
 else
@@ -139,7 +149,8 @@ endif
 ifneq ($(FW_JUMP),)
 export EXTENDNO := $(MERLINRVER)-g$(shell git log --pretty=format:'%h' -n 1|sed -e "s,\([0-9a-z]\{7\}\)[0-9a-z]*,\1,")$(EXSTRING)
 else
-export EXTENDNO := $(shell expr $(EXTENDNO1) + $(RC_EXT_NO))-g$(shell git log --pretty=format:'%h' -n 1|sed -e "s,\([0-9a-z]\{7\}\)[0-9a-z]*,\1,")$(EXSTRING)
+#export EXTENDNO := $(shell expr $(EXTENDNO1) + $(RC_EXT_NO))-g$(shell git log --pretty=format:'%h' -n 1|sed -e "s,\([0-9a-z]\{7\}\)[0-9a-z]*,\1,")$(EXSTRING)
+export EXTENDNO := $(MERLINRVER)-g$(shell git log --pretty=format:'%h' -n 1|sed -e "s,\([0-9a-z]\{7\}\)[0-9a-z]*,\1,")$(EXSTRING)
 endif
 endif
 
@@ -181,11 +192,6 @@ include ./platform.mak
 -include ./dsl.mak
 
 ifeq ($(HND_ROUTER),y)
-ifeq ($(HND_ROUTER_AX_675X),y)
-export PROFILE ?= 9$(CUR_CHIP_PROFILE)GW
-else
-export PROFILE ?= 94908HND
-endif
 export BUILD_NAME ?= $(shell echo $(MAKECMDGOALS) | tr a-z A-Z)
 ifeq ($(HND_ROUTER_AX_675X),y)
 include ./build/Makefile
@@ -223,7 +229,9 @@ else
 MODEL = $(subst -,,$(subst +,P,$(BUILD_NAME)))
 endif
 export MODEL
+ifneq ($(BRCM_CHIP),4908)
 export CFLAGS += -D$(MODEL)
+endif
 export $(MODEL):=y
 export CFLAGS += -D$(MERLINR_NAME)
 export $(MERLINR_NAME)=y
@@ -1162,7 +1170,7 @@ define RouterOptions
 	if [ "$(CONNTRACK)" = "y" ]; then \
 		sed -i "/RTCONFIG_CONNTRACK/d" $(1); \
 		echo "RTCONFIG_CONNTRACK=y" >>$(1); \
-        fi; \
+	fi; \
 	if [ "$(PARENTAL2)" = "y" -o "$(PARENTAL)" = "y" ]; then \
 		sed -i "/RTCONFIG_PARENTALCTRL/d" $(1); \
 		echo "RTCONFIG_PARENTALCTRL=y" >>$(1); \
@@ -1170,6 +1178,10 @@ define RouterOptions
 			sed -i "/RTCONFIG_CONNTRACK/d" $(1); \
 			echo "RTCONFIG_CONNTRACK=y" >>$(1); \
 		fi; \
+	fi; \
+	if [ "$(INTERNETCTRL)" = "y" ]; then \
+		sed -i "/RTCONFIG_INTERNETCTRL/d" $(1); \
+		echo "RTCONFIG_INTERNETCTRL=y" >>$(1); \
 	fi; \
 	if [ "$(YANDEXDNS)" = "y" ]; then \
 		sed -i "/RTCONFIG_YANDEXDNS/d" $(1); \
@@ -1262,10 +1274,6 @@ define RouterOptions
 	if [ "$(ODMPID)" = "y" ]; then \
 		sed -i "/RTCONFIG_ODMPID/d" $(1); \
 		echo "RTCONFIG_ODMPID=y" >>$(1); \
-	fi; \
-	if [ "$(NONASUS)" = "y" ]; then \
-		sed -i "/RTCONFIG_NONASUS/d" $(1); \
-		echo "RTCONFIG_NONASUS=y" >>$(1); \
 	fi; \
 	if [ "$(MDNS)" = "y" ]; then \
 		sed -i "/RTCONFIG_MDNS/d" $(1); \
@@ -1731,8 +1739,6 @@ define RouterOptions
 	if [ "$(HTTPS)" = "y" ]; then \
 		sed -i "/RTCONFIG_HTTPS/d" $(1); \
 		echo "RTCONFIG_HTTPS=y" >>$(1); \
-                sed -i "/RTCONFIG_FORCE_AUTO_UPGRADE/d" $(1); \
-		echo "RTCONFIG_FORCE_AUTO_UPGRADE=y" >>$(1); \
 	fi; \
 	if [ "$(USBRESET)" = "y" ]; then \
 		sed -i "/RTCONFIG_USBRESET/d" $(1); \
@@ -2258,6 +2264,12 @@ define RouterOptions
 	else \
 		echo "# RTCONFIG_HND_ROUTER_AX_675X is not set" >>$(1); \
 	fi; \
+	sed -i "/RTCONFIG_HND_ROUTER_AX_6710/d" $(1); \
+	if [ "$(HND_ROUTER_AX_6710)" = "y" ]; then \
+		echo "RTCONFIG_HND_ROUTER_AX_6710=y" >>$(1); \
+	else \
+		echo "# RTCONFIG_HND_ROUTER_AX_6710 is not set" >>$(1); \
+	fi; \
 	if [ "$(HND_ROUTER_F1)" = "y" ]; then \
 		sed -i "/RTCONFIG_WBD/d" $(1); \
 		echo "RTCONFIG_WBD=y" >>$(1); \
@@ -2351,8 +2363,6 @@ define RouterOptions
 	fi; \
 	fi; \
 	if [ "$(EXT_PHY)" = "BCM84880" ]; then \
-		sed -i "/RTCONFIG_EXTPHY_BCM84880/d" $(1); \
-		echo "# RTCONFIG_EXTPHY_BCM84880 is not set" >>$(1); \
 		sed -i "/RTCONFIG_EXTPHY_BCM84880/d" $(1); \
 		echo "RTCONFIG_EXTPHY_BCM84880=y" >>$(1); \
 	fi; \
@@ -2792,6 +2802,11 @@ define RouterOptions
 		else \
 			echo "# RTCONFIG_AVBLCHAN is not set" >>$(1); \
 		fi; \
+		if [ "$(AMAS_ADTBW)" = "y" ]; then \
+			echo "RTCONFIG_AMAS_ADTBW=y" >>$(1); \
+		else \
+			echo "# RTCONFIG_AMAS_ADTBW is not set" >>$(1); \
+		fi; \
 	fi; \
 	sed -i "/RTCONFIG_WATCH_WLREINIT/d" $(1); \
 	if [ "$(WATCH_REINIT)" = "y" ]; then \
@@ -2897,6 +2912,20 @@ define RouterOptions
 	if [ -n "$(FW_JUMP)" ]; then \
 		sed -i "/RTCONFIG_FW_JUMP/d" $(1); \
 		echo "RTCONFIG_FW_JUMP=y" >>$(1); \
+	fi; \
+	if [ -n "$(BROOP)" ]; then \
+		sed -i "/RTCONFIG_BROOP/d" $(1); \
+		echo "RTCONFIG_BROOP=y" >>$(1); \
+	fi; \
+	if [ "$(GN_WBL)" = "y" ]; then \
+		sed -i "/RTCONFIG_GN_WBL\>/d" $(1); \
+		echo "RTCONFIG_GN_WBL=y" >>$(1); \
+	fi; \
+	if [ "$(AMAZON_WSS)" = "y" ]; then \
+		sed -i "/RTCONFIG_AMAZON_WSS\>/d" $(1); \
+		echo "RTCONFIG_AMAZON_WSS=y" >>$(1); \
+		sed -i "/RTCONFIG_GN_WBL\>/d" $(1); \
+		echo "RTCONFIG_GN_WBL=y" >>$(1); \
 	fi; \
 	if [ "$(SOFTCENTER)" = "y" ]; then \
 	sed -i "/RTCONFIG_SOFTCENTER/d" $(1); \
@@ -3621,6 +3650,10 @@ fi; \
 		sed -i "/CONFIG_IP_NF_DNSMQ/d" $(1); \
 		echo "CONFIG_IP_NF_DNSMQ=y" >>$(1); \
 	fi; \
+	if [ "$(BROOP)" = "y" ]; then \
+		sed -i "/CONFIG_BRIDGE_OOP/d" $(1); \
+		echo "CONFIG_BRIDGE_OOP=y" >>$(1); \
+	fi; \
 	if [ "$(USB)" = "" ]; then \
 		sed -i "/CONFIG_MSDOS_PARTITION/d" $(1); \
 		echo "# CONFIG_MSDOS_PARTITION is not set" >>$(1); \
@@ -3940,7 +3973,7 @@ fi; \
 		echo "# CONFIG_RTN53 is not set" >>$(1); \
 	fi; \
 	if [ "$(UUPLUGIN)" = "y" ]; then \
-		if [ "$(BUILD_NAME)" = "RT-AC86U" ] || [ "$(BUILD_NAME)" = "GT-AC2900" ] || [ "$(BUILD_NAME)" = "GT-AC5300" ] || [ "$(BUILD_NAME)" = "RT-AX88U" ] || [ "$(BUILD_NAME)" = "RT-AX92U" ] || [ "$(BUILD_NAME)" = "GT-AX11000" ] || [ "$(BUILD_NAME)" = "RT-AX95Q" ] || [ "$(BUILD_NAME)" = "TUF-AX3000" ] || [ "$(BUILD_NAME)" = "RT-AX56U" ]; then \
+		if [ "$(BUILD_NAME)" = "RT-AC86U" ] || [ "$(BUILD_NAME)" = "GT-AC2900" ] || [ "$(BUILD_NAME)" = "GT-AC5300" ] || [ "$(BUILD_NAME)" = "RT-AX88U" ] || [ "$(BUILD_NAME)" = "RT-AX92U" ] || [ "$(BUILD_NAME)" = "GT-AX11000" ]; then \
 			sed -i "/CONFIG_BCM_PKTRUNNER_WAR_SKIP_TUN/d" $(1); \
 			echo "CONFIG_BCM_PKTRUNNER_WAR_SKIP_TUN=y" >>$(1); \
 		fi; \

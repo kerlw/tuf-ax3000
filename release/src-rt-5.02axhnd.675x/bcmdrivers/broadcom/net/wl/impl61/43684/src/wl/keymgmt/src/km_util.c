@@ -657,9 +657,8 @@ km_needs_hw_key(keymgmt_t *km, km_pvt_key_t *km_pvt_key, wlc_key_info_t *key_inf
 		}
 #endif // endif
 
-		/* TKIP: use SW keys for BCMC traffic on secondary BSS */
+		/* TKIP: use SW keys for BCMC traffic BSS due to rekey issue */
 		if (KM_HW_COREREV_GE128(km) && (key_info->algo == CRYPTO_ALGO_TKIP) &&
-			!WLC_KEY_IS_DEFAULT_BSS(key_info) &&
 			(km_pvt_key->flags & KM_FLAG_BSS_KEY))
 			break;
 

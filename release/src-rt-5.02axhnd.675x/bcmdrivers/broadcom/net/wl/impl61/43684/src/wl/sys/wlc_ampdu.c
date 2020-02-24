@@ -2677,6 +2677,40 @@ wlc_ampdu_watchdog(void *hdl)
 
 			if (!SCB_AMPDU(scb))
 				continue;
+
+			if (scb->scb_stats.tx_succ_retry_failures)
+				WLCNTSCBINCR(scb->scb_stats.tx_retry_fail_dur);
+			else
+				WLCNTSCBSET(scb->scb_stats.tx_retry_fail_dur, 0);
+
+			if ((scb->scb_stats.tx_retry_fail_dur > WLC_SCB_MAX_TX_RETRY_FAIL_DUR) &&
+				(scb->scb_stats.tx_succ_retry_failures > WLC_SCB_MAX_TX_RETRY_FAIL_CNT)) {
+
+				if (RSPEC_ISVHT(scb->scb_stats.tx_rate)) {
+					ratespec_t tx_rspec = scb->scb_stats.tx_rate;
+					uint mcs, nss;
+
+					mcs = (tx_rspec & WL_RSPEC_VHT_MCS_MASK);
+					nss = ((tx_rspec & WL_RSPEC_VHT_NSS_MASK) >> WL_RSPEC_VHT_NSS_SHIFT);
+
+					/* vht mcs 0 Nss 1 bw20 */
+					if (mcs == 0 && nss == 1 && RSPEC_BW(tx_rspec) == WL_RSPEC_BW_20MHZ) {
+						WL_ERROR(("wl%d: %s: TX retry exhausted continuously. HAMMERING!\n",
+									wlc->pub->unit, __FUNCTION__));
+						wlc_fatal_error(wlc);
+					}
+				}
+			}
+
+			if (scb->scb_stats.tx_succ_retry_failures) {
+				char eabuf[ETHER_ADDR_STR_LEN];
+
+				printf("wl%d: %s: %s tx retry fail %d, dur %d\n",
+					wlc->pub->unit, __FUNCTION__,
+					bcm_ether_ntoa(&scb->ea, eabuf),
+					scb->scb_stats.tx_succ_retry_failures, scb->scb_stats.tx_retry_fail_dur);
+			}
+
 			scb_ampdu = SCB_AMPDU_TX_CUBBY(wlc->ampdu_tx, scb);
 			ASSERT(scb_ampdu);
 			for (tid = 0; tid < AMPDU_MAX_SCB_TID; tid++) {
@@ -10217,6 +10251,7 @@ wlc_ampdu_dotxstatus_aqm_complete(ampdu_tx_info_t *ampdu_tx, struct scb *scb,
 #endif /* PSPRETEND */
 			TRUE) {
 			nlost ++;
+			WLCNTSCBINCR(scb->scb_stats.tx_succ_retry_failures);
 #ifdef WLC_SW_DIVERSITY
 			if (WLSWDIV_ENAB(wlc) && WLSWDIV_BSSCFG_SUPPORT(bsscfg)) {
 				wlc_swdiv_txfail(wlc->swdiv, scb);
@@ -10269,6 +10304,7 @@ wlc_ampdu_dotxstatus_aqm_complete(ampdu_tx_info_t *ampdu_tx, struct scb *scb,
 			/* for *each* acked MPDU within an AMPDU, call a packet callback */
 			wlc_pcb_fn_invoke(wlc->pcb, p, TX_STATUS_ACK_RCV);
 
+			WLCNTSCBSET(scb->scb_stats.tx_succ_retry_failures, 0);
 		}
 
 #ifdef PSPRETEND

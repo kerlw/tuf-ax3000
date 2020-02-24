@@ -2510,6 +2510,7 @@ BlogAction_t _blog_finit( struct fkbuff * fkb_p, void * dev_p,
     int gre_rcv_version;
     uint16_t flags;
 #endif   
+    BlogDevRxHook_t rx_hook = blog_rx_hook_g;
 
     if ( blog_pa_hook_g != (BlogPaHook_t)NULL )
     {
@@ -2520,7 +2521,7 @@ BlogAction_t _blog_finit( struct fkbuff * fkb_p, void * dev_p,
 
     blogHash.match = 0U;     /* also clears hash, protocol = 0 */
 
-    if ( unlikely(blog_rx_hook_g == (BlogDevRxHook_t)NULL) )
+    if ( unlikely(rx_hook == (BlogDevRxHook_t)NULL) )
         goto bypass;
 
     blogHash.l1_tuple.channel = (uint8_t)channel;
@@ -2633,7 +2634,7 @@ BlogAction_t _blog_finit( struct fkbuff * fkb_p, void * dev_p,
     fc_args->key_match = blogHash.match;
     fc_args->txdev_p = NULL;
 
-    action = blog_rx_hook_g( fkb_p, (void *)dev_p, fc_args);
+    action = rx_hook( fkb_p, (void *)dev_p, fc_args);
     
     if ( action == PKT_BLOG )
     {

@@ -919,7 +919,7 @@ static inline netdev_tx_t __enet_xmit(pNBuff_t pNBuff, struct net_device *dev)
         /* 1. For broadstream iqos cb function.
          * 2. cb need to know it is fkb or skb
          */
-        if (enet_fwdcb && enet_fwdcb(pNBuff, dev) == PKT_DROP) {
+        if (enet_fwdcb && enet_fwdcb(skb, dev) == PKT_DROP) {
             nbuff_free(SKBUFF_2_PNBUFF(skb));
             return PKT_DROP;
         }

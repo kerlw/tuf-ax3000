@@ -631,6 +631,8 @@ acs_build_candidates(acs_chaninfo_t *c_info, int bw)
 	int k = 0;
 	char *data_buf2 = acsd_malloc(ACS_SM_BUF_LEN);
 
+	char tmp[32], prefix[32];
+
 	if (bw == ACS_BW_160) {
 		input |= WL_CHANSPEC_BW_160;
 	} else if (bw == ACS_BW_8080) {
@@ -703,7 +705,8 @@ acs_build_candidates(acs_chaninfo_t *c_info, int bw)
 	c_info->c_count[bw] = count;
 
 	input = 0;
-	if (BAND_5G(rsi->band_type) && bw == ACS_BW_160) {
+	snprintf(prefix, sizeof(prefix), "wl%d_", c_info->unit);
+	if (BAND_5G(rsi->band_type) && bw == ACS_BW_160 && (nvram_get_int(strcat_r(prefix, "bw", tmp)) != 5)) {
 		input |= WL_CHANSPEC_BAND_5G;
 		input |= WL_CHANSPEC_BW_80;
 		ret = acs_get_perband_chanspecs(c_info, input, data_buf2, ACS_SM_BUF_LEN);
@@ -725,7 +728,12 @@ acs_build_candidates(acs_chaninfo_t *c_info, int bw)
 			c = (chanspec_t)dtoh32(list->element[i]);
 
 			acs_parse_chanspec(c, &chan);
-			if (chan.control < 149) continue;
+
+			if (c_info->country_is_edcrs_eu) {
+				if ((chan.control < 100) || (chan.control >= 149))
+					continue;
+			} else if (chan.control < 149)
+				continue;
 
 			candi[count + k].chspec = c;
 			candi[count + k].valid = TRUE;
@@ -1095,9 +1103,100 @@ acs_candidate_score_fcs(ch_candidate_t *candi, acs_chaninfo_t* c_info)
 	ACSD_DEBUG("%s: fcs score: %d for chanspec 0x%x\n", c_info->name, score, chspec);
 }
 
+#define BAND_5G_NUM		6
+#define TXPWR_POLICY_NUM	3
+#define CHANNEL_5G_BAND_GROUP(c) \
+	(c < 52) ? 1 : ((c < 100) ? 2 : ((c < 116) ? 3 : ((c < 132) ? 4 : ((c < 149) ? 5 : 6))))
+
+struct tc {
+	char *prefix;
+	int index;
+};
+
+struct tc tc_list[] = {
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+	{ "US", 0 },
+	{ "TW", 0 },
+	{ "AA", 1 },
+	{ "AU", 1 },
+	{ "CA", 2 },
+	{ "EU", 3 },
+	{ "UK", 3 },
+	{ "IL", 3 },
+	{ "JP", 4 },
+	{ "CN", 5 },
+	{ "KR", 6 }
+#endif
+};
+
+enum {
+	TXPWR_POLICY_POWER = 0,
+	TXPWR_POLICY_DFS,
+	TXPWR_POLICY_BW160M
+};
+
+struct txpwr_policy {
+	double score[BAND_5G_NUM];
+};
+
+struct txpwr_policy txpwr_policy_all[][TXPWR_POLICY_NUM] = {
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+{{{ 21.0, 21.0, 21.0, 21.0, 21.0, 23.0 }}, {{ 20, 10, 10, 10, 10, 20 }}, {{ 10, 10, 10, 10, 0, 0 }}},	// US, TW
+{{{ 21.0, 21.0, 21.0, 0.0, 21.0, 23.0 }}, {{ 20, 10, 10, 0, 10, 20 }}, {{ 10, 10, 0, 0, 0, 0 }}},	// AA
+{{{ 18.0, 18.0, 17.0, 0.0, 17.0, 23.0 }}, {{ 20, 10, 10, 0, 10, 20 }}, {{ 15, 15, 0, 0, 0, 0 }}},	// CA
+{{{ 18.0, 18.0, 25.0, 25.0, 25.0, 0.0 }}, {{ 20, 20, 20, 0, 0, 0 }}, {{ 10, 10, 10, 0, 0, 0 }}},	// EU
+{{{ 15.0, 15.0, 17.0, 17.0, 17.0, 0.0 }}, {{ 10, 5, 5, 5, 0, 0 }}, {{ 5, 5, 5, 5, 0, 0 }}},		// JP
+{{{ 18.0, 18.0, 0.0, 0.0, 0.0, 24.0 }}, {{ 20, 10, 0, 0, 0, 20 }}, {{ 10, 10, 0, 0, 0, 0 }}},		// CN
+{{{ 15.0, 15.0, 17.0, 17.0, 17.0, 17.0 }}, {{ 10, 5, 5, 5, 0, 10 }}, {{ 5, 5, 5, 5, 0, 0 }}}		// KR
+#endif
+};
+
+int get_tc_index(void)
+{
+	static int index = -1;
+	char *prefix;
+	const struct tc *p;
+
+	if (index != -1)
+		return index;
+
+	prefix = nvram_safe_get("territory_code");
+	for (p = &tc_list[0]; p->prefix; ++p) {
+		if (!strncmp(prefix, p->prefix, 2)) {
+			index = p->index;
+			break;
+		}
+	}
+
+	return index;
+}
+
 static void
 acs_candidate_score_txpwr(ch_candidate_t *candi, acs_chaninfo_t* c_info)
 {
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+	chanspec_t chspec = candi->chspec;
+	acs_channel_t chan;
+	int tc_index = get_tc_index();
+	int ch_5g_band_grp;
+	int power, dfs = 0, bw160m = 0;
+	int is_dfs;
+	int score = 0;
+	char tmp[32], prefix[32];
+
+	if (BAND_5G(c_info->rs_info.band_type) && (tc_index != -1)) {
+		is_dfs = (c_info->unit == 1) ? nvram_get_int("acs_dfs") : nvram_get_int("acs_band3");
+		acs_parse_chanspec(chspec, &chan);
+		ch_5g_band_grp = CHANNEL_5G_BAND_GROUP(chan.control);
+		snprintf(prefix, sizeof(prefix), "wl%d_", c_info->unit);
+		power = txpwr_policy_all[tc_index][TXPWR_POLICY_POWER].score[ch_5g_band_grp - 1];
+		if (ch_5g_band_grp == 1 || ch_5g_band_grp == 6 || is_dfs)
+		dfs = txpwr_policy_all[tc_index][TXPWR_POLICY_DFS].score[ch_5g_band_grp - 1];
+		if (nvram_get_int(strcat_r(prefix, "bw_160", tmp)) && ((!is_dfs && (ch_5g_band_grp == 1)) || (is_dfs && (ch_5g_band_grp < 6))))
+		bw160m = txpwr_policy_all[tc_index][TXPWR_POLICY_BW160M].score[ch_5g_band_grp - 1];
+		score = -(power + dfs + bw160m);
+	}
+#else
 	bool is_eu = c_info->country_is_edcrs_eu;	/* is in EDCRS_EU */
 	bool is_hp = !ACS_IS_LOW_POW_CH(wf_chspec_ctlchan(candi->chspec),
 			is_eu);		/* is high power ch */
@@ -1115,6 +1214,7 @@ acs_candidate_score_txpwr(ch_candidate_t *candi, acs_chaninfo_t* c_info)
 		/* order of preference High power (DFS/non), DFS, low power non-DFS channels */
 		score = 2 - (2 * is_hp + is_dfs);
 	}
+#endif
 	candi->chscore[CH_SCORE_TXPWR].score = score;
 	ACSD_INFO("%s: txpower score is %d chanspec %d\n", c_info->name, score, candi->chspec);
 }
@@ -2112,6 +2212,11 @@ acs_set_chspec(acs_chaninfo_t * c_info, bool update_dfs_params, int ch_chng_reas
 	reason = (wl_chan_change_reason_t)ch_chng_reason;
 	int unit = -1;
 	char tmp[32], prefix[32];
+
+	if (c_info->wet_enabled && acs_check_assoc_scb(c_info)) {
+		ACSD_INFO("%s: skip acs_set_chspec when ACSD is in WET mode and scb associated\n", c_info->name);
+		return;
+	}
 
 	if (c_info->txop_channel_select == 0) {
 		if (chspec) {

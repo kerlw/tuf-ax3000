@@ -780,7 +780,11 @@ int dhdpcie_init(struct pci_dev *pdev)
 
 	do {
 		/* osl attach */
+#ifdef BCM_NBUFF
+		if (!(osh = osl_attach(pdev, PCI_BUS, TRUE))) {
+#else
 		if (!(osh = osl_attach(pdev, PCI_BUS, FALSE))) {
+#endif
 			DHD_ERROR(("%s: osl_attach failed\n", __FUNCTION__));
 			break;
 		}

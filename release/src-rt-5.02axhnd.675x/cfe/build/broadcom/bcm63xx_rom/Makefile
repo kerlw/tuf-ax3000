@@ -616,14 +616,14 @@ distclean : clean
 	cp -f $(RAM_BUILD)/cfe63148ram.bin $(TARGETS_DIR)/cfe/cfesec63148ram.bin
 4908:
 	$(MAKE) clean
-	#$(MAKE) BRCM_CHIP=4908 BLD_NAND=1
-	# cp -f cfe*.bin $(TARGETS_DIR)/cfe
-	# cp -f $(RAM_BUILD)/cfe*ram.bin $(TARGETS_DIR)/cfe
+	$(MAKE) BRCM_CHIP=4908 BLD_NAND=1
+	cp -f cfe*.bin $(TARGETS_DIR)/cfe
+	cp -f $(RAM_BUILD)/cfe*ram.bin $(TARGETS_DIR)/cfe
 	#$(MAKE) clean
 	#$(MAKE) BRCM_CHIP=4908 BLD_EMMC=1
 	# cp -f cfe*.bin $(TARGETS_DIR)/cfe/cfe4908rom_emmc.bin
 	# cp -f $(RAM_BUILD)/cfe*ram.bin $(TARGETS_DIR)/cfe/cfe4908ram_emmc.bin
-	#$(MAKE) clean
+	$(MAKE) clean
 	$(MAKE) BRCM_CHIP=4908 BOOT_PRE_CFE=1
 	cp -f cfe*.bin $(TARGETS_DIR)/cfe/precfe4908rom.bin
 	$(MAKE) clean
@@ -756,11 +756,11 @@ release_mips :
 
 release_arm :
 #	$(MAKE) sanity_toolchain BRCM_CHIP=63138
-#	$(MAKE) clean
+	$(MAKE) clean
 #	$(MAKE) 63158
 #	$(MAKE) 63138
 #	$(MAKE) 63148
-#	$(MAKE) 4908
+	$(MAKE) 4908
 #	$(MAKE) 6858
 #	$(MAKE) 47189
 #	$(MAKE) 6846

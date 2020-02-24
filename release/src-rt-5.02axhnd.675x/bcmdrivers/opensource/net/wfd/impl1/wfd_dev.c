@@ -462,15 +462,16 @@ static int wfd_tasklet_handler(void *context)
     return 0;
 }
 
-#ifdef CONFIG_BCM_WFD_RATE_LIMITER
-int wfd_is_radio_valid(uint32_t radio_id)
-{
-     return wfd_objects[radio_id].isValid;
-}
-
 struct net_device *wfd_dev_by_id_get(uint32_t radio_id, uint32_t if_id)
 {
     return wfd_objects[radio_id].wl_if_dev[if_id];
+}
+EXPORT_SYMBOL(wfd_dev_by_id_get);
+
+#ifdef CONFIG_BCM_WFD_RATE_LIMITER
+int wfd_is_radio_valid(uint32_t radio_id)
+{
+    return wfd_objects[radio_id].isValid;
 }
 
 struct net_device *wfd_dev_by_name_get(char *name, uint32_t *radio_idx, uint32_t *if_idx)
@@ -999,12 +1000,22 @@ int wfd_bind(struct net_device *wl_dev_p,
     else
 #endif
     {
+#if defined(CONFIG_BCM_WLAN_DPDCTL)
+        /* Use radio_idx as wfd idx as well */
+        tmp_idx = wl_radio_idx;
+
+        if (wfd_objects[tmp_idx].wfd_bulk_get) {
+            WFD_ERROR("ERROR. WFD_OBJECT(%d) in Use\n", wl_radio_idx);
+            goto wfd_bind_failure;
+        }
+#else  /* !CONFIG_BCM_WLAN_DPDCTL */
         /* Find available slot. */
         for (tmp_idx = 0; tmp_idx < wfd_max_objects; tmp_idx++)
         {
             if (!wfd_objects[tmp_idx].wfd_bulk_get) /* This callback must be set for registered object */
                 break;
         }
+#endif /* !CONFIG_BCM_WLAN_DPDCTL */
 
         /* Get Min & Max Q Indices for this WFD Instance */
         minQIdx = wfd_get_minQIdx(tmp_idx);
@@ -1454,6 +1465,7 @@ wfd_swqueue_xfer_pkts(
     }
     else if (src_pktqueue->NBuffPtrType == FKBUFF_PTR)
     {   /* FKB ==> SKB */
+        uint8_t prio4bit;
 
         while (src_pktqueue->len)
         {
@@ -1479,6 +1491,15 @@ wfd_swqueue_xfer_pkts(
 
             /* Restore d3lut pktfwd_key_t */
             skb->wl.u32 = wlFlowInf.u32;
+
+            /* FKB (DHD) uses 3 bit prio.
+             * Convert it to 4 bit prio and assign it to SKB (NIC)
+             * IQ_PRIO is not available, use only prio */
+            prio4bit = 0;
+            prio4bit = SET_WLAN_PRIORITY(prio4bit, wlFlowInf.ucast.dhd.wl_prio);
+
+            skb->wl.pktfwd.wl_prio = prio4bit;
+            DECODE_WLAN_PRIORITY_MARK(prio4bit, skb->mark);
 
             /* Transfer packet to WFD pktqueue */
             if (dst_pktqueue->len == 0U)
@@ -1523,6 +1544,12 @@ wfd_swqueue_xfer_pkts(
 
             /* Restore d3lut pktfwd_key_t */
             fkb->wl.u32 = wlFlowInf.u32;
+
+            /* SKB (NIC) uses 4 bit prio.
+             * Convert it to 3 bit prio (ignore IQ_PRIO)
+             * and assign to FKB (DHD) */
+            fkb->wl.pktfwd.wl_prio =
+                GET_WLAN_PRIORITY(wlFlowInf.ucast.nic.wl_prio);
 
             pkt = (pktqueue_pkt_t *) FKBUFF_2_PNBUFF(fkb);
 
@@ -1634,7 +1661,8 @@ wfd_swqueue_skb_xmit(wfd_object_t * wfd_p, uint32_t budget)
 
             skb = (struct sk_buff *)pkt;
 
-            pktlist_prio = skb->wl.pktfwd.wl_prio;
+            /* Fetch the 3b WLAN prio, by skipping the 1b IQPRIO */
+            pktlist_prio = GET_WLAN_PRIORITY(skb->wl.pktfwd.wl_prio);
 
             if (likely(skb->wl.pktfwd.is_ucast))
             {
@@ -1657,8 +1685,7 @@ wfd_swqueue_skb_xmit(wfd_object_t * wfd_p, uint32_t budget)
                 pktlist_dest = PKTLIST_MCAST_ELEM; /* last col in 2d pktlist */
             }
 
-            skb->mark = LINUX_SET_PRIO_MARK(skb->mark, pktlist_prio);
-
+            WFD_ASSERT(pktlist_prio == LINUX_GET_PRIO_MARK(skb->mark));
             WFD_ASSERT(pktlist_dest <= PKTLIST_MCAST_ELEM);
             WFD_ASSERT(pktlist_prio <  PKTLIST_PRIO_MAX);
 
@@ -1764,8 +1791,6 @@ wfd_swqueue_fkb_xmit(wfd_object_t * wfd_p, uint32_t budget)
                 fkb->wl.u32  = 0U;
                 pktlist_dest = PKTLIST_MCAST_ELEM; /* last col in 2d pktlist */
             }
-
-            fkb->wl.ucast.dhd.wl_prio = pktlist_prio;
 
             WFD_ASSERT(pktlist_dest <= PKTLIST_MCAST_ELEM);
             WFD_ASSERT(pktlist_prio <  PKTLIST_PRIO_MAX);

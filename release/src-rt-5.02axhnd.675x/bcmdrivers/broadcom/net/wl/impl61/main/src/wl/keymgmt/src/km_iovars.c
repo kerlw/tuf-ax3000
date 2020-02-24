@@ -762,6 +762,10 @@ wlc_keymgmt_wsec(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, uint32 val)
 {
 	KM_LOG(("wl%d: wlc_keymgmt_wsec: setting wsec 0x%x\n", wlc->pub->unit, val));
 
+	/* WAR for JIRA:BCAWLAN-208687 */
+	if (val & TKIP_ENABLED)
+		val |= WSEC_SWFLAG;
+
 	bsscfg->wsec = val & (WEP_ENABLED|TKIP_ENABLED|AES_ENABLED|WSEC_SWFLAG|
 	                      SES_OW_ENABLED);
 

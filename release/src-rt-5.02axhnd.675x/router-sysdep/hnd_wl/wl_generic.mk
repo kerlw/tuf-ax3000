@@ -10,11 +10,6 @@
 #
 
 uniq = $(if $1,$(firstword $1) $(call uniq,$(filter-out $(firstword $1),$1)))
-ifneq ($(wildcard ../../router-sysdep/dpsta),)
-    DPSTASRC := ../dpsta
-else
-    DPSTASRC := ../dpsta
-endif
 
 #WLSRC_BASE := $(abspath $(src)/$(SRCBASE_OFFSET))
 #ROUTER_BASE := $(abspath $(src)/$(ROUTERBASE_OFFSET))
@@ -45,11 +40,7 @@ ifeq ($(REBUILD_WL_MODULE),1)
     # include $(WLSRC_BASE)/makefiles/WLAN_Common.mk
 
     # include router config to source MFP, HSPOT & WNM settings
-ifneq ($(strip $(BUILD_HND_NIC)),)
     include $(ROUTER_BASE)/.config
-else
-    include $(ROUTER_BASE)/.config
-endif
 
     KBUILD_CFLAGS += -I../../router-sysdep/bcmdrv/include
     KBUILD_CFLAGS += -DBCMDRIVER -Dlinux
@@ -183,8 +174,15 @@ endif
          EXTRA_CFLAGS += -finline-limit=2048
     endif
 
+    ifdef RTCONFIG_DPSTA
+ifneq ($(wildcard ../../router-sysdep/dpsta),)
+    DPSTASRC := ../dpsta
+else
+    DPSTASRC := ../dpsta
+endif
     # include path for dpsta.h
     EXTRA_CFLAGS += -I$(src)/$(DPSTASRC)
+    endif
 
     # Build the phy source files iff -DPHY_HAL is present, handling either old (src) or new (components) phy location.
     ifneq ($(findstring PHY_HAL,$(WLFLAGS)),)

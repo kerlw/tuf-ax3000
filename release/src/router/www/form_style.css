@@ -2042,7 +2042,6 @@ padding-top:1px;
 	background: #475A5F;
 }
 .eula_panel_container{
-	margin-left: 25%;
 	display: none;
 	position: absolute;
 	width: 50%;
@@ -2098,4 +2097,14 @@ padding-top:1px;
 	height: 2px;
 	width: 740px;
 	margin: 1px 0;
+}
+.query_list{
+	display: none;
+	background-color: #576D73;
+	border: 1px solid  #929EA1;
+	list-style: none;
+	width:339px; height:120px; 
+	margin:0 0 0 2px;
+	padding: 6px;position: absolute;
+	overflow-y: auto;
 }

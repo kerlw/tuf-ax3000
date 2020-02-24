@@ -125,6 +125,8 @@ curl_download_file(char *url, char *file_path, int dl_target, int retry, int che
 
 			/* enable verbose for easier tracing */
 			curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+			curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+			curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
 			curl_easy_setopt(curl, CURLOPT_URL, url);
 			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
 			curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
@@ -162,7 +164,7 @@ firmware_check_update_main(int argc, char *argv[])
 	char current_firm[8]={0}, current_extendno[16]={0};
 	char *LANG=NULL, *tcode=NULL, *tcode_p=NULL;
 	char model_name[32]={0}, req_commit_num[16]={0}, commit_num[16]={0};
-	char url_dl[256]={0}, dfs[256]={0};
+	char url_dl[256]={0}, dfs[256]={0}, force_lvl[8]={0};
 #ifdef RTCONFIG_ASUSCTRL
 	char tcode_buf[16]={0}, asus_ctrl_str[8]={0};
 #endif
@@ -185,6 +187,7 @@ firmware_check_update_main(int argc, char *argv[])
 	nvram_set("webs_state_error", "0");
 	nvram_set("webs_state_odm", "0");
 	nvram_set("webs_state_url", "");
+	nvram_set("webs_state_level", "0");
 	unlink("/tmp/webs_upgrade.log"); //clean log
 
 	is_support_nt_center = nvram_contains_word("rc_support", "nt_center");
@@ -217,11 +220,13 @@ firmware_check_update_main(int argc, char *argv[])
 	while(retry<3){
 		curl_download_file(target_url, file_path[0], FRS_DL, 3, 1);
 		if ((fp = fopen(file_path[0], "r")) != NULL) {
-			fscanf(fp, "%[^#]#REQFW%lu_%lu_%lu-%[^#]#FW%lu_%lu_%lu-%[^#]#%[^#]#DFS%[^#]", model_name, &req_firmver, &req_buildno, &req_lextendno, req_commit_num, &firmver, &buildno, &lextendno, commit_num, url_dl, dfs);
+			fscanf(fp, "%[^#]#REQFW%lu_%lu_%lu-%[^#]#FW%lu_%lu_%lu-%[^#]#%[^#]#DFS%[^#]#LV%[^#]", model_name, &req_firmver, &req_buildno, &req_lextendno, req_commit_num, &firmver, &buildno, &lextendno, commit_num, url_dl, dfs, force_lvl);
 			snprintf(webs_state_info, sizeof(webs_state_info), "%lu_%lu_%lu-%s", firmver, buildno, lextendno, commit_num);
 			snprintf(webs_state_REQinfo, sizeof(webs_state_REQinfo), "%lu_%lu_%lu-%s", req_firmver, req_buildno, req_lextendno, req_commit_num);
 			nvram_set("webs_state_info", webs_state_info);
 			nvram_set("webs_state_REQinfo", webs_state_REQinfo);
+			nvram_set("webs_state_odm", model_name);
+			nvram_set("webs_state_level", force_lvl);
 
 			if(!strncmp(url_dl, "http", 4))
 				nvram_set("webs_state_url", url_dl);

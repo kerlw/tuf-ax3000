@@ -3634,10 +3634,10 @@ wlc_vht_update_scb_state(wlc_vht_info_t *vhti, int band, struct scb *scb,
 				wlc->stf->op_txstreams,
 				WLC_VHT_FEATURES_PROP_MCS_GET(wlc->pub));
 
-	cubby_info->rxmcsmap = vht_cap_ie->rx_mcs_map;
 	if (cubby_info->rxmcsmap != new_rateset.vht_mcsmap) {
 		wlc_vht_upd_rate_mcsmap_ex(wlc->vhti, scb, new_rateset.vht_mcsmap);
 		wlc_vht_upd_rate_mcsmap_prop_ex(wlc->vhti, scb, new_rateset.vht_mcsmap_prop);
+		cubby_info->rxmcsmap = new_rateset.vht_mcsmap;
 		reinit_ratesel = TRUE;
 	}
 

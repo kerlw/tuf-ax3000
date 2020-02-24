@@ -9491,7 +9491,7 @@ wlc_ap_scb_state_upd_cb(void *ctx, scb_state_upd_data_t *notif_data)
 	scb = notif_data->scb;
 	ASSERT(scb != NULL);
 
-	if (!BSSCFG_AP(scb->bsscfg)) {
+	if (!BSSCFG_AP(scb->bsscfg) && !AP_ACTIVE(wlc)) {
 		return;
 	}
 
@@ -9511,6 +9511,10 @@ wlc_ap_scb_state_upd_cb(void *ctx, scb_state_upd_data_t *notif_data)
 	 * 160-80Mhz Bandwidth switch is triggered.
 	 */
 	wlc_ap_160mhz_upd_bw_check(wlc, scb, scb_assoced);
+
+	if (!BSSCFG_AP(scb->bsscfg)) {
+		return;
+	}
 
 #ifdef WL_GLOBAL_RCLASS
 	wlc_ap_scb_no_gbl_rclass_upd(wlc, scb, scb_assoced, oldstate);

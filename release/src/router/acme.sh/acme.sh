@@ -958,7 +958,8 @@ _sign() {
 
   _sign_openssl="${ACME_OPENSSL_BIN:-openssl} dgst -sign $keyfile "
 
-  if grep "BEGIN RSA PRIVATE KEY" "$keyfile" >/dev/null 2>&1; then
+  if [ 'grep "BEGIN RSA PRIVATE KEY" "$keyfile" >/dev/null 2>&1' ] ||
+     [ 'grep "BEGIN PRIVATE KEY" "$keyfile" >/dev/null 2>&1' ] ; then
     $_sign_openssl -$alg | _base64
   elif grep "BEGIN EC PRIVATE KEY" "$keyfile" >/dev/null 2>&1; then
     if ! _signedECText="$($_sign_openssl -sha$__ECC_KEY_LEN | ${ACME_OPENSSL_BIN:-openssl} asn1parse -inform DER)"; then
@@ -1493,7 +1494,8 @@ _calcjwk() {
     return 0
   fi
 
-  if grep "BEGIN RSA PRIVATE KEY" "$keyfile" >/dev/null 2>&1; then
+  if [ 'grep "BEGIN RSA PRIVATE KEY" "$keyfile" >/dev/null 2>&1' ] ||
+     [ 'grep "BEGIN PRIVATE KEY" "$keyfile" >/dev/null 2>&1' ] ; then
     _debug "RSA key"
     pub_exp=$(${ACME_OPENSSL_BIN:-openssl} rsa -in "$keyfile" -noout -text | grep "^publicExponent:" | cut -d '(' -f 2 | cut -d 'x' -f 2 | cut -d ')' -f 1)
     if [ "${#pub_exp}" = "5" ]; then
@@ -4000,7 +4002,7 @@ $_authorizations_map"
       fi
 
       if [ "$ACME_VERSION" = "2" ]; then
-        response="$(echo "$_authorizations_map" | grep "^$(_idn "$d")," | sed "s/$d,//")"
+        response="$(echo "$_authorizations_map" | grep -i "^$(_idn "$d")," | sed "s/$d,//i")"
         _debug2 "response" "$response"
         if [ -z "$response" ]; then
           _err "get to authz error."
