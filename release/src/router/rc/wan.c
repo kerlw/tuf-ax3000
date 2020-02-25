@@ -1973,9 +1973,6 @@ int update_resolvconf(void)
 	start_smartdns();
 #endif
 
-#ifdef RTCONFIG_OPENVPN
-	if (!write_ovpn_resolv(fp, fp_servers))
-#endif
 	{
 		for (unit = WAN_UNIT_FIRST; unit < WAN_UNIT_MAX; unit++) {
 			char *wan_xdns, *wan_xdomain;

@@ -419,7 +419,7 @@ pci_subr.o : ${TOP}/pci/pci_subr.c pcidevs_data2.h
 # Make a define for the board name
 #
 
-CFLAGS += -D_$(patsubst "%",%,${CFG_BOARDNAME})_ -D_BUILDDATE_="\"$(shell date)\"" -D_BUILDUSER_="\"$(shell whoami)@$(shell hostname)\""
+CFLAGS += -D_$(patsubst "%",%,${CFG_BOARDNAME})_ -D_BUILDDATE_="\"$(shell env LANG=en_US.UTF-8 date)\"" -D_BUILDUSER_="\"$(shell whoami)@$(shell hostname)\""
 
 LIBCFE = libcfe.a
 
