@@ -285,6 +285,13 @@ ifeq ($(RTCONFIG_LANTIQ),y)
 LIBS += -L$(TOP)/fapi_wlan_common-05.04.00.131 -lfapiwlancommon -ldl -L$(TOP)/libhelper-1.4.0.2 -lhelper -L$(TOP)/libfapi-0.1 -lfapi -L$(TOP)/wireless_tools/ -liw
 endif
 
+ifeq ($(RTCONFIG_HND_ROUTER_AX_6710),y)
+CFLAGS +=-DRTCONFIG_HND_ROUTER_AX_6710
+endif
+ifeq ($(RTCONFIG_HND_ROUTER_AX_675X),y)
+CFLAGS +=-DRTCONFIG_HND_ROUTER_AX_675X
+endif
+
 all: httpd #test_apps
 
 #test_apps: apps.c
@@ -293,7 +300,6 @@ all: httpd #test_apps
 httpd: $(OBJS)
 	@echo " [httpd] CC $@"
 	@$(CC) -o $@ $(OBJS) $(LIBS) $(EXTRALDFLAGS)
-
 	$(SIZECHECK)
 	$(CPTMP)
 
@@ -325,6 +331,7 @@ endif
 
 %.o: %.c .%.depend
 	@echo " [httpd] CC $@"
+	@echo "$(CFLAGS)"
 	@$(CC) $(CFLAGS) -o $@ -c $<
 
 .%.depend: %.c

@@ -551,7 +551,7 @@ $(function() {
 		success: function(response) {
 			db_softcenter_ = db_softcenter;
 			if(typeof db_softcenter_["softcenter_server_tcode"] == "undefined") {
-				db_softcenter_["softcenter_home_url"] = "http://update.wifi.com.cn";
+				db_softcenter_["softcenter_home_url"] = "https://sc.paldier.com";
 			}
 			else if(db_softcenter_["softcenter_server_tcode"] == "CN") {
 			        db_softcenter_["softcenter_home_url"] = "http://update.wifi.com.cn";
@@ -571,6 +571,8 @@ $(function() {
 				scarch="mips";
 			else if (db_softcenter_["softcenter_arch"] == "armv7l")
 				scarch="arm";
+			else if (db_softcenter_["softcenter_arch"] == "armng")
+				scarch="armng";
 			else if (db_softcenter_["softcenter_arch"] == "aarch64")
 				scarch="arm64";
 			else if (db_softcenter_["softcenter_arch"] == "mipsle")
@@ -634,7 +636,15 @@ function notice_show(){
 	else {
 	$("#modelid").html("Software Center " + model );
 	}
-	var pushurl = 'https://sc.paldier.com/' + scarch + '/softcenter/push_message.json.js';
+	var pushlog;
+	switch ("<% nvram_get("preferred_lang"); %>") {
+	case "EN":
+		pushlog="push_message_en.json.js";
+		break
+	default:
+		pushlog="push_message.json.js";
+	}
+	var pushurl = 'https://sc.paldier.com/' + scarch + '/softcenter/' + pushlog;
 	$.ajax({
 		url: pushurl,
 		type: 'GET',
@@ -767,4 +777,3 @@ function notice_show(){
 <div id="footer"></div>
 </body>
 </html>
-

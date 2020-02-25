@@ -132,11 +132,13 @@ int ej_show_sysinfo(int eid, webs_t wp, int argc, char_t ** argv)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)
 				int count = 0;
 				char model[64];
-
+#if !defined(RTCONFIG_HND_ROUTER_AX_675X) && !defined(RTCONFIG_HND_ROUTER_AX_6710)
 				tmp = strstr(buffer, "Processor");
 				if (tmp)
 					sscanf(tmp, "Processor  :  %[^\n]", model);
-				else {	// BCM490x
+				else
+#endif
+				 {	// BCM490x
 					char impl[8], arch[8], variant[8], part[10];
 					impl[0]='\0'; arch[0]='\0'; variant[0]='\0'; part[0]='\0';
 
@@ -184,14 +186,13 @@ int ej_show_sysinfo(int eid, webs_t wp, int argc, char_t ** argv)
 			}
 
 		} else if(strcmp(type,"cpu.freq") == 0) {
-#ifdef HND_ROUTER
+#if defined(RTCONFIG_HND_ROUTER_AX_675X)  || defined(RTCONFIG_HND_ROUTER_AX_6710)
+			strcpy(result, "1500");
+#elif defined(HND_ROUTER)
 			int freq = 0;
 			char *buffer;
-#if defined(RTCONFIG_HND_ROUTER_AX_675X)  || defined(RTCONFIG_HND_ROUTER_AX_6710)
-			buffer="1500";//67xx
-#else
 			buffer = read_whole_file("/sys/devices/system/cpu/bcm_arm_cpuidle/admin_max_freq");
-#endif
+
 			if (buffer) {
 				sscanf(buffer, "%d", &freq);
 				free(buffer);

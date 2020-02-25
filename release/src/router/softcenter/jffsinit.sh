@@ -96,6 +96,21 @@ if [ "`nvram get model`" == "GT-AC5300" ] || [ "`nvram get model`" == "GT-AC2900
 	cp -rf /rom/etc/softcenter/ROG/webs/* /jffs/softcenter/webs/
 	cp -rf /rom/etc/softcenter/ROG/res/* /jffs/softcenter/res/
 fi
+
+	if [ -z "$(dbus get softcenter_server_tcode)" ]; then
+		modelname=`nvram get modelname`
+		if [ "$modelname" == "K3" ]; then
+			dbus set softcenter_server_tcode=CN
+		elif [ "$modelname" == "SBRAC1900P" -o "$modelname" == "SBR-AC1900P" -o "$modelname" == "SBRAC3200P" -o "$modelname" == "SBR-AC3200P" -o "$modelname" == "R7900P" -o "$modelname" == "R8000P" ]; then
+			dbus set softcenter_server_tcode=ALI
+		elif [ "$modelname" == "GTAC2900" -o "$modelname" == "GTAC5300" -o "$modelname" == "RTAC86U" -o "$modelname" == "RTAX86U" -o "$modelname" == "RTAX68U" -o "$modelname" == "RTAX58U" -o "$modelname" == "RTAX82U" -o "$modelname" == "TUFAX3000" -o "$modelname" == "RTACRH17" ]; then
+			dbus set softcenter_server_tcode=CN1
+		else
+			dbus set softcenter_server_tcode=`nvram get territory_code |cut -c 1-2`
+			[ -z "$(dbus get softcenter_server_tcode)" ] && dbus set softcenter_server_tcode=GB
+		fi
+	fi
+
 nvram set sc_installed=1
 nvram commit
 # creat wan-start file
