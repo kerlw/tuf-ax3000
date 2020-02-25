@@ -176,7 +176,7 @@ function show_etherstate(){
 	var line;
 	var wan_array;
 	var port_array= Array();
-	if ((based_modelid == "RT-AC86U") || (based_modelid == "GT-AC5300") || (based_modelid == "GT-AC2900")) {
+	if ((based_modelid == "RT-AC86U") || (based_modelid == "GT-AC5300") || (based_modelid == "GT-AC2900") || (based_modelid == "RT-AX3000") || (based_modelid == "RT-AX56U") || (based_modelid == "RT-AX58U") || (based_modelid == "RT-AX68U") || (based_modelid == "RT-AX86U") || (based_modelid == "RT-AX82U") || (based_modelid == "TUF-AX3000")) {
 		show_etherstate_hnd();
 		return;
 	} else if ((based_modelid == "RT-N16") || (based_modelid == "RT-AC87U")

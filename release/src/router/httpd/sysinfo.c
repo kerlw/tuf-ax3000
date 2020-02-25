@@ -148,12 +148,19 @@ int ej_show_sysinfo(int eid, webs_t wp, int argc, char_t ** argv)
 					sscanf(tmp, "CPU variant  :  %7[^\n]s", variant);
 					tmp = strstr(buffer, "CPU part");
 					sscanf(tmp, "CPU part  :  %9[^\n]s", part);
-
+#if defined(RTCONFIG_HND_ROUTER_AX_675X) && !defined(RTCONFIG_HND_ROUTER_AX_6710)
+					if (!strcmp(impl, "0x41")
+					    && !strcmp(variant, "0x0")
+					    && !strcmp(part, "0xc07")
+					    && !strcmp(arch, "7"))
+						strcpy(model, "Cortex A7 ARMv7l");
+#else//490x or 671x
 					if (!strcmp(impl, "0x42")
 					    && !strcmp(variant, "0x0")
 					    && !strcmp(part, "0x100")
 					    && !strcmp(arch, "8"))
 						strcpy(model, "Cortex A53 ARMv8");
+#endif
 					else
 						sprintf(model, "Implementer: %s, Part: %s, Variant: %s, Arch: %s",impl, part, variant, arch);
 				}
@@ -180,9 +187,11 @@ int ej_show_sysinfo(int eid, webs_t wp, int argc, char_t ** argv)
 #ifdef HND_ROUTER
 			int freq = 0;
 			char *buffer;
-
+#if defined(RTCONFIG_HND_ROUTER_AX_675X)  || defined(RTCONFIG_HND_ROUTER_AX_6710)
+			buffer="1500";//67xx
+#else
 			buffer = read_whole_file("/sys/devices/system/cpu/bcm_arm_cpuidle/admin_max_freq");
-
+#endif
 			if (buffer) {
 				sscanf(buffer, "%d", &freq);
 				free(buffer);
