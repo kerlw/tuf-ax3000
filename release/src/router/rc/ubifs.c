@@ -41,9 +41,11 @@
 #endif
 // AC86U/GTAC2900/GTAC5300/R7900P/R8000P/AX56U/AX58U/AX82U/RAX20/RAX50
 #ifdef HND_ROUTER
-#ifdef HND_ROUTER_AX
+//rootfs:0 data:1 nvram:2 jffs:3
+#ifdef RTCONFIG_HND_ROUTER_AX
 #define UBI_DEV_NUM	"3"
 #else
+//data:0 nvram:1 jffs:2
 #define UBI_DEV_NUM	"2"
 #endif
 #define UBI_DEV_PATH	"/dev/ubi"UBI_DEV_NUM
