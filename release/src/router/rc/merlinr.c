@@ -68,6 +68,11 @@ void merlinr_init()
 	nvram_set("sc_nat_sig", "0");
 	nvram_set("sc_mount_sig", "0");
 #endif
+#if defined(TUFAX3000)
+//only an idiot would use 160 in china
+	if(!nvram_get("wl1_bw_160"))
+		nvram_set("wl1_bw_160", "0")
+#endif
 	merlinr_insmod();
 }
 void merlinr_init_done()
