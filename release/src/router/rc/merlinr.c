@@ -71,7 +71,7 @@ void merlinr_init()
 #if defined(TUFAX3000)
 //only an idiot would use 160 in china
 	if(!nvram_get("wl1_bw_160"))
-		nvram_set("wl1_bw_160", "0")
+		nvram_set("wl1_bw_160", "0");
 #endif
 	merlinr_insmod();
 }
@@ -151,6 +151,10 @@ void merlinr_init_done()
 #if defined(R8000P) || defined(R7900P)
 	nvram_set("ping_target","www.taobao.com");
 	nvram_commit();
+#endif
+#if defined(TUFAX3000) && defined(MERLINR_VER_MAJOR_X)
+//tufax3000=ax82u,ax58u=ax3000
+	//enable_4t4r();
 #endif
 }
 
