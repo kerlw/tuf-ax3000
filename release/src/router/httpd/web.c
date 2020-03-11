@@ -296,6 +296,7 @@ extern void unescape(char *s);
 void response_nvram_config(webs_t wp, char *config_name, json_object *res, json_object *root);
 
 extern int get_lang_num();
+extern int get_lang_num_merlinr();
 extern int ej_get_iptvSettings(int eid, webs_t wp, int argc, char_t **argv);
 extern int config_iptv_vlan(char *isp);
 
@@ -10602,7 +10603,7 @@ int ej_shown_language_css(int eid, webs_t wp, int argc, char **argv){
 	memset(lang, 0, 4);
 	strcpy(lang, nvram_safe_get("preferred_lang"));
 
-	if(get_lang_num() == 1){
+	if(get_lang_num_merlinr() == 1){
 		websWrite(wp, "<li style=\"visibility:hidden;\"><dl><a href=\"#\"><dt id=\"selected_lang\"></dt></a>\\n");
 	}
 	else{
@@ -10630,7 +10631,7 @@ int ej_shown_language_css(int eid, webs_t wp, int argc, char **argv){
 					len = follow_info_end-follow_info;
 					memset(target, 0, sizeof(target));
 					strncpy(target, follow_info, len);
-					if (check_lang_support(key) && strcmp(key,lang))
+					if (check_lang_support_merlinr(key) && strcmp(key,lang))
 						websWrite(wp, "<dd><a onclick=\"submit_language(this)\" id=\"%s\">%s</a></dd>\\n", key, target);
 					break;
 				}
