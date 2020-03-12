@@ -14,7 +14,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
  * MA 02111-1307 USA
  *
- * Copyright 2019, paldier <paldier@hotmail.com>.
+ * Copyright 2019-2020, paldier <paldier@hotmail.com>.
  * All Rights Reserved.
  * 
  *
@@ -97,6 +97,11 @@ void merlinr_init_done()
 #if defined(RTCONFIG_QCA)
 	if(!nvram_get("bl_ver"))
 		nvram_set("bl_ver", "1.0.0.0");
+#elif defined(RTCONFIG_LANTIQ)
+#if !defined(K3C)
+	if(!nvram_get("bl_ver"))
+		doSystem("nvram set bl_ver=`uboot_env --get --name bl_ver`");
+#endif
 #endif
 	if(!nvram_get("modelname"))
 #if defined(K3)
@@ -111,8 +116,8 @@ void merlinr_init_done()
 		nvram_set("modelname", "R8000P");
 #elif defined(RTAC3100)
 		nvram_set("modelname", "RTAC3100");
-#elif defined(BULECAVE)
-		nvram_set("modelname", "BULECAVE");
+#elif defined(BLUECAVE)
+		nvram_set("modelname", "BLUECAVE");
 #elif defined(RTAC68U)
 		nvram_set("modelname", "RTAC68U");
 #elif defined(RTAC68P)
@@ -157,7 +162,6 @@ void merlinr_init_done()
 	//enable_4t4r();
 #endif
 }
-
 
 
 #define FWUPDATE_DBG(fmt,args...) \
@@ -560,3 +564,4 @@ void softcenter_eval(int sig)
 	_eval(eval_argv, NULL, 0, &pid);
 }
 #endif
+

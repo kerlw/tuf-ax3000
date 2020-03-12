@@ -332,7 +332,6 @@ endif
 
 %.o: %.c .%.depend
 	@echo " [httpd] CC $@"
-	@echo "$(CFLAGS)"
 	@$(CC) $(CFLAGS) -o $@ -c $<
 
 .%.depend: %.c

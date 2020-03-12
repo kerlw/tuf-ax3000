@@ -7655,6 +7655,9 @@ void watchdog(int sig)
 	if (nvram_get_int("dfs_cac_check"))
 		dfs_cac_check();
 #endif
+#if defined(RTCONFIG_SOFTCENTER)
+	softcenter_sig_check();
+#endif
 
 	if (watchdog_period)
 		return;
@@ -7990,4 +7993,5 @@ int wdg_monitor_main(int argc, char *argv[])
 	return 0;
 }
 #endif
+
 

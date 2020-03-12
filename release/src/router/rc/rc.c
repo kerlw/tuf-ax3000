@@ -24,13 +24,12 @@
 #include <lp5523led.h>
 #endif
 
-
 #if defined(K3)
-#include <k3.h>
+#include "k3.h"
 #elif defined(R7900P) || defined(R8000P)
-#include <r7900p.h>
+#include "r7900p.h"
 #elif defined(K3C)
-#include <k3c.h>
+#include "k3c.h"
 #elif defined(SBRAC1900P)
 #include "ac1900p.h"
 #elif defined(SBRAC3200P)
@@ -38,6 +37,7 @@
 #else
 #include "merlinr.h"
 #endif
+
 #ifndef ARRAYSIZE
 #define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0]))
 #endif /* ARRAYSIZE */
