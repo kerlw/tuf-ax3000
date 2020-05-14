@@ -2,11 +2,7 @@
 #define __DBAPI_H_
 #include "httpd.h"
 #define offsetof2(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
-#ifndef container_of
-#define container_of(ptr, type, member) ({                      \
-        const typeof( ((type *)0)->member ) *__mptr = (const typeof( ((type *)0)->member )*)(ptr);    \
-        (type *)( (char *)__mptr - offsetof2(type,member) );})
-#endif
+
 #define MAGIC "magicv1 "
 #define MAGIC_LEN 8
 #define DBHEADER_LEN 8

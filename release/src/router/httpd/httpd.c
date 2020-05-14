@@ -1200,7 +1200,6 @@ handle_request(void)
         }
 #endif
 	HTTPD_DBG("IP(%s), file = %s\nUser-Agent: %s\n", inet_ntoa(login_usa_tmp.sa_in.sin_addr), file, user_agent);
-
 #ifdef RTCONFIG_SOFTCENTER
 	char scPath[128];
 	if ((strncmp(file, "Main_S", 6)==0) || (strncmp(file, "Module_", 7)==0))//jsp
@@ -1430,8 +1429,6 @@ handle_request(void)
 					&& !strstr(file, "ss_conf")
 					&& !strstr(file, "ss_status")
 					&& !strstr(file, "dbconf")
-					&& !strstr(file, "Main_S")
-					&& !strstr(file, "Module_")
 #endif
 					){
 				send_error( 404, "Not Found", (char*) 0, "File not found." );
@@ -2042,6 +2039,10 @@ int main(int argc, char **argv)
 	 * time_zone_x_mapping(); */
 	setenv("TZ", nvram_safe_get_x("", "time_zone_x"), 1);
 
+#ifdef RTCONFIG_LETSENCRYPT
+	nvram_unset("le_restart_httpd");
+#endif
+
 	if (nvram_get_int("HTTPD_DBG") > 0)
 		eval("touch", HTTPD_DEBUG);
 
@@ -2363,5 +2364,4 @@ int check_current_ip_is_lan_or_wan()
 
 	return (lan & mask) == (login_ip_tmp & mask);
 }
-
 

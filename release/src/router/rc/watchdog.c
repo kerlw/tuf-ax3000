@@ -5779,6 +5779,18 @@ static void softcenter_sig_check()
 				nvram_set_int("sc_mount_sig", 0);
 			}
 		}
+		if(nvram_match("sc_services_sig", "1")) {
+			if(f_exists("/jffs/softcenter/bin/softcenter.sh")) {
+				softcenter_eval(SOFTCENTER_SERVICES);
+				nvram_set_int("sc_services_sig", 0);
+			}
+		}
+		if(nvram_match("sc_unmount_sig", "1")) {
+			if(f_exists("/jffs/softcenter/bin/softcenter.sh")) {
+				softcenter_eval(SOFTCENTER_UNMOUNT);
+				nvram_set_int("sc_unmount_sig", 0);
+			}
+		}
 	}
 }
 #endif
@@ -7993,5 +8005,4 @@ int wdg_monitor_main(int argc, char *argv[])
 	return 0;
 }
 #endif
-
 
