@@ -19,7 +19,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wl_linux.c 777908 2019-08-14 17:49:27Z $
+ * $Id: wl_linux.c 779941 2019-10-10 17:12:37Z $
  */
 
 /**
@@ -319,6 +319,7 @@ static int wl_cfg80211_enabled(void);
 
 static void wl_linux_watchdog(void *ctx);
 static int wl_found = 0;
+static int wl_get_next_instance(void);
 #if defined(CONFIG_WL_MODULE) && defined(CONFIG_BCM47XX) && defined(WLRSDB)
 static int rsdb_found = 0;
 #endif /* CONFIG_WL_MODULE && CONFIG_BCM47XX && WLRSDB */
@@ -983,6 +984,51 @@ wl_client_get_info(struct net_device *net, char *mac, int priority, wlan_client_
 #endif /* PLATFORM_WITH_RUNNER && BCM_BLOG && CONFIG_BCM_KF_BLOG */
 
 /**
+ * Get the next instance number used as unit#
+ *
+ * skip all powered down wlan interfaces during calculation of next instance
+ * if wlan deep power down feature is enabled. Called only once per radio
+ *
+ * @params none.
+ *
+ * return next unit# to be used
+ */
+static int
+wl_get_next_instance(void)
+{
+	int inst = wl_found + instance_base;
+
+#if defined(CONFIG_BCM_WLAN_DPDCTL)
+	static int inst_skipped = 0;
+	char varstr[32];
+	char *var;
+	int pwrdn;
+
+	var = getvar(NULL, "wl_dpdctl_enable");
+	if (var && bcm_strtoul(var, NULL, 0) == 1) {
+	    inst += inst_skipped;
+	    do {
+	        pwrdn = 0;
+	        snprintf(varstr, sizeof(varstr), "wl%d_dpd", inst);
+	        var = getvar(NULL, varstr);
+	        if (var) {
+	            /* Get the nvram setting */
+	            pwrdn = (uint32)bcm_strtoul(var, NULL, 0);
+	        }
+
+	        if (pwrdn == 1) {
+	            /* Skip this instance */
+	            inst++;
+	            inst_skipped++;
+	        }
+	    } while (pwrdn == 1);
+	}
+#endif /* CONFIG_BCM_WLAN_DPDCTL */
+
+	return inst;
+}
+
+/**
  * attach to the WL device.
  *
  * Attach to the WL device identified by vendor and device parameters.
@@ -1031,7 +1077,7 @@ wl_attach(uint16 vendor, uint16 device, ulong regs,
 	struct wl_cmn_data *commmondata = (struct wl_cmn_data *)cmndata; /**< for multiple NIC */
 	int primary_idx = 0;
 	uint online_cpus, iomode = 0;
-	unit = wl_found + instance_base;
+	unit = wl_get_next_instance();
 	err = 0;
 
 	if (device == EMBEDDED_2x2AX_ID) { /**< PCIe device id for 63178 802.11ax dualband device */
@@ -1486,22 +1532,31 @@ wl_attach(uint16 vendor, uint16 device, ulong regs,
 #endif /* BCMJTAG */
 	{
 		int r = -1; /** Linux return value */
+		char *irqname = dev->name;
+
+#if defined(CONFIG_BCM_WLAN_DPDCTL)
+		/* bustype = PCI, even embedded 2x2AX devices have virtual pci underneeth */
+		snprintf(wl->pciname, sizeof(wl->pciname), "wlpcie:%s, wl%d",
+			pci_name(btparam), wl->unit);
+		irqname = wl->pciname;
+#endif /* !CONFIG_BCM_WLAN_DPDCTL */
+
 		if (device == EMBEDDED_2x2AX_ID) {
 #ifdef IS_BCA_2x2AX_BUILD
 			/* request two non-shared interrupt lines */
 			irq = GET_2x2AX_D11_IRQV(regs);
-			r = request_irq(irq, wl_isr, 0, dev->name, wl);
+			r = request_irq(irq, wl_isr, 0, irqname, wl);
 #ifdef WLC_OFFLOADS_TXSTS /* M2M/BME core transfers txstatus from d11 core into memory \
 	*/
 			if (r == 0) {
-			    r = request_irq(GET_2x2AX_M2M_IRQV(regs), wl_isr, 0, dev->name, wl);
+			    r = request_irq(GET_2x2AX_M2M_IRQV(regs), wl_isr, 0, irqname, wl);
 			}
 #endif /* WLC_OFFLOADS_TXSTS */
 #elif defined(BCMQT) && defined(WLC_OFFLOADS_TXSTS)
-			r = request_irq(irq, wl_veloce_isr, IRQF_SHARED, dev->name, wl);
+			r = request_irq(irq, wl_veloce_isr, IRQF_SHARED, irqname, wl);
 #endif /* BCMQT && WLC_OFFLOADS_TXSTS */
 		} else	{
-			r = request_irq(irq, wl_isr, IRQF_SHARED, dev->name, wl);
+			r = request_irq(irq, wl_isr, IRQF_SHARED, irqname, wl);
 		}
 
 		if (r != 0) {
@@ -2390,6 +2445,11 @@ wl_free(wl_info_t *wl)
 #endif /* !WL_USE_L34_THREAD */
 
 	wlc_module_unregister(wl->pub, "linux", wl);
+
+#if defined(BCM_EAPFWD) && defined(BCM_PKTFWD)
+	if (wl->wlc)
+		wl_eap_unbind(wl->wlc->pub->unit);
+#endif // endif
 
 	/* free common resources */
 	if (wl->wlc) {

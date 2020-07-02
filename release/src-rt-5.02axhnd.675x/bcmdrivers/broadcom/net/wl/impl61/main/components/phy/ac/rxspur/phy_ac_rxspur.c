@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_rxspur.c 776481 2019-07-01 08:01:41Z $
+ * $Id: phy_ac_rxspur.c 779380 2019-09-26 10:36:14Z $
  */
 
 #include <phy_cfg.h>
@@ -171,12 +171,14 @@ static const uint32 acphy_spurcan_spur_freqKHz_rev129[] = {2450000,
 	5200000, 5300000, 5400000, 5500000, 5600000, 5700000, 5750000, 5800000};
 
 // 63178/47622 has an Xtal spur on 2450 MHz, 49th harmonic of 50 MHz
-static const uint32 acphy_spurcan_spur_freqKHz_rev51[] = {2450000};
+// small spur seen at 2418MHz affecting channel 1
+static const uint32 acphy_spurcan_spur_freqKHz_rev51[] = {2418000, 2450000};
 
 // 6878 has an Xtal spur on 2450 MHz, 49th harmonic of 50 MHz
 // also seeing 25 MHz spurs so making seperate entry for 6878
-// 5GHz spurs yet unknown
-static const uint32 acphy_spurcan_spur_freqKHz_rev128[] = {2425000, 2450000, 2475000};
+// 5GHz spurs also need to be cancelled out because they cause PER floor with LESI
+static const uint32 acphy_spurcan_spur_freqKHz_rev128[] = {2425000, 2450000, 2475000,
+	5200000, 5300000, 5400000, 5500000, 5600000, 5700000, 5750000, 5800000};
 
 /* local functions */
 static int phy_ac_rxspur_std_params(phy_ac_rxspur_info_t *info);

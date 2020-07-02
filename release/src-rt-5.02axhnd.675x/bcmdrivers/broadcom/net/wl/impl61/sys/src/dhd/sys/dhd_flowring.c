@@ -740,11 +740,15 @@ dhd_flowid_lookup(dhd_pub_t *dhdp, uint8 ifindex,
 			return BCME_ERROR;
 
 #if defined(BCM_ROUTER_DHD) || defined(STBAP)
-		if (!ETHER_ISMULTI(da) &&
-		    ((if_flow_lkup[ifindex].role == WLC_E_IF_ROLE_AP) ||
-		    (if_flow_lkup[ifindex].role == WLC_E_IF_ROLE_P2P_GO)) &&
-		    (!dhd_sta_associated(dhdp, ifindex, da)))
-			return BCME_ERROR;
+		if ((if_flow_lkup[ifindex].role == WLC_E_IF_ROLE_AP) ||
+				(if_flow_lkup[ifindex].role == WLC_E_IF_ROLE_P2P_GO)) {
+			if (ETHER_ISMULTI(da)) {
+				/* For multicast packets, set prio to BE */
+				prio = PRIO_8021D_BE;
+			} else if (!dhd_sta_associated(dhdp, ifindex, da)) {
+				return BCME_ERROR;
+			}
+		}
 #endif // endif
 
 		id = dhd_flowid_alloc(dhdp, ifindex, prio, sa, da);
@@ -818,16 +822,6 @@ dhd_flowid_update(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, void *pktbuf)
 	}
 
 #ifdef BCM_NBUFF_WLMCAST
-	if (IS_SKBUFF_PTR(pktbuf)) {
-#endif /* BCM_NBUFF_WLMCAST */
-#if defined(BCM_ROUTER_DHD) || defined(STBAP)
-	if (ETHER_ISMULTI(eh->ether_dhost)) {
-		prio = PRIO_8021D_BE;
-	}
-#endif // endif
-
-#ifdef BCM_NBUFF_WLMCAST
-	}
 	/* if it is coming from EMF, the mac address is in TAG */
 	if ((DHD_PKT_GET_WMF_FKB_UCAST(pktbuf)))
 		pktdata = DHD_PKT_GET_MAC(pktbuf);

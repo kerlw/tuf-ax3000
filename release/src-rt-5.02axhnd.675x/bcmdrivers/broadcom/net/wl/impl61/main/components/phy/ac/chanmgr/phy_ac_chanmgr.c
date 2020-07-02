@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_chanmgr.c 777964 2019-08-16 18:33:23Z $
+ * $Id: phy_ac_chanmgr.c 780030 2019-10-14 13:36:04Z $
  */
 
 #include <wlc_cfg.h>
@@ -596,6 +596,10 @@ WLBANDINITFN(phy_ac_chanmgr_init_chanspec)(phy_type_chanmgr_ctx_t *ctx)
 			*/
 			wlc_phy_low_rate_adc_enable_acphy(pi, FALSE);
 			wlc_phy_radio20709_afe_div_ratio(pi, 1);
+		}
+		if ((ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
+		    !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+			wlc_phy_txpwrctrl_idle_tssi_phyreg_setup_acphy(pi);
 		}
 		wlc_phy_txpwrctrl_idle_tssi_meas_acphy(pi);
 		if (pi->u.pi_acphy->sromi->srom_low_adc_rate_en &&
@@ -11400,13 +11404,13 @@ BCMATTACHFN(phy_ac_chanmgr_nvram_attach)(phy_ac_chanmgr_info_t *ac_info)
 	if (ACMAJORREV_44_46(pi->pubpi->phy_rev)) {
 		/* Save LESI enable/disable flag per band from NVRAM file that will be used */
 		/* during band change */
-		/* 2G */
+		/* 2G - default off */
 		ac_info->lesi_perband[0] = (uint8)PHY_GETINTVAR_ARRAY_DEFAULT_SLICE(pi,
 			rstr_lesi_en, 0, 0);
-		/* 5G */
+		/* 5G - default off */
 		ac_info->lesi_perband[1] = (uint8)PHY_GETINTVAR_ARRAY_DEFAULT_SLICE(pi,
 			rstr_lesi_en, 1, 0);
-	} else if (ACMAJORREV_40_128(pi->pubpi->phy_rev)) {
+	} else if (ACMAJORREV_40(pi->pubpi->phy_rev)) {
 		/* Save LESI enable/disable flag per band from NVRAM file that will be used */
 		/* during band change */
 		/* 2G */
@@ -11415,6 +11419,15 @@ BCMATTACHFN(phy_ac_chanmgr_nvram_attach)(phy_ac_chanmgr_info_t *ac_info)
 		/* 5G */
 		ac_info->lesi_perband[1] = (uint8)PHY_GETINTVAR_ARRAY_SLICE(pi,
 			rstr_lesi_en, 1);
+	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+		/* Save LESI enable/disable flag per band from NVRAM file that will be used */
+		/* during band change */
+		/* 2G - default on */
+		ac_info->lesi_perband[0] = (uint8)PHY_GETINTVAR_ARRAY_DEFAULT_SLICE(pi,
+			rstr_lesi_en, 0, 1);
+		/* 5G - default on */
+		ac_info->lesi_perband[1] = (uint8)PHY_GETINTVAR_ARRAY_DEFAULT_SLICE(pi,
+			rstr_lesi_en, 1, 1);
 	}
 	pi->sh->bphymrc_en = (uint8)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_bphymrc_en, 0);
 
@@ -12515,7 +12528,7 @@ wlc_phy_populate_recipcoeffs_acphy(phy_info_t *pi)
 	uint16 subband_idx, k, i;
 	uint16 theta[2];
 	uint32 packed;
-	uint16 nwords_start = 12, nwords_pad = 4, nwords_recip;
+	uint16 nwords_start = 12, nwords_pad = 4, nwords_recip, nbanks;
 	uint8  stall_val;
 	uint8 bands[NUM_CHANS_IN_CHAN_BONDING];
 
@@ -12545,6 +12558,17 @@ wlc_phy_populate_recipcoeffs_acphy(phy_info_t *pi)
 		    (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
 			!ACMAJORREV_128(pi->pubpi->phy_rev))) {
 			ang_tmp1 = pi->sromi->rpcal2gcore3;
+		}
+		if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+			uint16 ambiguity_angle = wlc_phy_get_recip_LO_div_phase_20704(pi);
+			uint16 cal_ambiguity = pi->u.pi_acphy->sromi->rpcal_phase2g;
+			if (ambiguity_angle != cal_ambiguity) {
+				/* ambiguity angle either is 0 or 180 degrees for rev51
+				** When it differs from the cal ambiguity,
+				** 8th LSB of ang_tmp is inverted
+				*/
+				ang_tmp ^= (0x80);
+			}
 		}
 #endif /* WLTXBF_2G_DISABLED */
 		break;
@@ -12677,10 +12701,11 @@ wlc_phy_populate_recipcoeffs_acphy(phy_info_t *pi)
 			(ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
 			!ACMAJORREV_128(pi->pubpi->phy_rev))) {
 		/* total 512 or 1024 words, and partitioned into 4 mem banks */
-		nwords_recip = ACMAJORREV_47(pi->pubpi->phy_rev)? (1024 >> 2): (512 >> 2);
+		nwords_recip = (ACMAJORREV_47(pi->pubpi->phy_rev) ||
+				ACMAJORREV_51(pi->pubpi->phy_rev)) ? (1024 >> 2): (512 >> 2);
 
 		for (k = 0; k < nwords_recip; k++) {
-			if (k % 2 == 0) {
+			if (k % 2 == 0 || ACMAJORREV_51(pi->pubpi->phy_rev)) {
 				chanmgri->recip_packed_majrev32_33_37[k][0] = packed_word[0];
 				chanmgri->recip_packed_majrev32_33_37[k][1] = packed_word[1];
 				chanmgri->recip_packed_majrev32_33_37[k][2] = packed_word[2];
@@ -12690,8 +12715,8 @@ wlc_phy_populate_recipcoeffs_acphy(phy_info_t *pi)
 				chanmgri->recip_packed_majrev32_33_37[k][2] = packed_word[5];
 			}
 		}
-
-		for (i = 0; i < 4; i++) {
+		nbanks = (ACMAJORREV_51(pi->pubpi->phy_rev)) ? 1 : 4;
+		for (i = 0; i < nbanks; i++) {
 			wlc_phy_table_write_acphy(pi, ACPHY_TBL_ID_BFECONFIG,
 			nwords_recip, i*nwords_recip, 48, chanmgri->recip_packed_majrev32_33_37);
 		}
@@ -14008,9 +14033,6 @@ wlc_phy_rxcore_setstate_acphy(wlc_phy_t *pih, uint8 rxcore_bitmask, uint8 phytxc
 	if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev)) {
 		MOD_PHYREG(pi, RfseqCoreActv2059, EnRx,
 			stf_shdata->hw_phyrxchain);
-	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
-		/* 6878 TODO: HACK to fix TX droop - RX used as a preheat */
-		MOD_PHYREG(pi, RfseqCoreActv2059, EnRx, 0x3);
 	} else {
 		MOD_PHYREG(pi, RfseqCoreActv2059, EnRx, rxcore_bitmask);
 	}
@@ -17322,9 +17344,12 @@ phy_ac_chanmgr_set_phymode(phy_info_t *pi, chanspec_t chanspec, chanspec_t chans
 				// FCC-5 small fm on plc bw20/bw40
 				// set pw thrsh to 610 to improve ETSI-4 detection on bw20/bw40
 				st->rparams.radar_args.min_fm_lp = CHSPEC_IS20(chanspec_sc) ? 0 :
-					CHSPEC_IS40(chanspec_sc) ? 100 : chanmgri->orig_min_fm_lp;
+					(CHSPEC_IS40(chanspec_sc) && ch[1] <=
+					WL_THRESHOLD_LO_BAND) ? 27 : CHSPEC_IS40(chanspec_sc) ?
+					100 : CHSPEC_IS80(chanspec_sc) ? 133 :
+					chanmgri->orig_min_fm_lp;
 				st->rparams.radar_args.max_span_lp = CHSPEC_IS20(chanspec_sc) ?
-					63500 : chanmgri->orig_max_span_lp;
+					47116 : chanmgri->orig_max_span_lp;
 				st->rparams.radar_args.st_level_time = (CHSPEC_IS20(chanspec_sc) ||
 					CHSPEC_IS40(chanspec_sc)) ? 0x8262 :
 					chanmgri->orig_st_level_time;
@@ -19139,4 +19164,19 @@ phy_ac_chanmgr_iovar_set_lowratetssi_ovrd(phy_ac_chanmgr_info_t *chanmgri, int32
 	}
 
 	return BCME_OK;
+}
+
+bool
+phy_ac_chanmgr_lesi_en(phy_info_t *pi)
+{
+	phy_info_acphy_t *pi_ac = pi->u.pi_acphy;
+
+	/* Although LESI capability might be TRUE, LESI might be off for some bands */
+	if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+		/* Get settings per band from NVRAM */
+		return (bool)(pi_ac->chanmgri->lesi_perband[
+			CHSPEC_IS2G(pi->radio_chanspec) ? 0 : 1]);
+	}
+
+	return TRUE;
 }

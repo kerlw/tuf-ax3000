@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ampdu_rx.c 777620 2019-08-06 19:04:30Z $
+ * $Id: wlc_ampdu_rx.c 779253 2019-09-23 17:29:01Z $
  */
 
 /**
@@ -504,8 +504,8 @@ static void wlc_ampdu_rx_watchdog(void *hdl);
 static int wlc_ampdu_rx_down(void *hdl);
 static int wlc_ampdu_rx_up(void *hdl);
 
-static INLINE void wlc_ampdu_release_all_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu,
-	uint8 tid);
+static INLINE scb_ampdu_tid_resp_t * wlc_ampdu_release_all_ordered(wlc_info_t *wlc,
+	scb_ampdu_rx_t *scb_ampdu, uint8 tid);
 
 static void ampdu_create_f(wlc_info_t *wlc, struct scb *scb, struct wlc_frminfo *f,
 	void *p, wlc_d11rxhdr_t *wrxh);
@@ -540,8 +540,9 @@ pkt_h_seqnum(wlc_info_t *wlc, void *p)
  * block of pending ordered packets starting(or resuming) from index, till first not received
  * packet.
  * In the case of 'host reordering', the function behaves differently, by instructing the host.
+ * Returns pointer to resp if it is still valid, otherwise NULL.
  */
-static INLINE void
+static INLINE scb_ampdu_tid_resp_t *
 wlc_ampdu_release_n_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu, uint8 tid, uint16 offset)
 {
 	void *p = NULL;
@@ -559,7 +560,7 @@ wlc_ampdu_release_n_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu, uint8 ti
 
 	ASSERT(resp);
 	if (resp == NULL)
-		return;
+		return NULL;
 
 	if (AMPDU_HOST_REORDER_ENAB(wlc->pub) && resp->queued) {
 		if (BCMPCIEDEV_ENAB()) {
@@ -607,7 +608,7 @@ wlc_ampdu_release_n_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu, uint8 ti
 					resp->exp_seq = NEXT_SEQ(resp->exp_seq);
 					wlc_ampdu_rx_send_delba(wlc->ampdu_rx, scb, tid, FALSE,
 						DOT11_RC_UNSPECIFIED);
-					return;
+					return resp;
 				}
 #else
 				ASSERT(resp->exp_seq == pkt_h_seqnum(wlc, p));
@@ -629,17 +630,18 @@ wlc_ampdu_release_n_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu, uint8 ti
 				 * wlc_recvdata_ordered() did not free it
 				 */
 				newscb = wlc_scbfindband(wlc, bsscfg, &ea, bandunit);
-				if ((newscb == NULL) || (newscb != scb)) {
+				if ((newscb == NULL) || (newscb != scb) ||
+					(SCB_AMPDU_RX_CUBBY(wlc->ampdu_rx, scb) != scb_ampdu)) {
 					WL_AMPDU_ERR(("wl%d: %s: scb freed; bail out\n",
 						wlc->pub->unit, __FUNCTION__));
-					return;
+					return NULL;
 				}
 
 				/* Make sure responder was not freed when we gave up
 				 * the lock in sendup
 				 */
 				if ((resp = scb_ampdu->resp[tid]) == NULL)
-					return;
+					return NULL;
 			}
 		} else {
 			WLCNTINCR(wlc->ampdu_rx->cnt->rxholes);
@@ -672,13 +674,14 @@ wlc_ampdu_release_n_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu, uint8 ti
 			wlc_sendup(wlc, scb->bsscfg, scb, p);
 		}
 	}
+	return resp;
 } /* wlc_ampdu_release_n_ordered */
 
 /**
  * Called on AMPDU response time out. Releases all pending ordered packets starting from index going
- * over holes.
+ * over holes. Returns resp if still valid and NULL otherwise.
  */
-static INLINE void
+static INLINE scb_ampdu_tid_resp_t *
 wlc_ampdu_release_all_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu, uint8 tid)
 {
 	uint16 seq, max_seq, offset, i, indx;
@@ -687,10 +690,10 @@ wlc_ampdu_release_all_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu, uint8 
 
 	ASSERT(resp);
 	if (resp == NULL)
-		return;
+		return NULL;
 
 	if (AMPDU_HOST_REORDER_ENAB(wlc->pub)) {
-		wlc_ampdu_release_n_ordered(wlc, scb_ampdu, tid,
+		resp = wlc_ampdu_release_n_ordered(wlc, scb_ampdu, tid,
 			ampdu_rx_cfg->ba_max_rx_wsize);
 	} else {
 		for (i = 0, seq = resp->exp_seq, max_seq = resp->exp_seq;
@@ -702,8 +705,9 @@ wlc_ampdu_release_all_ordered(wlc_info_t *wlc, scb_ampdu_rx_t *scb_ampdu, uint8 
 		}
 
 		offset = MODSUB_POW2(max_seq, resp->exp_seq, SEQNUM_MAX) + 1;
-		wlc_ampdu_release_n_ordered(wlc, scb_ampdu, tid, offset);
+		resp = wlc_ampdu_release_n_ordered(wlc, scb_ampdu, tid, offset);
 	}
+	return resp;
 } /* wlc_ampdu_release_all_ordered */
 
 /** Data structures need to be initialized during system initialization */
@@ -1057,9 +1061,9 @@ wlc_ampdu_rx_handle_resp_dead(wlc_info_t *wlc, struct scb *scb, scb_ampdu_tid_re
 {
 	BCM_REFERENCE(resp);
 
-	wlc_ampdu_release_all_ordered(wlc, scb_ampdu, tid);
-	if (AMPDU_HOST_REORDER_ENAB(wlc->pub)) {
-		wlc_ampdu_rx_send_delba(wlc->ampdu_rx, scb_ampdu->scb, tid, FALSE,
+	resp = wlc_ampdu_release_all_ordered(wlc, scb_ampdu, tid);
+	if (AMPDU_HOST_REORDER_ENAB(wlc->pub) && (resp != NULL)) {
+		wlc_ampdu_rx_send_delba(wlc->ampdu_rx, scb, tid, FALSE,
 			DOT11_RC_UNSPECIFIED);
 	}
 }
@@ -1876,14 +1880,13 @@ wlc_ampdu_recvdata(ampdu_rx_info_t *ampdu_rx, struct scb *scb, struct wlc_frminf
 			" seq 0x%x delta %d (exp seq 0x%x): moving window fwd\n",
 			wlc->pub->unit, __FUNCTION__, seq, delta, resp->exp_seq));
 
-		wlc_ampdu_release_n_ordered(wlc, scb_ampdu, tid, delta);
+		resp = wlc_ampdu_release_n_ordered(wlc, scb_ampdu, tid, delta);
 
 		WLCNTINCR(ampdu_rx->cnt->rxoow);
-		AMPDUSCBCNTINCR(scb_ampdu->cnt.rxoow);
-		SCB_RX_REPORT_DATA_COND_INCR(rx_report_counters, rxoow);
+		if (resp != NULL) {
+			AMPDUSCBCNTINCR(scb_ampdu->cnt.rxoow);
+			SCB_RX_REPORT_DATA_COND_INCR(rx_report_counters, rxoow);
 
-		/* recalc resp since may have been freed while releasing frames */
-		if ((resp = scb_ampdu->resp[tid])) {
 			WL_AMPDU_RX(("wl%d: %s:  goto rxoow receiving seq 0x%x tid %d, exp seq %x"
 				" indx %d\n",
 				wlc->pub->unit, __FUNCTION__, seq, tid, resp->exp_seq, indx));
@@ -1989,11 +1992,10 @@ ampdu_cleanup_tid_resp(ampdu_rx_info_t *ampdu_rx, struct scb *scb, uint8 tid)
 	}
 
 	/* send up all the pending pkts in order from the rx reorder q going over holes */
-	wlc_ampdu_release_n_ordered(wlc, scb_ampdu, tid,
+	resp = wlc_ampdu_release_n_ordered(wlc, scb_ampdu, tid,
 		ampdu_rx->config->ba_max_rx_wsize);
 
-	/* recheck scb_ampdu->resp[] since it may have been freed while releasing */
-	if ((resp = scb_ampdu->resp[tid])) {
+	if (resp != NULL) {
 		ASSERT(resp->queued == 0);
 		if (AMPDU_HOST_REORDER_ENAB(wlc->pub)) {
 			if (resp->tohost_ctrlpkt != NULL) {
@@ -2002,9 +2004,10 @@ ampdu_cleanup_tid_resp(ampdu_rx_info_t *ampdu_rx, struct scb *scb, uint8 tid)
 		}
 		MFREE(wlc->osh, resp, sizeof(scb_ampdu_tid_resp_t));
 		scb_ampdu->resp[tid] = NULL;
+
+		ampdu_rx->resp_cnt--;
 	}
 
-	ampdu_rx->resp_cnt--;
 	if ((ampdu_rx->resp_cnt == 0) && (ampdu_rx->resp_timer_running == TRUE)) {
 		wl_del_timer(wlc->wl, ampdu_rx->resp_timer);
 		ampdu_rx->resp_timer_running = FALSE;

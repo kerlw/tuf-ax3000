@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac.c 772790 2019-03-05 02:24:05Z $
+ * $Id: phy_ac.c 779227 2019-09-23 05:06:06Z $
  */
 
 #include <typedefs.h>
@@ -219,11 +219,12 @@ BCMATTACHFN(phy_ac_attach)(phy_info_t *pi, int bandtype)
 
 	aci->phy_caps |= READ_PHYREGFLD(pi, PhyCapability1, SupportMU_MIMO_AP) ?
 		PHY_CAP_MU_BFR : 0;
-	aci->phy_caps |= (READ_PHYREGFLD(pi, PhyCapability1, SupportMU_MIMO_STA) ||
+	/* 6878 Doesn't support MU_BFE */
+	aci->phy_caps |= !(ACMAJORREV_128(pi->pubpi->phy_rev)) &&
+		(READ_PHYREGFLD(pi, PhyCapability1, SupportMU_MIMO_STA) ||
 		ACMAJORREV_33(pi->pubpi->phy_rev) ||
 		ACMAJORREV_37(pi->pubpi->phy_rev) ||
-		(ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-		!ACMAJORREV_128(pi->pubpi->phy_rev))) ? PHY_CAP_MU_BFE : 0;
+		ACMAJORREV_GE47(pi->pubpi->phy_rev)) ? PHY_CAP_MU_BFE : 0;
 
 	if (ACMAJORREV_32(pi->pubpi->phy_rev) ||
 	    ACMAJORREV_33(pi->pubpi->phy_rev) ||

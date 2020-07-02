@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ht.h 775477 2019-05-31 16:45:57Z $
+ * $Id: wlc_ht.h 779863 2019-10-09 06:36:05Z $
  */
 
 /** 802.11n (High Throughput) */
@@ -59,12 +59,13 @@
 #endif // endif
 #include <monitor.h>
 
-#define WLC_HT_WEP_RESTRICT	0x01 	/* restrict HT with WEP */
-#define WLC_HT_TKIP_RESTRICT 0x02 	/* restrict HT with TKIP */
+#define WLC_HT_WEP_RESTRICT	0x01	/* restrict HT with WEP */
+#define WLC_HT_TKIP_RESTRICT	0x02	/* restrict HT with TKIP */
 
 #define WLC_HT_FEATURES_PROPRATES_DISAB		0
 #define WLC_HT_FEATURES_PROPRATES_ENAB		1
 #define WLC_HT_FEATURES_PROPRATES_FORCE		2
+#define WLC_HT_MCS_MAX_NSS			4
 
 #define HT_MCS_BIT6_SHIFT			6
 
@@ -237,6 +238,7 @@ struct wlc_ht_info {
 	bool		ampdu_rts;		/* use RTS for AMPDU */
 	uint16		max_fbtxop_user;	/* max txop user limit for frameburst in usec */
 	uint16		max_fbtxop_country;	/* max txop country limit for frameburst in usec */
+	uint		frameburst_per_ac;	/* if frameburst and bit_per_ac is set */
 
 	/* above are READ ONLY */
 };
@@ -246,6 +248,8 @@ struct wlc_ht_info {
 #define WLC_HT_GET_FRAMEBURST(hti) ((hti)->frameburst)
 #define WLC_HT_GET_RIFS(hti) ((hti)->_rifs)
 #define WLC_HT_GET_AMPDU_RTS(hti) ((hti)->ampdu_rts)
+#define WLC_HT_GET_FRAMEBURST_PER_AC(hti, _ac) \
+	((AC_BITMAP_TST((hti)->frameburst_per_ac, _ac))? TRUE : FALSE)
 
 /* READ ONLY */
 typedef struct wlc_ht_scb_info_pub {
@@ -309,11 +313,13 @@ extern void wlc_ht_set_mimops_ActionRetry(wlc_info_t *wlc, wlc_bsscfg_t *cfg, ui
 extern void wlc_ht_set_cfg_mimops_PM(wlc_ht_info_t *hti, wlc_bsscfg_t *cfg, uint8 v);
 extern uint8 wlc_ht_get_cfg_mimops_PM(wlc_ht_info_t *hti, wlc_bsscfg_t *cfg);
 extern void wlc_ht_frameburst_limit(wlc_ht_info_t *pub);
+extern void wlc_ht_upd_scb_rateset_mcs(wlc_ht_info_t *hti, struct scb *scb, uint8 link_bw);
 
 #else
 /* empty macros to avoid having to use WL11N compile flags everywhere */
 #define WL_HT_TXBW_OVERRIDE_ENAB 0
 #define WLC_HT_GET_FRAMEBURST(hti) FALSE
+#define WLC_HT_GET_FRAMEBURST_PER_AC(hti, _ac) FALSE
 #define WLC_HT_GET_SGI_TX(a) (OFF)
 
 #define wlc_ht_init_defaults(a)
@@ -365,5 +371,4 @@ extern void wlc_ht_frameburst_limit(wlc_ht_info_t *pub);
 extern chanspec_t wlc_ht_chanspec(wlc_info_t *wlc, uint8 chan, uint8 extch, wlc_bsscfg_t *cfg);
 extern void wlc_ht_upd_txbf_cap(wlc_bsscfg_t *cfg, uint8 bfr, uint8 bfe, uint32 *cap);
 extern void wlc_ht_rts_minlen_set(wlc_ht_info_t *hti);
-extern bool wlc_ht_get_frameburst(wlc_ht_info_t *hti);
 #endif /* _wlc_ht_h_ */

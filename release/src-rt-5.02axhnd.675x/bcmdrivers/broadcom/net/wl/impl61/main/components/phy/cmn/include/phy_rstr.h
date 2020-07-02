@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_rstr.h 775037 2019-05-16 02:01:47Z $
+ * $Id: phy_rstr.h 778770 2019-09-10 09:50:17Z $
  */
 
 #ifndef _phy_rstr_h_
@@ -399,6 +399,7 @@ extern const char BCMATTACHDATA(rstr_sw_rxchain_mask)[];
 extern const char BCMATTACHDATA(rstr_pagc5g)[];
 extern const char BCMATTACHDATA(rstr_rpcal2g)[];
 extern const char BCMATTACHDATA(rstr_rpcal2gcore3)[];
+extern const char BCMATTACHDATA(rstr_rpcal_phase2g)[];
 extern const char BCMATTACHDATA(rstr_femctrl)[];
 extern const char BCMATTACHDATA(rstr_papdmode)[];
 extern const char BCMATTACHDATA(rstr_pdgain2g)[];
@@ -417,6 +418,10 @@ extern const char BCMATTACHDATA(rstr_rpcal5gb0core3)[];
 extern const char BCMATTACHDATA(rstr_rpcal5gb1core3)[];
 extern const char BCMATTACHDATA(rstr_rpcal5gb2core3)[];
 extern const char BCMATTACHDATA(rstr_rpcal5gb3core3)[];
+extern const char BCMATTACHDATA(rstr_rpcal_phase5gb0)[];
+extern const char BCMATTACHDATA(rstr_rpcal_phase5gb1)[];
+extern const char BCMATTACHDATA(rstr_rpcal_phase5gb2)[];
+extern const char BCMATTACHDATA(rstr_rpcal_phase5gb3)[];
 extern const char BCMATTACHDATA(rstr_txidxcap2g)[];
 extern const char BCMATTACHDATA(rstr_txidxcap5g)[];
 extern const char BCMATTACHDATA(rstr_txidxmincap2g)[];

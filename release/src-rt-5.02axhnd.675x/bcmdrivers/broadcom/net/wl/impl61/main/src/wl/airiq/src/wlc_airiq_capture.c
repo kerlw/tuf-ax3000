@@ -159,6 +159,7 @@ void wlc_airiq_vasipfftcapture(airiq_info_t *airiqh)
 	default:
 		WL_ERROR(("wl%d: %s: Unknown bandwidth: %d bw\n",
 			WLCWLUNIT(airiqh->wlc), __FUNCTION__, bw));
+		if (WL_ERROR_ON())
 		prhex("FFT header:", (uchar*)header_ptr, VASIP_FFT_HEADER_SIZE);
 		//ASSERT(0);
 		return;

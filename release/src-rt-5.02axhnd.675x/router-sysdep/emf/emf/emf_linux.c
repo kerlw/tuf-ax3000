@@ -1465,7 +1465,7 @@ void
 	void *ret = NULL;
 	if (from_device) {
 		struct priv_link *wlif = *(priv_link_t **)netdev_priv(from_device);
-		if (wlif->nic_hook_fn)
+		if (wlif && wlif->nic_hook_fn)
 			ret = wlif->nic_hook_fn(WLEMF_CMD_GETIGSC, from_device, NULL);
 		dev_put(from_device);
 	}

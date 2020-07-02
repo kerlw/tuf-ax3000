@@ -51,7 +51,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: d11reglist.c 777207 2019-07-23 14:37:58Z $
+ * $Id: d11reglist.c 779372 2019-09-26 08:16:26Z $
  */
 
 #include "wlc_cfg.h"
@@ -936,7 +936,7 @@ CONST d11regs_list_t MACLISTDATA(d11regsx129)[] = {
 	{D11REG_TYPE_IHRX16, 0x580, 0xfffcfe07, 2, 0},
 	{D11REG_TYPE_IHRX16, 0x5c0, 0xffffffff, 2, 0},
 	{D11REG_TYPE_IHRX16, 0x700, 0xffbfffff, 2, 0},
-	{D11REG_TYPE_IHRX16, 0x740, 0xfc219e07, 2, 0},
+	{D11REG_TYPE_IHRX16, 0x740, 0xffe19e07, 2, 0},
 	{D11REG_TYPE_IHRX16, 0x780, 0xff01ffff, 2, 0},
 	{D11REG_TYPE_IHRX16, 0x7c0, 0x07fe0fff, 2, 0},
 	{D11REG_TYPE_IHRX16, 0x800, 0x7f3fffff, 2, 0},

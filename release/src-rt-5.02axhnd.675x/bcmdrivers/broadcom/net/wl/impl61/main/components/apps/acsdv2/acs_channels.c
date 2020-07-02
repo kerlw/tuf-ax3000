@@ -44,7 +44,7 @@
  *	OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *	NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_channels.c 778096 2019-08-22 10:39:16Z $
+ *	$Id: acs_channels.c 779769 2019-10-07 10:14:09Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -279,6 +279,19 @@ pick_candidate:
 	return PICK_CANDIDATE;
 }
 
+int
+acs_check_for_txop_on_curchan(acs_chaninfo_t *c_info)
+{
+	acsd_chanim_query(c_info, WL_CHANIM_COUNT_ONE, 0);
+	if (c_info->txop_score < c_info->acs_txop_limit) {
+		ACSD_INFO("ifname: %s Allow BGDFS/DFS_REENTRY when txop score is:%d less than"
+			"limit:%d\n", c_info->name, c_info->txop_score, c_info->acs_txop_limit);
+		return TRUE;
+	} else {
+		return FALSE;
+	}
+}
+
 /* Add all customer specfic channel selection criteria here
  */
 static int
@@ -361,6 +374,7 @@ int acs_csa_handle_request(acs_chaninfo_t *c_info)
 {
 	wl_bcmdcs_data_t dcs_data;
 	int ret;
+
 	dcs_data.reason = 0;
 	dcs_data.chspec = c_info->selected_chspec;
 	if ((ret = dcs_handle_request(c_info->name, &dcs_data,
@@ -368,6 +382,11 @@ int acs_csa_handle_request(acs_chaninfo_t *c_info)
 			c_info->acs_dcs_csa))) {
 		ACSD_ERROR("%s: err from dcs_handle_request:%d\n",
 				c_info->name, ret);
+	} else { /* on CSA success, update if we have reached full bandwidth */
+		if (c_info->bw_upgradable) {
+			c_info->bw_upgradable = !ACS_CHSPEC_MAXED_BWCAP(c_info->selected_chspec,
+					c_info->rs_info.bw_cap);
+		}
 	}
 	return ret;
 }
@@ -411,7 +430,9 @@ acs_pick_chanspec_common(acs_chaninfo_t *c_info, int bw, int score_type)
 		statsv2 = (chanim_stats_v2_t *)&chstats->stats;
 	}
 
-	if (!acs_is_initial_selection(c_info) &&
+	acs_update_bw_status(c_info); /* ensure latest bw_upgradable status is available */
+
+	if (!acs_is_initial_selection(c_info) && !c_info->bw_upgradable &&
 		!c_info->autochannel_through_cli &&
 		!((c_info->switch_reason == APCS_DFS_REENTRY) && c_info->dfs_reentry)) {
 		for (i = 0; i < chstats->count; i++) {
@@ -429,7 +450,7 @@ acs_pick_chanspec_common(acs_chaninfo_t *c_info, int bw, int score_type)
 							stats->ccastats[CCASTATS_INBSS] +
 							stats->ccastats[CCASTATS_TXDUR];
 					}
-					if (txop_score < ACS_TXOP_LIMIT) {
+					if (txop_score < c_info->acs_txop_limit) {
 						if (c_info->switch_reason != APCS_TXFAIL) {
 							c_info->txop_channel_select =
 								ACS_TXOP_CHANNEL_SELECT;
@@ -459,7 +480,7 @@ acs_pick_chanspec_common(acs_chaninfo_t *c_info, int bw, int score_type)
 							statsv2->ccastats[CCASTATS_INBSS] +
 							statsv2->ccastats[CCASTATS_TXDUR];
 					}
-					if (txop_score < ACS_TXOP_LIMIT) {
+					if (txop_score < c_info->acs_txop_limit) {
 						if (c_info->switch_reason != APCS_TXFAIL) {
 							c_info->txop_channel_select =
 								ACS_TXOP_CHANNEL_SELECT;
@@ -1119,14 +1140,25 @@ struct tc tc_list[] = {
 	{ "TW", 0 },
 	{ "AA", 1 },
 	{ "AU", 1 },
+	{ "CX", 1 },
 	{ "CA", 2 },
 	{ "EU", 3 },
 	{ "UK", 3 },
 	{ "IL", 3 },
 	{ "JP", 4 },
 	{ "CN", 5 },
-	{ "KR", 6 }
+	{ "KR", 6 },
+#elif defined(RTAX56_XD4)
+	{ "US", 0 },
+	{ "TW", 0 },
+	{ "AA", 0 },
+	{ "EU", 1 },
+	{ "CN", 2 },
+	{ "CA", 3 },
+	{ "JP", 4 },
+	{ "KR", 5 },
 #endif
+	{ NULL, -1}
 };
 
 enum {
@@ -1148,6 +1180,13 @@ struct txpwr_policy txpwr_policy_all[][TXPWR_POLICY_NUM] = {
 {{{ 15.0, 15.0, 17.0, 17.0, 17.0, 0.0 }}, {{ 10, 5, 5, 5, 0, 0 }}, {{ 5, 5, 5, 5, 0, 0 }}},		// JP
 {{{ 18.0, 18.0, 0.0, 0.0, 0.0, 24.0 }}, {{ 20, 10, 0, 0, 0, 20 }}, {{ 10, 10, 0, 0, 0, 0 }}},		// CN
 {{{ 15.0, 15.0, 17.0, 17.0, 17.0, 17.0 }}, {{ 10, 5, 5, 5, 0, 10 }}, {{ 5, 5, 5, 5, 0, 0 }}}		// KR
+#elif defined(RTAX56_XD4)
+{{{ 24.0, 0.0, 0.0, 0.0, 0.0, 26.0 }}, {{ 20, 0, 0, 0, 0, 14 }}, {{ 0, 0, 0, 0, 0, 0 }}},		// US, TW, AA
+{{{ 17.0, 17.0, 24.0, 24.0, 24.0, 0.0 }}, {{ 20, 20, 20, 0, 0, 0 }}, {{ 0, 0, 0, 0, 0, 0 }}},		// EU
+{{{ 20.0, 0.0, 0.0, 0.0, 0.0, 25.0 }}, {{ 20, 0, 0, 0, 0, 20 }}, {{ 0, 0, 0, 0, 0, 0 }}},		// CN
+{{{ 17.0, 0.0, 0.0, 0.0, 0.0, 26.0 }}, {{ 20, 0, 0, 0, 0, 20 }}, {{ 0, 0, 0, 0, 0, 0 }}},		// CA
+{{{ 19.0, 19.0, 20.0, 20.0, 0.0, 0.0 }}, {{ 10, 5, 5, 5, 0, 0 }}, {{ 0, 0, 0, 0, 0, 0 }}},		// JP
+{{{ 14.5, 14.5, 17.0, 17.0, 17.0, 17.0 }}, {{ 10, 5, 5, 5, 5, 10 }}, {{ 0, 0, 0, 0, 0, 0 }}}		// KR
 #endif
 };
 
@@ -1174,7 +1213,7 @@ int get_tc_index(void)
 static void
 acs_candidate_score_txpwr(ch_candidate_t *candi, acs_chaninfo_t* c_info)
 {
-#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U) || defined(RTAX56_XD4)
 	chanspec_t chspec = candi->chspec;
 	acs_channel_t chan;
 	int tc_index = get_tc_index();
@@ -1890,6 +1929,8 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 		}
 
 		if (BAND_5G(rsi->band_type)) {
+			bool is_initial = FALSE;
+
 			/* Invalidate Unusable DFS channels */
 			if (candi[i].is_dfs &&
 					!acs_dfs_channel_is_usable(c_info, candi[i].chspec)) {
@@ -1899,6 +1940,16 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 				candi[i].valid = FALSE;
 				candi[i].reason |= ACS_INVALID_DFS;
 			}
+
+			/* Invalidate weather radar channels for bw_upgradable case unless clear */
+			if (c_info->bw_upgradable && candi[i].is_dfs && c_info->rs_info.reg_11h &&
+					c_info->country_is_edcrs_eu &&
+					acs_is_dfs_weather_chanspec(c_info, candi[i].chspec) &&
+					ACS_CHINFO_IS_UNCLEAR(acs_get_chanspec_info(c_info,
+					candi[i].chspec))) {
+				candi[i].reason |= ACS_INVALID_DFS;
+			}
+
 			/* when dyn160 is enabled with DFS on FCC, allow ch 50o/subset only */
 			if (ACS_11H(c_info) && c_info->dyn160_enabled &&
 					CHSPEC_IS160(candi[i].chspec) &&
@@ -1908,7 +1959,9 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 				candi[i].reason |= ACS_INVALID_EXCL;
 			}
 
-			if (!acs_is_initial_selection(c_info)) {
+			is_initial = acs_is_initial_selection(c_info);
+
+			if (!is_initial && !c_info->bw_upgradable) { /* not boot up ch selection */
 				/* avoid select same channel */
 				if (acs_check_for_overlap(cur_chspec, candi[i].chspec) &&
 						(c_info->switch_reason != APCS_CSTIMER) &&
@@ -1932,8 +1985,8 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 
 				/* Use DFS channels if DFS reentry is OK */
 				/* In ETSI, avoid weather chan if not pre-cleared on DFSRentry */
-				if (!(candi[i].reason & ACS_INVALID_DFS) &&
-						candi[i].is_dfs && (dfsr_disable ||
+				if (!(candi[i].reason & ACS_INVALID_DFS) && candi[i].is_dfs &&
+						(dfsr_disable ||
 						(c_info->rs_info.reg_11h &&
 						c_info->country_is_edcrs_eu &&
 						acs_is_dfs_weather_chanspec(c_info,
@@ -1948,7 +2001,9 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 					candi[i].reason |= ACS_INVALID_NONDFS;
 				}
 
-			} else if (!BAND_2G(rsi->band_type)) {
+			}
+
+			if (is_initial) { /* boot up ch selection (5G) */
 				/*
 				 * Use DFS channels if we are just coming up
 				 * unless
@@ -2001,7 +2056,7 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 		 * some amount of time. If txop_weight is set, allow flip-flop in order
 		 * to consider broader list of channels.
 		 */
-		if (c_info->txop_weight == 0)
+		if (c_info->txop_weight == 0) {
 			for (i = 0; i < c_info->c_count[bw]; i++) {
 				for (j = 0; j < CHANIM_ACS_RECORD; j++) {
 					if (candi[i].chspec == ch_info->record[j].selected_chspc) {
@@ -2015,6 +2070,7 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 					}
 				}
 			}
+		}
 	}
 }
 
@@ -2163,14 +2219,24 @@ done:
 
 	if (c_info->fallback_to_primary && CHSPEC_CHANNEL(selected) ==
 			CHSPEC_CHANNEL(c_info->cur_chspec)) {
+		ACSD_INFO("%s fallback_to_primary:%d matched selected:0x%04x cur:0x%04x\n",
+				c_info->name, c_info->fallback_to_primary,
+				selected, c_info->cur_chspec);
 		c_info->selected_chspec = c_info->cur_chspec;
 		return FALSE;
 	}
+
+	if (!selected) {
+		ACSD_INFO("%s: selected chanspec is zero!!!\n", c_info->name);
+		return FALSE;
+	}
+
 	c_info->selected_chspec = selected;
 
 	if (c_info->cur_chspec == c_info->selected_chspec) {
 		return FALSE;
 	}
+
 	return TRUE;
 }
 

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_slave.c 777559 2019-08-06 06:57:38Z $
+ * $Id: wbd_slave.c 779858 2019-10-09 06:04:24Z $
  */
 
 #include <getopt.h>
@@ -507,6 +507,7 @@ wbd_exit_slave(wbd_info_t *info)
 	BCM_REFERENCE(ret);
 	WBD_ASSERT_ARG(info, WBDE_INV_ARG);
 
+	blanket_nvram_prefix_set(NULL, NVRAM_MAP_AGENT_CONFIGURED, "0");
 	/* Set flag to mark it as application is closing */
 	info->flags |= WBD_INFO_FLAGS_CLOSING_APP;
 
@@ -907,6 +908,7 @@ wbd_ieee1905_ap_auto_config_search_sent()
 	wbd_slave = (wbd_blanket_slave_t*)g_wbdinfo->wbd_slave;
 
 	wbd_slave->n_ap_auto_config_search++;
+	blanket_nvram_prefix_set(NULL, NVRAM_MAP_AGENT_CONFIGURED, "0");
 
 	/* If the count of AP auto configuration search exceeds max limit block the backhaul BSS */
 	if (!I5_IS_CTRLAGENT(self_device->flags) &&
@@ -949,6 +951,7 @@ wbd_ieee1905_set_bh_sta_params(t_i5_bh_sta_cmd cmd)
 	int ret = WBDE_OK;
 	i5_dm_device_type *i5_self_device;
 	i5_dm_interface_type *i5_iter_ifr;
+	wbd_ifr_item_t *ifr_vndr_data;
 	char tmp[256];
 	WBD_ENTER();
 
@@ -959,6 +962,8 @@ wbd_ieee1905_set_bh_sta_params(t_i5_bh_sta_cmd cmd)
 		if (!I5_IS_BSS_STA(i5_iter_ifr->mapFlags)) {
 			continue;
 		}
+		WBD_ASSERT_ARG(i5_iter_ifr->vndr_data, WBDE_INV_ARG);
+		ifr_vndr_data = (wbd_ifr_item_t*)i5_iter_ifr->vndr_data;
 
 		switch (cmd) {
 			case IEEE1905_BH_STA_ROAM_DISB_VAP_UP:
@@ -977,7 +982,7 @@ wbd_ieee1905_set_bh_sta_params(t_i5_bh_sta_cmd cmd)
 						i5_iter_ifr->wlParentName, i5_iter_ifr->ifname);
 					system(tmp);
 					WBD_INFO("%s\n", tmp);
-
+					ifr_vndr_data->flags |= WBD_FLAGS_IFR_AP_SCAN_DISABLED;
 				} else {
 					/* ROAM OFF IOVAR - disable roaming */
 					blanket_set_roam_off(i5_iter_ifr->ifname, 1);
@@ -994,6 +999,7 @@ wbd_ieee1905_set_bh_sta_params(t_i5_bh_sta_cmd cmd)
 						i5_iter_ifr->wlParentName, i5_iter_ifr->ifname);
 					system(tmp);
 					WBD_INFO("%s\n", tmp);
+					ifr_vndr_data->flags &= ~WBD_FLAGS_IFR_AP_SCAN_DISABLED;
 					/* Perform scan only if the STA is not associated */
 					if (!wbd_blanket_is_sta_associated(i5_iter_ifr->ifname)) {
 						snprintf(tmp, sizeof(tmp), "wpa_cli -p "

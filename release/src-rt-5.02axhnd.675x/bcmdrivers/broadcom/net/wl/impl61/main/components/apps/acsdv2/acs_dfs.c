@@ -46,7 +46,7 @@
  *	OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *	NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_dfs.c 774706 2019-05-03 09:28:38Z $
+ *	$Id: acs_dfs.c 778705 2019-09-09 06:50:22Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -333,9 +333,9 @@ acsd_trigger_dfsr_check(acs_chaninfo_t *c_info)
 	if ((bw > WL_CHANSPEC_BW_40) &&
 			!acsd_is_lp_chan(c_info, c_info->cur_chspec) &&
 			acs_assoclist &&
-			(c_info->sta_status & ACS_STA_EXIST_FAR) &&
+			!(c_info->sta_status & ACS_STA_EXIST_FAR) &&
 			!dfsr_disable &&
-			!is_dfs) {
+			!is_dfs && c_info->acs_enable_dfsr_on_highpwr) {
 		ACSD_5G("%s goto DFSR.\n", c_info->name);
 		return TRUE;
 	}

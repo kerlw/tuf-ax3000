@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_bsscfg.c 776451 2019-06-28 16:03:26Z $
+ * $Id: wlc_bsscfg.c 779595 2019-10-03 06:26:35Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -168,6 +168,8 @@ struct bsscfg_module {
 		WLC_BSSCFG_FL2_NO_KM | \
 		WLC_BSSCFG_FL2_SPLIT_ASSOC_REQ | \
 		WLC_BSSCFG_FL2_SPLIT_ASSOC_RESP | \
+		WLC_BSSCFG_FL2_BLOCK_HE | \
+		WLC_BSSCFG_FL2_BLOCK_HE_MAC | \
 		0)
 /* Clear non-persistant flags2 */
 #define WLC_BSSCFG_FLAGS2_INIT(cfg) do { \
@@ -2100,6 +2102,9 @@ wlc_bsscfg_mfree(wlc_info_t *wlc, wlc_bsscfg_t *cfg)
 	 * FIXME
 	 */
 
+#ifdef WL11AX
+	wlc_bsscfg_mfree_block_he(wlc, cfg);
+#endif /* WL11AX */
 	len = bcmh->cfgtotsize + wlc_cubby_totsize(bcmh->cubby_info);
 	MFREE(osh, cfg, len);
 }
@@ -2384,6 +2389,22 @@ wlc_bsscfg_type_get(wlc_info_t *wlc, wlc_bsscfg_t *cfg, wlc_bsscfg_type_t *type)
 		}
 	}
 }
+
+#ifdef WL11AX
+void
+wlc_bsscfg_mfree_block_he(wlc_info_t *wlc, wlc_bsscfg_t *cfg)
+{
+	if (cfg->block_he_list) {
+		struct ether_addr *ether = cfg->block_he_list->etheraddr;
+		if (ether != NULL) {
+			MFREE(wlc->osh, ether, sizeof(struct ether_addr)
+					* cfg->block_he_list->block_he_list_size);
+		}
+		MFREE(wlc->osh, cfg->block_he_list, sizeof(wlc_block_he_mac_t));
+		cfg->block_he_list = NULL;
+	}
+}
+#endif /* WL11AX */
 
 /* query info */
 static void
@@ -3454,8 +3475,7 @@ _wlc_bsscfg_dump(wlc_info_t *wlc, wlc_bsscfg_t *cfg, struct bcmstrbuf *b)
 	            cfg->wlcif->if_flags, OSL_OBFUSCATE_BUF(cfg->wlcif->wlif),
 			ifname, OSL_OBFUSCATE_BUF(cfg->wlcif->qi));
 	bcm_bprintf(b, "ap_isolate %d\n", cfg->ap_isolate);
-	bcm_bprintf(b, "nobcnssid %d nobcprbresp %d\n",
-		cfg->closednet_nobcnssid, cfg->closednet_nobcprbresp);
+	bcm_bprintf(b, "closednet %d nobcnssid %d\n", cfg->closednet, cfg->nobcnssid);
 	bcm_bprintf(b, "wsec 0x%x auth %d\n", cfg->wsec, cfg->auth);
 	bcm_bprintf(b, "WPA_auth 0x%x wsec_restrict %d eap_restrict %d",
 		cfg->WPA_auth, cfg->wsec_restrict, cfg->eap_restrict);
@@ -4386,4 +4406,63 @@ bool wlc_is_ap_interface_up(wlc_info_t *wlc)
 		break;
 	}
 	return ap_up;
+}
+
+#ifdef WL11AX
+void wlc_addto_heblocklist(wlc_bsscfg_t *cfg, struct ether_addr *ea)
+{
+#if defined(BCMDBG) || defined(WLMSG_INFORM)
+	char eabuf[ETHER_ADDR_STR_LEN];
+#endif // endif
+	int loop = cfg->block_he_list->cur_size;
+	int i;
+	for (i = 0; i < loop; i ++) {
+		if (!ether_cmp(ea, &cfg->block_he_list->etheraddr[i])) {
+			WL_INFORM(("add already in the list ea[%s] \n", bcm_ether_ntoa(ea, eabuf)));
+			return;
+		}
+	}
+	if (cfg->block_he_list->cur_size < cfg->block_he_list->block_he_list_size) {
+		cfg->block_he_list->cur_size ++;
+	}
+	bcopy(ea, &cfg->block_he_list->etheraddr[cfg->block_he_list->index], ETHER_ADDR_LEN);
+	if (cfg->block_he_list->index == (cfg->block_he_list->block_he_list_size - 1)) {
+		cfg->block_he_list->index = 0;
+	} else {
+		cfg->block_he_list->index ++;
+	}
+}
+
+int wlc_isblocked_hemac(wlc_bsscfg_t *cfg, struct ether_addr *ea)
+{
+	int loop = cfg->block_he_list->cur_size;
+	int i;
+#if defined(BCMDBG) || defined(WLMSG_INFORM)
+	char eabuf[ETHER_ADDR_STR_LEN];
+#endif // endif
+
+	for (i = 0; i < loop; i ++) {
+		if (!ether_cmp(ea, &cfg->block_he_list->etheraddr[i])) {
+			WL_INFORM(("blocked he ea[%s] \n", bcm_ether_ntoa(ea, eabuf)));
+			return 1;
+		}
+	}
+	return 0;
+}
+#endif /* WL11AX */
+
+/*
+ * This function walks through the active bsscfgs.
+ * returns TRUE only when there are no active bsscfgs; Returns FALSE otherwise.
+ */
+bool
+wlc_bsscfg_none_bss_active(wlc_info_t *wlc)
+{
+	wlc_bsscfg_t *bsscfg;
+	int i;
+
+	FOR_ALL_UP_BSS(wlc, i, bsscfg) {
+		return FALSE;
+	}
+	return TRUE;
 }

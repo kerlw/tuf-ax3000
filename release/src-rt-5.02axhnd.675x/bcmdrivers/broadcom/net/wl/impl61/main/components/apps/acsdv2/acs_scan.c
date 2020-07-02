@@ -45,7 +45,7 @@
  *	OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *	NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_scan.c 777836 2019-08-13 06:27:19Z $
+ *	$Id: acs_scan.c 779770 2019-10-07 10:19:46Z $
  */
 
 #include <stdio.h>
@@ -319,45 +319,75 @@ acs_expire_scan_entry(acs_chaninfo_t *c_info, time_t limit)
 	}
 }
 
-int acs_allow_scan(acs_chaninfo_t *c_info, uint8 type)
+int acs_allow_scan(acs_chaninfo_t *c_info, uint8 type, uint ticks)
 {
 	time_t now = uptime();
+	bool chan_least_dwell = FALSE;
 	uint32 diff = now - c_info->timestamp_acs_scan;
 	uint8 tx_score = c_info->txrx_score + ACS_CHANIM_DELTA;
-	/* Before allowing CI scan verifying the txrx_score(tx+inbss), and txop value.
-	 * If combination of tx_score and txop is greater than threshold(ACS_CHANIM_TX_AVAIL)
-	 * then don't initiate scan else proceed for CI scan.
-	 */
-	if ((type == ACS_SCAN_TYPE_CI) &&
-			(tx_score + c_info->channel_free) > c_info->acs_chanim_tx_avail) {
-		ACSD_DEBUG("%s: Don't initiate CI scan if tx_score %d plus channel free is %d"
-			       "greater than threshold %d\n", c_info->name, tx_score,
-			       c_info->channel_free, c_info->acs_chanim_tx_avail);
+
+	chan_least_dwell = chanim_record_chan_dwell(c_info,
+			c_info->chanim_info);
+
+	if (!chan_least_dwell) {
+		ACSD_5G("%s: chan_least_dwell is FALSE\n", c_info->name);
 		return FALSE;
 	}
-	if ((type == ACS_SCAN_TYPE_CI) && diff >= c_info->acs_ci_scan_timeout) {
+
+	if (type == ACS_SCAN_TYPE_CI && (ticks < c_info->ci_scan_postponed_to_ticks ||
+			diff < c_info->acs_ci_scan_timeout)) {
+		return FALSE;
+	}
+
+	if (type == ACS_SCAN_TYPE_CS && (ticks < c_info->cs_scan_postponed_to_ticks ||
+			diff < c_info->acs_cs_scan_timer)) {
+		return FALSE;
+	}
+
+	if (type == ACS_SCAN_TYPE_CI) {
+		/* Before allowing CI scan verifying the txrx_score(tx+inbss), and txop value.
+		 * If sum of tx_score and txop is greater than threshold (ACS_CHANIM_TX_AVAIL),
+		 * then don't initiate scan as it is a good channel.
+		 * But ignore the score if bw_upgradable is true.
+		 */
+		bool is_good_ch = ((tx_score + c_info->channel_free) > c_info->acs_chanim_tx_avail);
+
+		acs_update_bw_status(c_info);
+		if (!c_info->bw_upgradable && is_good_ch) {
+			c_info->ci_scan_postponed_to_ticks = ticks + ACS_SCAN_POSTPONE_TICKS;
+			ACSD_DEBUG("%s: Don't initiate CI scan if tx_score %d + channel free is %d "
+					"greater than threshold %d bw_upgradable=%d, "
+					"ticks:%u, postponed:%u\n",
+					c_info->name, tx_score, c_info->channel_free,
+					c_info->acs_chanim_tx_avail, c_info->bw_upgradable,
+					ticks, c_info->ci_scan_postponed_to_ticks);
+			return FALSE;
+		}
 		if (c_info->cur_is_dfs) {
 			return TRUE;
-		} else {
-			return (c_info->last_scan_type != ACS_SCAN_TYPE_CI);
 		}
-	} else if ((type == ACS_SCAN_TYPE_CS) && diff >= c_info->acs_cs_scan_timer) {
+		return (c_info->last_scan_type != ACS_SCAN_TYPE_CI);
+	}
+
+	if (type == ACS_SCAN_TYPE_CS) {
+		acs_update_bw_status(c_info);
 		if (c_info->cur_is_dfs) {
-			ACSD_DEBUG("%s: Don't allow CS scan when operating on dfs channel\n",
-				c_info->name);
+			c_info->cs_scan_postponed_to_ticks = ticks + ACS_SCAN_POSTPONE_TICKS;
+			ACSD_DEBUG("%s: Don't allow CS scan when operating on dfs channel"
+					"ticks:%u, postponed:%u\n",
+					c_info->name, ticks, c_info->cs_scan_postponed_to_ticks);
 			return FALSE;
 		}
 		/* Allow cs scan when acsd is on non-dfs channel and there are no associations */
 		if (!c_info->cur_is_dfs && !acs_check_assoc_scb(c_info)) {
 			return TRUE;
 		}
-	} else if (!(type == ACS_SCAN_TYPE_CS || type == ACS_SCAN_TYPE_CI)) {
-		ACSD_DEBUG("%s: Invalid scan type \n", c_info->name);
-		return FALSE;
 	}
+
 	return FALSE;
 }
-int acs_ci_scan_check(acs_chaninfo_t *c_info)
+
+int acs_ci_scan_check(acs_chaninfo_t *c_info, uint ticks)
 {
 	acs_scan_chspec_t* chspec_q = &c_info->scan_chspec_list;
 	time_t now = uptime();
@@ -373,7 +403,7 @@ int acs_ci_scan_check(acs_chaninfo_t *c_info)
 	*/
 
 	/* scan pref chan: when txop < thld, start ci scan for pref chan */
-	if (acs_allow_scan(c_info, ACS_SCAN_TYPE_CI)) {
+	if (acs_allow_scan(c_info, ACS_SCAN_TYPE_CI, ticks)) {
 		if (c_info->scan_chspec_list.ci_pref_scan_request && (chspec_q->pref_count > 0)) {
 			ACSD_PRINT("%s: acs_ci_scan_timeout start CI pref scan: scan_count %d\n",
 				c_info->name, chspec_q->pref_count);
@@ -393,7 +423,7 @@ int acs_ci_scan_check(acs_chaninfo_t *c_info)
 		return 1;
 
 	/* check scan timeout, and trigger CI scan if timeout happened */
-	if (acs_allow_scan(c_info, ACS_SCAN_TYPE_CI)) {
+	if (acs_allow_scan(c_info, ACS_SCAN_TYPE_CI, ticks)) {
 		c_info->acs_ci_scan_count = chspec_q->count - chspec_q->excl_count;
 		chspec_q->ci_scan_running = ACS_CI_SCAN_RUNNING_NORM;
 		c_info->last_scan_type = ACS_SCAN_TYPE_CI;
@@ -466,6 +496,18 @@ acs_do_ci_update(uint ticks, acs_chaninfo_t * c_info)
 {
 	int ret = 0;
 	uint8 tx_score = c_info->txrx_score + ACS_CHANIM_DELTA;
+	bool chan_least_dwell = FALSE;
+
+	chan_least_dwell = chanim_record_chan_dwell(c_info,
+			c_info->chanim_info);
+
+	/* If last channel change happened within the dwell time period, not allowing
+	 * scan or channel change.
+	 */
+	if (!chan_least_dwell) {
+		ACSD_5G("%s: chan_least_dwell is FALSE\n", c_info->name);
+		return FALSE;
+	}
 
 	if (ticks % c_info->acs_ci_scan_timer)
 		return ret;
@@ -486,7 +528,8 @@ acs_do_ci_update(uint ticks, acs_chaninfo_t * c_info)
 	 * If combination of tx_score and txop is greater than threshold(ACS_CHANIM_TX_AVAIL)
 	 * then don't initiate scan else proceed for CI scan.
 	 */
-	} else if ((tx_score + c_info->channel_free) > c_info->acs_chanim_tx_avail) {
+	} else if (!c_info->bw_upgradable &&
+			(tx_score + c_info->channel_free) > c_info->acs_chanim_tx_avail) {
 		ACSD_DEBUG("%s: Don't initiate CI scan if tx_score %d plus channel free is %d"
 			       "greater than threshold %d\n", c_info->name, tx_score,
 			       c_info->channel_free, c_info->acs_chanim_tx_avail);
@@ -506,7 +549,7 @@ acs_do_ci_update(uint ticks, acs_chaninfo_t * c_info)
 
 	if (!(c_info->scan_chspec_list.ci_scan_running)) {
 		acs_normalize_chanim_stats_after_ci_scan(c_info);
-		if (c_info->txop_score < c_info->ci_scan_txop_limit) {
+		if (c_info->bw_upgradable || c_info->txop_score < c_info->ci_scan_txop_limit) {
 			acs_select_chspec(c_info);
 			c_info->switch_reason_type = ACS_SCAN_TYPE_CI;
 		} else {
@@ -531,6 +574,7 @@ int acs_run_normal_ci_scan(acs_chaninfo_t *c_info)
 	scan_chspec_elemt_t *scan_elemt = NULL;
 	bool is_dfs = FALSE;
 	channel_info_t ci;
+	int count = 0;
 
 	if ((scan_chspec_q->count - scan_chspec_q->excl_count) == 0) {
 		ACSD_INFO("%s: scan chanspec queue is empty.\n", c_info->name);
@@ -554,7 +598,11 @@ int acs_run_normal_ci_scan(acs_chaninfo_t *c_info)
 
 	params->channel_list[0] = htodchanspec(scan_elemt->chspec);
 
-	ret = wl_ioctl(c_info->name, WLC_SCAN, params, params_size);
+	while ((ret = wl_ioctl(c_info->name, WLC_SCAN, params, params_size)) < 0 && count++ < 2) {
+		ACSD_INFO("set scan command failed, retry %d\n", count);
+		sleep(1);
+	}
+
 	if (ret < 0)
 		ACS_FREE(params);
 	ACS_ERR(ret, "WLC_SCAN failed");
@@ -621,6 +669,7 @@ acs_run_normal_cs_scan(acs_chaninfo_t *c_info)
 	wl_scan_params_t *params = NULL;
 	int params_size = WL_SCAN_PARAMS_FIXED_SIZE + ACS_NUMCHANNELS * sizeof(uint16);
 	channel_info_t ci;
+	int count = 0;
 
 	params = (wl_scan_params_t*)acsd_malloc(params_size);
 	ret = acs_scan_prep(c_info, params, &params_size);
@@ -629,7 +678,11 @@ acs_run_normal_cs_scan(acs_chaninfo_t *c_info)
 		ACS_ERR(ret, "failed to do scan prep");
 	}
 
-	ret = wl_ioctl(c_info->name, WLC_SCAN, params, params_size);
+	while ((ret = wl_ioctl(c_info->name, WLC_SCAN, params, params_size)) < 0 && count++ < 2) {
+		ACSD_INFO("set scan command failed, retry %d\n", count);
+		sleep(1);
+	}
+
 	if (ret < 0) {
 		ACS_FREE(params);
 		ACS_ERR(ret, "WLC_SCAN failed");
@@ -666,9 +719,14 @@ acs_get_scan(char* name, char *scan_buf, uint buf_len)
 {
 	wl_scan_results_t *list = (wl_scan_results_t*)scan_buf;
 	int ret = 0;
+	int count = 0;
 
 	list->buflen = htod32(buf_len);
-	ret = wl_ioctl(name, WLC_SCAN_RESULTS, scan_buf, buf_len);
+	while ((ret = wl_ioctl(name, WLC_SCAN_RESULTS, scan_buf, buf_len)) < 0 && count++ < 2) {
+		ACSD_INFO("set scanresults command failed, retry %d\n", count);
+		sleep(1);
+	}
+
 	if (ret)
 		ACSD_ERROR("%s: err from WLC_SCAN_RESULTS: %d\n", name, ret);
 
@@ -922,13 +980,26 @@ acs_update_escanresult_queue(acs_chaninfo_t *c_info)
 	acs_bss_info_entry_t * new_entry = NULL;
 	acs_channel_t chan;
 	chanspec_t cur_chspec;
+#if defined(RTCONFIG_AMAS) && (defined(RTAX95Q) || defined(RTAX56_XD4))
+	int ret;
+	wlc_ssid_t ssid;
 
+	ret = wl_ioctl(c_info->name, WLC_GET_SSID, &ssid, sizeof(ssid));
+#endif
 	for (escan_bss_head = c_info->acs_escan->escan_bss_head;
 		escan_bss_head != NULL;
 		escan_bss_head = escan_bss_head->next) {
 
 		new_entry = (acs_bss_info_entry_t*)acsd_malloc(sizeof(acs_bss_info_entry_t));
 		bi = escan_bss_head->bss;
+#if defined(RTCONFIG_AMAS) && (defined(RTAX95Q) || defined(RTAX56_XD4))
+		if (!ret && ssid.SSID_len
+			&& bi->SSID_len == ssid.SSID_len
+			&& !memcmp(bi->SSID, ssid.SSID, bi->SSID_len)) {
+			free(new_entry);
+			continue;
+                }
+#endif
 		new_entry->binfo_local.chanspec = cur_chspec = dtoh16(bi->chanspec);
 		new_entry->binfo_local.RSSI = dtoh16(bi->RSSI);
 		new_entry->binfo_local.SSID_len = bi->SSID_len;
@@ -962,9 +1033,21 @@ acs_update_scanresult_queue(acs_chaninfo_t *c_info)
 	acs_bss_info_entry_t * new_entry = NULL;
 	acs_channel_t chan;
 	chanspec_t cur_chspec;
+#if defined(RTCONFIG_AMAS) && (defined(RTAX95Q) || defined(RTAX56_XD4))
+	int ret;
+	wlc_ssid_t ssid;
 
+	ret = wl_ioctl(c_info->name, WLC_GET_SSID, &ssid, sizeof(ssid));
+#endif
 	for (b = 0; b < s_result->count; b ++, bi = (wl_bss_info_t*)((int8*)bi + len)) {
 
+#if defined(RTCONFIG_AMAS) && (defined(RTAX95Q) || defined(RTAX56_XD4))
+		if (!ret && ssid.SSID_len
+			&& bi->SSID_len == ssid.SSID_len
+			&& !memcmp(bi->SSID, ssid.SSID, bi->SSID_len)) {
+			continue;
+		}
+#endif
 		len = dtoh32(bi->length);
 		new_entry = (acs_bss_info_entry_t*)acsd_malloc(sizeof(acs_bss_info_entry_t));
 
@@ -1171,11 +1254,13 @@ acs_derive_bw_from_given_chspec(acs_chaninfo_t * c_info)
  * DFS Reentry, and does the channel switch if so.
  */
 int
-acs_scan_timer_or_dfsr_check(acs_chaninfo_t * c_info)
+acs_scan_timer_or_dfsr_check(acs_chaninfo_t * c_info, uint ticks)
 {
 	uint cs_scan_timer;
 	int ret = 0;
 	int switch_reason = APCS_INIT; /* Abuse APCS_INIT as undefined switch reason (no switch) */
+	time_t now = uptime();
+	acs_chaninfo_t *zdfs_2g_ci = NULL;
 
 	/* stay in current channel more than acs_chan_dwell_time */
 	if (AUTOCHANNEL(c_info) && BAND_2G(c_info->rs_info.band_type) &&
@@ -1201,7 +1286,7 @@ acs_scan_timer_or_dfsr_check(acs_chaninfo_t * c_info)
 
 	if ((AUTOCHANNEL(c_info) || COEXCHECK(c_info)) &&
 		(c_info->country_is_edcrs_eu || !(c_info->cur_is_dfs)) &&
-		acs_allow_scan(c_info, ACS_SCAN_TYPE_CS)) {
+		acs_allow_scan(c_info, ACS_SCAN_TYPE_CS, ticks)) {
 		/* Check whether we should switch now because of the CS scan timer */
 		cs_scan_timer = c_info->acs_cs_scan_timer;
 
@@ -1260,7 +1345,44 @@ select_chanspec:
 			 * USE_ACSD_DEF_METHOD: ACSD's own default method to set channel
 			 */
 
+			if (c_info->switch_reason == APCS_DFS_REENTRY) {
+				ret = acs_check_for_txop_on_curchan(c_info);
+				if (!ret) {
+					ACSD_INFO("ifname: %s Don't allow BGDFS/DFS_REENTRY when"
+						"txop score is:%d greater than limit:%d\n",
+						c_info->name, c_info->txop_score,
+						c_info->acs_txop_limit);
+					break;
+				}
+			}
+
+			if ((c_info->switch_reason == APCS_DFS_REENTRY) &&
+					(CHSPEC_CHANNEL(c_info->selected_chspec) ==
+					CHSPEC_CHANNEL(c_info->recent_prev_chspec))) {
+				if (now - c_info->acs_prev_chan_at <
+						2 * c_info->acs_chan_dwell_time) {
+					ACSD_INFO("%s: staying on same channel because of"
+							" prev_chspec dwell restrictions\n",
+							c_info->name);
+					break;
+				}
+			}
+
 			acs_set_chspec(c_info, TRUE, ACSD_USE_DEF_METHOD);
+			c_info->last_scanned_time = uptime();
+
+		        /* If zdfs_2g attempts on behalf of 5g interface then marking the reason as
+			 * DFS_REENTRY.
+			 */
+			if (ACS_11H_AND_BGDFS(c_info) &&
+				((zdfs_2g_ci = acs_get_zdfs_2g_ci()) != NULL &&
+				zdfs_2g_ci->acs_bgdfs &&
+				zdfs_2g_ci->acs_bgdfs->state != BGDFS_STATE_IDLE) &&
+				!c_info->country_is_edcrs_eu) {
+				c_info->switch_reason_type = APCS_DFS_REENTRY;
+				zdfs_2g_ci->acs_bgdfs->acs_bgdfs_on_txfail = TRUE;
+				break;
+			}
 
 			/*
 			 * In FCC, on txfail, if bgdfs is not successful due to txblanking
@@ -1273,23 +1395,9 @@ select_chanspec:
 					c_info->acs_bgdfs->acs_bgdfs_on_txfail = TRUE;
 			}
 
-			c_info->last_scanned_time = uptime();
-
-			/* After completion of CS scan and channel selection acsd updates record
-			 * with new selected channel. But after 2 sec acs_record is updating again
-			 * in acsd_watchdog function. So to avoid updating record twice we are not
-			 * adding the acs record here, instead updating the acs_record in
-			 * acsd_watchdog function. Updating the acs_record below Only for
-			 * DFS-REENTRY case.
-			 */
-			if (!(switch_reason == APCS_CSTIMER || switch_reason == APCS_CHANIM)) {
-				chanim_upd_acs_record(c_info->chanim_info, c_info->selected_chspec,
-						switch_reason);
-			}
-			c_info->switch_reason_type = APCS_CSTIMER;
-
-			if (c_info->acs_bgdfs == NULL ||
-					c_info->acs_bgdfs->state == BGDFS_STATE_IDLE) {
+			if ((c_info->acs_bgdfs == NULL ||
+					c_info->acs_bgdfs->state == BGDFS_STATE_IDLE) &&
+					!c_info->cur_is_dfs) {
 				if (c_info->acs_use_csa &&
 						c_info->switch_reason == APCS_DFS_REENTRY) {
 					ret = acs_csa_handle_request(c_info);
@@ -1298,6 +1406,12 @@ select_chanspec:
 					ACS_ERR(ret, "update driver failed\n");
 				}
 			}
+
+			if (switch_reason == APCS_DFS_REENTRY) {
+				c_info->switch_reason_type = APCS_DFS_REENTRY;
+				break;
+			}
+			c_info->switch_reason_type = APCS_CSTIMER;
 		}
 		else {
 			c_info->last_scanned_time = uptime();

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_channel.h 776528 2019-07-02 05:04:35Z $
+ * $Id: wlc_channel.h 778376 2019-08-29 13:25:29Z $
  */
 
 #ifndef _WLC_CHANNEL_H_
@@ -122,7 +122,7 @@ struct wlc_info;
 
 #define MAXRCLISTSIZE	32
 #define MAXREGCLASS	130
-#define MAXRCTBL	25
+#define MAXRCTBL	27
 #define MAXRCVEC	CEIL(MAXREGCLASS, NBBY)
 
 /* Regulatory Class list */

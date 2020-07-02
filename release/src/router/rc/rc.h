@@ -74,20 +74,6 @@
 #endif
 
 #ifdef RTCONFIG_EXTPHY_BCM84880
-#if 1
-#define EXTPHY_ADDR 0x1e
-#define EXTPHY_ADDR_STR "0x1e"
-#else // RTL8226
-#define EXTPHY_ADDR 0x01
-#define EXTPHY_ADDR_STR "0x01"
-#endif
-
-#if defined(GTAX11000)
-#define PHY_ID_54991E "3590:5099"
-#elif defined(RTAX86U)
-#define PHY_ID_54991EL "3590:5089"
-#endif
-
 void config_ext_wan_port();
 void get_ext_phy_id();
 #endif
@@ -677,6 +663,9 @@ extern void update_cfe_675x();
 #if defined(RTAX58U) || defined(TUFAX3000)
 extern void update_cfe_ax58u();
 #endif
+#if defined(GTAX11000) || defined(RTAX88U)
+extern void update_cfe_basemac();
+#endif
 #ifdef RTCONFIG_BCM_MFG
 extern void brcm_mfg_init();
 extern void brcm_mfg_services();
@@ -687,8 +676,15 @@ extern void fc_fini();
 extern void hnd_nat_ac_init(int bootup);
 extern void setLANLedOn(void);
 extern void setLANLedOff(void);
+#ifdef RTAX82U
+extern void setLEDGroupOn(void);
+extern void setLEDGroupOff(void);
+extern void cled_set(int gpio, uint32_t config0, uint32_t config1, uint32_t config2, uint32_t config3);
+extern void LEDGroupReset(int mode);
+#endif
 extern void activateLANLed();
 extern int mtd_erase_image_update();
+extern int mtd_erase_misc2();
 extern int wait_to_forward_state(char *ifname);
 #endif
 #ifdef RTCONFIG_BCMWL6
@@ -725,8 +721,10 @@ void set_dpsta_ifnames();
 #ifdef RTAC86U
 extern void hnd_cfe_check();
 #endif
-#ifdef RTCONFIG_HND_ROUTER_AX
+#ifdef HND_ROUTER
 extern void dump_WlGetDriverStats(int fb, int count);
+#endif
+#ifdef RTCONFIG_HND_ROUTER_AX
 extern void dfs_cac_check(void);
 #endif
 #endif
@@ -1178,8 +1176,14 @@ extern int usbled_main(int argc, char *argv[]);
 extern int phy_tempsense_main(int argc, char *argv[]);
 #endif
 #if defined(RTCONFIG_BCMWL6) && defined(RTCONFIG_PROXYSTA)
+// arp.c
+extern int send_arpreq(void);
 // psta_monitor.c
 extern int psta_monitor_main(int argc, char *argv[]);
+#endif
+// ledg.c
+#ifdef RTAX82U
+extern int ledg_main(int argc, char *argv[]);
 #endif
 #if defined(RTCONFIG_AMAS) && (defined(RTCONFIG_BCMWL6) || defined(RTCONFIG_LANTIQ) || defined(RTCONFIG_QCA))
 // obd.c
@@ -1368,6 +1372,10 @@ extern int mount_cifs_main(int argc, char *argv[]);
 static inline void start_cifs(void) {};
 static inline void stop_cifs(void) {};
 #endif
+#ifdef RTAX82U
+extern int start_ledg(void);
+extern int stop_ledg(void);
+#endif
 
 // linkmonitor.c
 extern int linkmonitor_main(int argc, char *argv[]);
@@ -1397,6 +1405,7 @@ extern int vpnc_set_dev_policy_rule();
 // ovpn.c
 extern int ovpn_up_main(int argc, char **argv);
 extern int ovpn_down_main(int argc, char **argv);
+extern int ovpn_route_up_main(int argc, char **argv);
 
 // openvpn.c
 #ifdef RTCONFIG_OPENVPN
@@ -1684,7 +1693,7 @@ extern int firmware_check_main(int argc, char *argv[]);
 #ifdef RTCONFIG_HTTPS
 extern int rsasign_check_main(int argc, char *argv[]);
 extern int rsarootca_check_main(int argc, char *argv[]);
-extern char *pwdec(const char *input, char *output);
+extern char *pwdec(const char *input, char *output, int output_len);
 extern char *pwdec_dsl(char *input);
 #endif
 extern int service_main(int argc, char *argv[]);
@@ -2310,6 +2319,9 @@ extern void oauth_google_check_token_status(void);
 
 #ifdef RTCONFIG_UUPLUGIN
 extern void exec_uu();
+#endif
+#ifdef RTCONFIG_TCPLUGIN
+extern void exec_tcplugin();
 #endif
 
 // rmd.c

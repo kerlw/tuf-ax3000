@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc.c 778114 2019-08-22 19:38:37Z $
+ * $Id: wlc.c 779909 2019-10-09 21:49:41Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -807,8 +807,9 @@ enum wlc_iov {
 	IOV_ACTIVE_BIDIR_THRESH = 165, /* rx active threshold */
 	IOV_SEND_BAR_TO_IDLE_SCBS = 166,
 	IOV_FIPS_LOOPBACK_TEST = 167,
-	IOV_CLM_DATA_VER = 168,
-	IOV_BLOCK_AS_RETRY,
+	IOV_FIPS_MUTE = 168,
+	IOV_BLOCK_HE = 169,     /* block HE probe req, auth req, assoc req */
+	IOV_CLM_DATA_VER = 170,
 	IOV_LAST		/* In case of a need to check max ID number */
 };
 
@@ -1250,9 +1251,11 @@ static const bcm_iovar_t wlc_iovars[] = {
 	{"active_bidir_thresh", IOV_ACTIVE_BIDIR_THRESH,
 	(0), 0, IOVT_UINT32, 0
 	},
-	{"block_as_retry", IOV_BLOCK_AS_RETRY,
-	(0), 0, IOVT_UINT8, 0
+#ifdef WL11AX
+	{"block_he", IOV_BLOCK_HE,
+	(IOVF_BSS_SET_DOWN), 0, IOVT_UINT32, 0
 	},
+#endif /* WL11AX */
 	{NULL, 0, 0, 0, 0, 0}
 };
 
@@ -1323,6 +1326,8 @@ const uint8 wlc_prec2prio_map[] = {
 #define DOT11AUTH2WLAUTH(bsscfg) (bsscfg->openshared ? WL_AUTH_OPEN_SHARED :\
 	(bsscfg->auth == DOT11_OPEN_SYSTEM ? WL_AUTH_OPEN_SYSTEM : WL_AUTH_SHARED_KEY))
 #define WLAUTH2DOT11AUTH(val) (val == WL_AUTH_OPEN_SYSTEM ? DOT11_OPEN_SYSTEM : DOT11_SHARED_KEY)
+
+#define WLC_BLOCK_HE_LIST_SIZE                  64
 
 /* local prototypes */
 static void wlc_iov_get_wlc_ver(wl_wlc_version_t *ver);
@@ -1582,6 +1587,10 @@ static uint8 wlc_atm_cal_perc(wlc_info_t * wlc, uint8 perc_sum, uint8 num,
 	uint8 auto_num, uint8 perc);
 #endif /* WLATF && WLATF_PERC */
 
+static void wlc_disable_prop_vht_features(wlc_info_t *wlc);
+
+static void wlc_scb_flush_queues(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, struct scb *scb);
+
 #ifdef BCMDBG_CTRACE
 static int
 wlc_pkt_ctrace_dump(wlc_info_t *wlc, struct bcmstrbuf *b)
@@ -1721,6 +1730,32 @@ wlc_dump_bcmlog(wlc_info_t *wlc, struct bcmstrbuf *b)
 	return BCME_OK;
 }
 #endif // endif
+
+static void
+wlc_scb_flush_queues(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, struct scb *scb)
+{
+#ifdef PROP_TXSTATUS
+	/* close flowring for this scb */
+	if (PROP_TXSTATUS_ENAB(wlc->pub)) {
+		wlc_update_scb_bus_flctl(wlc, scb, WLFC_CTL_TYPE_MAC_CLOSE);
+	}
+#endif	/* PROP_TXSTATUS */
+
+	/* Deactivate ampdu */
+	if (SCB_AMPDU(scb)) {
+		scb_ampdu_tx_flush(wlc->ampdu_tx, scb);
+	}
+
+#ifdef WLNAR
+	wlc_nar_flush_scb_queues(wlc->nar_handle, scb);
+#endif /* WLNAR */
+
+	/* Clean up lowtxq, common q, and fifos */
+	wlc_tx_fifo_scb_flush(wlc, scb);
+
+	wlc_set_ps_ctrl(bsscfg);
+	scb->flags &= ~SCB_PENDING_PSPOLL;
+}
 
 bool
 wlc_rminprog(wlc_info_t *wlc)
@@ -2098,6 +2133,11 @@ BCMINITFN(wlc_reset)(wlc_info_t *wlc)
 	}
 
 	wlc_bmac_reset(wlc->hw);
+
+	if (STAMON_ENAB(wlc->pub)) {
+		/* Free RCMTA resource */
+		wlc_stamon_rcmta_slots_free(wlc->stamon_info);
+	}
 
 	/* keep phypll off by default and let ucode take control of it.
 	 * turn off phypll here that was turned on in wlc_reset.
@@ -3930,19 +3970,21 @@ wlc_scb_disassoc_cleanup(wlc_info_t *wlc, struct scb *scb)
 		wlc_txq_scb_remove_mfp_frames(wlc, scb);
 	}
 
+	bsscfg = SCB_BSSCFG(scb);
+
+	if (SCB_ASSOCIATED(scb)) {
+		/* Stop flowring and flush all queues */
+		wlc_scb_flush_queues(wlc, bsscfg, scb);
+	}
+
 	/* reset pairwise key on disassociate */
 	wlc_keymgmt_reset(wlc->keymgmt, NULL, scb);
 
-	bsscfg = SCB_BSSCFG(scb);
 	/* delete *all* group keys on disassociate in STA mode with wpa */
 	if (BSSCFG_STA(bsscfg) && (bsscfg->WPA_auth != WPA_AUTH_DISABLED) &&
 		(bsscfg->WPA_auth != WPA_AUTH_NONE)) {
 		wlc_keymgmt_reset(wlc->keymgmt, bsscfg, NULL);
 	}
-
-	wlc_set_ps_ctrl(bsscfg);
-
-	scb->flags &= ~SCB_PENDING_PSPOLL;
 
 	if (!SCB_LEGACY_WDS(scb)) {
 #ifdef WLAMPDU
@@ -4378,7 +4420,7 @@ wlc_dtimnoslp_set(wlc_bsscfg_t *cfg)
  * - single TSF hence multiple h/w IBSSs can't coexist
  */
 
-#define CLOSEDNET_ENAB(cfg) (HWPRB_ENAB(cfg) && (cfg)->closednet_nobcprbresp)
+#define CLOSEDNET_ENAB(cfg) (HWPRB_ENAB(cfg) && (cfg)->closednet)
 
 void
 wlc_macctrl_init(wlc_info_t *wlc, wlc_bsscfg_t *cfg)
@@ -4439,12 +4481,74 @@ wlc_macctrl_init(wlc_info_t *wlc, wlc_bsscfg_t *cfg)
 			WL_INFORM(("wl%d: BSS %s is configured as a Closed Network, "
 			           "enable MCTL bit in PSM\n", wlc->pub->unit,
 			           bcm_ether_ntoa(&cfg->BSSID, eabuf)));
-			val |= MCTL_CLOSED_NETWORK;
+
+			if (D11REV_GE(wlc->pub->corerev, 128)) {
+				wlc_mhf(wlc, MHF4, MHF4_CLOSED_NETWORK,
+					MHF4_CLOSED_NETWORK, WLC_BAND_ALL);
+			} else {
+				val |= MCTL_CLOSED_NETWORK;
+			}
 		}
 	}
 
 	wlc_mctrl(wlc, mask, val);
 } /* wlc_macctrl_init */
+
+/**
+ * wlc_tsf_startcfp
+ *	adjust h/w CFP counter to start beaconing, read TSF, determine next first TBTT and program
+ *	the necessary registers
+ * 'bcnint' is the TBTT interval in TU units
+ */
+static void
+wlc_tsf_startcfp(wlc_info_t *wlc, wlc_bsscfg_t *cfg, uint32 bcnint)
+{
+	osl_t *osh = wlc->osh;
+	uint cfpp = 0;
+	uint32 tbtt_offset;
+	uint32 tbtt_h, tbtt_l;
+	uint32 bcnint_us;
+
+	/* program the ATIM window */
+	if (!cfg->BSS) {
+		if (cfg->current_bss->atim_window != 0) {
+			/* note that CFP is present */
+			cfpp = CFPREP_CFPP;
+		}
+	}
+
+#ifdef WLMCNX
+	if (MCNX_ENAB(wlc->pub)) {
+		/* make sure the ucode is awake and takes the adjustment... */
+		wlc_mcnx_mac_suspend(wlc->mcnx);
+	}
+#endif // endif
+
+	/* Hold TBTTs */
+	wlc_mctrl(wlc, MCTL_TBTT_HOLD, MCTL_TBTT_HOLD);
+
+	wlc_read_tsf(wlc, &tbtt_l, &tbtt_h);
+	tbtt_offset = wlc_calc_tbtt_offset(bcnint, tbtt_h, tbtt_l);
+	bcnint_us = bcnint * DOT11_TU_TO_US;
+	wlc_uint64_sub(&tbtt_h, &tbtt_l, 0, tbtt_offset);
+	wlc_uint64_add(&tbtt_h, &tbtt_l, 0, bcnint_us);
+
+	/* write the beacon interval (to TSF) */
+	W_REG(osh, D11_CFPRep(wlc), (bcnint_us << CFPREP_CBI_SHIFT) | cfpp);
+
+	/* write the tbtt time */
+	W_REG(osh, D11_CFPStart(wlc), tbtt_l);
+
+	/* Release hold on TBTTs */
+	wlc_mctrl(wlc, MCTL_TBTT_HOLD, 0);
+
+#ifdef WLMCNX
+	if (MCNX_ENAB(wlc->pub)) {
+		/* restore ucode running state */
+		wlc_mcnx_mac_resume(wlc->mcnx);
+	}
+#endif // endif
+}
 
 /**
  * adjust h/w TSF counters as well SHM TSF offsets if applicable.
@@ -4529,7 +4633,7 @@ wlc_tsf_adj(wlc_info_t *wlc, wlc_bsscfg_t *cfg, uint32 tgt_h, uint32 tgt_l,
 void
 wlc_BSSinit(wlc_info_t *wlc, wlc_bss_info_t *bi, wlc_bsscfg_t *cfg, int type)
 {
-	uint bcnint, bcnint_us;
+	uint32 bcnint, bcnint_us;
 	const bool restricted_ap = BSSCFG_AP(cfg) && (wlc->stas_associated > 0);
 	osl_t *osh = wlc->osh;
 	struct scb *scb;
@@ -4757,35 +4861,40 @@ wlc_BSSinit(wlc_info_t *wlc, wlc_bss_info_t *bi, wlc_bsscfg_t *cfg, int type)
 #endif /* STA */
 
 	/* First AP starting a BSS, or STA starting an IBSS */
-	if (type == WLC_BSS_START && wlc->aps_associated == 0) {
+	if (type == WLC_BSS_START) {
+		/* Using upstream beacon period will make APSTA 11H easier */
+		bcnint = current_bss->beacon_period;
+		if (wlc->aps_associated == 0) {
 #ifdef WLMCHAN
-		/* If already have stations associated, need to move STA to per bss
-		 * tbtt and reset tsf for AP to make AP tbtt land in the middle of
-		 * STA's bcn period
-		 */
-		if (MCHAN_ENAB(wlc->pub) &&
-		    BSSCFG_AP(cfg) && STA_ACTIVE(wlc) &&
-		    wlc_mchan_ap_tbtt_setup(wlc, cfg)) {
-			; /* empty */
-		} else
-#endif // endif
-		/* AP or IBSS with h/w beacon enabled uses h/w TSF */
-		if (BSSCFG_AP(cfg) || IBSS_HW_ENAB(cfg)) {
-			uint32 old_l, old_h;
-
-			/* Program the next TBTT and adjust TSF timer.
-			 * If we are not starting the BSS, then the TSF timer adjust is done
-			 * at beacon reception time.
+			/* If already have stations associated, need to move STA to per bss
+			 * tbtt and reset tsf for AP to make AP tbtt land in the middle of
+			 * STA's bcn period
 			 */
-			/* Using upstream beacon period will make APSTA 11H easier */
-			bcnint = current_bss->beacon_period;
-			bcnint_us = ((uint32)bcnint << 10);
+			if (MCHAN_ENAB(wlc->pub) &&
+			    BSSCFG_AP(cfg) && STA_ACTIVE(wlc) &&
+			    wlc_mchan_ap_tbtt_setup(wlc, cfg)) {
+				; /* empty */
+			} else
+#endif // endif
+			/* AP or IBSS with h/w beacon enabled uses h/w TSF */
+			if (BSSCFG_AP(cfg) || IBSS_HW_ENAB(cfg)) {
+				uint32 old_l, old_h;
 
-			WL_APSTA_TSF(("wl%d: wlc_BSSinit(): starting TSF, bcnint %d\n",
-			              wlc->pub->unit, bcnint));
+				/* Program the next TBTT and adjust TSF timer.
+				 * If we are not starting the BSS, then the TSF timer adjust is done
+				 * at beacon reception time.
+				 */
 
-			wlc_read_tsf(wlc, &old_l, &old_h);
-			wlc_tsf_adj(wlc, cfg, 0, 0, old_h, old_l, bcnint_us, bcnint_us, FALSE);
+				WL_APSTA_TSF(("wl%d: wlc_BSSinit(): starting TSF, bcnint %d\n",
+					wlc->pub->unit, bcnint));
+
+				wlc_read_tsf(wlc, &old_l, &old_h);
+				bcnint_us = bcnint * DOT11_TU_TO_US;
+				wlc_tsf_adj(wlc, cfg, 0, 0, old_h, old_l, bcnint_us, bcnint_us,
+					FALSE);
+			}
+		} else {
+			wlc_tsf_startcfp(wlc, cfg, bcnint);
 		}
 	}
 
@@ -5677,9 +5786,6 @@ BCMATTACHFN(wlc_attach_module)(wlc_info_t *wlc)
 #ifdef WLQUIET
 	MODULE_ATTACH(quiet, wlc_quiet_attach, 65);
 #endif // endif
-#if defined WLDFS && !defined(WLDFS_DISABLED)
-	MODULE_ATTACH(dfs, wlc_dfs_attach, 66);
-#endif // endif
 #endif /* WL11H */
 
 #ifdef WLTPC
@@ -6104,6 +6210,9 @@ BCMATTACHFN(wlc_attach_module)(wlc_info_t *wlc)
 #endif /* WL_MUSCHEDULER && !WL_MUSCHEDULER_DISABLED */
 #endif /* !ATE_BUILD */
 	MODULE_ATTACH(fifo, wlc_fifo_attach, 211);
+#if defined WLDFS && !defined(WLDFS_DISABLED)
+	MODULE_ATTACH(dfs, wlc_dfs_attach, 214);
+#endif // endif
 	return BCME_OK;
 
 fail:
@@ -6388,6 +6497,17 @@ wlc_dump_ratesets(void *ctx, struct bcmstrbuf *b)
 	return BCME_OK;
 }
 #endif // endif
+
+/* Function to disable proprietary VHT features */
+static void
+wlc_disable_prop_vht_features(wlc_info_t *wlc)
+{
+	WLC_VHT_FEATURES_CLR(wlc->pub, WL_VHT_FEATURES_2G);
+	WLC_VHT_FEATURES_CLR(wlc->pub, WL_VHT_FEATURES_RATES_ALL);
+	WLC_VHT_FEATURES_CLR(wlc->pub, WL_VHT_FEATURES_1024QAM);
+	WLC_VHT_FEATURES_MCS_SET(wlc->pub, VHT_CAP_MCS_MAP_0_9);
+	WLC_VHT_FEATURES_PROP_MCS_SET(wlc->pub, VHT_CAP_MCS_MAP_NONE);
+}
 
 /**
  * The common driver entry routine. Error codes should be unique
@@ -6858,7 +6978,23 @@ BCMATTACHFN(wlc_attach)(void *wl, uint16 vendor, uint16 device, uint unit, uint 
 					WLC_VHT_FEATURES_SET(pub, WL_VHT_FEATURES_1024QAM);
 					WLC_VHT_FEATURES_PROP_MCS_SET(pub, VHT_PROP_MCS_MAP_10_11);
 				}
-#endif // endif
+
+				/* For 6878, don't enable any proprietary VHT features */
+				/* For EAP we just want to have the vht_features IOVAR set
+				 * to 0 by default while making sure the _capabilities_
+				 * are still properly set to allow for vht_features IOVAR
+				 * settings that can then enable proprietary VHT operation.
+				 */
+				if (D11REV_IS(wlc->pub->corerev, 61) ||  /* 6878 */
+#if defined(WL_EAP_VHT_PROPRIETARY_RATES_DIS)
+					TRUE)
+#else /* !WL_EAP_VHT_PROPRIETARY_RATES_DIS */
+					FALSE)
+#endif /* WL_EAP_VHT_PROPRIETARY_RATES_DIS */
+				{
+					wlc_disable_prop_vht_features(wlc);
+				}
+#endif /* WL11AC */
 				if (wlc->pub->_n_enab == OFF) {
 					/* If _n_enab is off, _vht_enab should also be off */
 					wlc->pub->_vht_enab = 0;
@@ -8966,10 +9102,9 @@ wlc_watchdog(void *arg)
 					 */
 					;
 				} else {
-					if (!wlc->cfg->block_as_retry)
-						wlc_try_join_start(wlc->cfg,
-							wlc_bsscfg_scan_params(wlc->cfg),
-							wlc_bsscfg_assoc_params(wlc->cfg));
+					wlc_try_join_start(wlc->cfg,
+						wlc_bsscfg_scan_params(wlc->cfg),
+						wlc_bsscfg_assoc_params(wlc->cfg));
 				}
 			}
 		} else {
@@ -9377,11 +9512,6 @@ BCMINITFN(wlc_up)(wlc_info_t *wlc)
 		wlc_info_time_dbg = wlc;
 	}
 #endif /* BCMDBG && !BCMDBG_EXCLUDE_HW_TIMESTAMP */
-
-	if ((wlc->cfg->block_as_retry == BLOCK_AS_RESET) && BSSCFG_STA(wlc->cfg) &&
-		(WET_ENAB(wlc) || WET_DONGLE_ENAB(wlc))) {
-		wlc->cfg->block_as_retry = 0;
-	}
 
 	wl_init(wlc->wl); /* Calls wl_reset and wlc_init. Loads ucode + takes it out of suspend. */
 	wlc->pub->up = TRUE;
@@ -11276,7 +11406,7 @@ wlc_doioctl(void *ctx, uint cmd, void *arg, uint len, struct wlc_if *wlcif)
 #endif // endif
 
 	case WLC_GET_CLOSED:
-		*pval = (bsscfg->closednet_nobcnssid & bsscfg->closednet_nobcprbresp);
+		*pval = bsscfg->closednet;
 		break;
 
 	case WLC_SET_CLOSED:
@@ -13551,14 +13681,14 @@ wlc_doiovar(void *hdl, uint32 actionid,
 #endif /* BCMDBG */
 #endif /* STA */
 	case IOV_GVAL(IOV_NOBCNSSID):
-		*ret_int_ptr = bsscfg->closednet_nobcnssid;
+		*ret_int_ptr = bsscfg->nobcnssid;
 		break;
 
 	case IOV_SVAL(IOV_NOBCNSSID):
 		/* "nobcnssid" control only one functionality: hide ssid in bcns.
 		 * No change in response to broadcast probe requests
 		 */
-		bsscfg->closednet_nobcnssid = bool_val;
+		bsscfg->nobcnssid = bool_val;
 
 		if (BSSCFG_AP(bsscfg) && bsscfg->up) {
 			wlc_bss_update_beacon(wlc, bsscfg);
@@ -14791,13 +14921,64 @@ wlc_doiovar(void *hdl, uint32 actionid,
 		wlc->active_tcp = FALSE;
 		break;
 
-	case IOV_GVAL(IOV_BLOCK_AS_RETRY):
-		*ret_int_ptr = bsscfg->block_as_retry;
-		break;
-	case IOV_SVAL(IOV_BLOCK_AS_RETRY):
-		bsscfg->block_as_retry = (uint8)int_val;
+#ifdef WL11AX
+	case IOV_GVAL(IOV_BLOCK_HE):
+		if (BSSCFG_IS_BLOCK_HE_MAC(bsscfg)) {
+			*ret_int_ptr = 2;
+		} else if (BSSCFG_IS_BLOCK_HE(bsscfg)) {
+			*ret_int_ptr = 1;
+		} else {
+			*ret_int_ptr = 0;
+		}
 		break;
 
+	case IOV_SVAL(IOV_BLOCK_HE):
+		if (int_val > 2) {
+			err = BCME_BADARG;
+			break;
+		}
+		if (BSSCFG_IS_BLOCK_HE_MAC(bsscfg) && (int_val == 2)) {
+			break;
+		} else if (BSSCFG_IS_BLOCK_HE(bsscfg) && (int_val == 1)) {
+			break;
+		}
+		if (int_val == 1) {
+			if (BSSCFG_IS_BLOCK_HE_MAC(bsscfg)) {
+				BSSCFG_CLEAR_BLOCK_HE_MAC(bsscfg);
+				wlc_bsscfg_mfree_block_he(wlc, bsscfg);
+			}
+			BSSCFG_SET_BLOCK_HE(bsscfg);
+		} else if (int_val == 2) {
+			BSSCFG_CLEAR_BLOCK_HE(bsscfg);
+			BSSCFG_SET_BLOCK_HE_MAC(bsscfg);
+			bsscfg->block_he_list =  MALLOC(wlc->osh, sizeof(wlc_block_he_mac_t));
+			if (bsscfg->block_he_list == NULL) {
+				WL_ERROR(("wl%d.%d: %s: out of mem, malloced %d bytes\n",
+						wlc->pub->unit, WLC_BSSCFG_IDX(bsscfg),
+						__FUNCTION__, MALLOCED(wlc->osh)));
+			}
+			bsscfg->block_he_list->etheraddr
+				= MALLOC(wlc->osh, sizeof(struct ether_addr)
+						* WLC_BLOCK_HE_LIST_SIZE);
+			if (bsscfg->block_he_list->etheraddr == NULL) {
+				WL_ERROR(("wl%d.%d: %s: out of mem, malloced %d bytes\n",
+						wlc->pub->unit, WLC_BSSCFG_IDX(bsscfg),
+						__FUNCTION__, MALLOCED(wlc->osh)));
+			}
+
+			bsscfg->block_he_list->block_he_list_size = WLC_BLOCK_HE_LIST_SIZE;
+			bsscfg->block_he_list->cur_size = 0;
+			bsscfg->block_he_list->index = 0;
+		} else	 {
+			BSSCFG_CLEAR_BLOCK_HE(bsscfg);
+			if (BSSCFG_IS_BLOCK_HE_MAC(bsscfg)) {
+				BSSCFG_CLEAR_BLOCK_HE_MAC(bsscfg);
+				wlc_bsscfg_mfree_block_he(wlc, bsscfg);
+			}
+
+		}
+		break;
+#endif /* WL11AX */
 	default:
 		err = BCME_UNSUPPORTED;
 		break;
@@ -25557,6 +25738,12 @@ wlc_scb_set_auth(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, struct scb *scb, bool en
 					wlc_scb_clearstatebit(wlc, scb, AUTHENTICATED | ASSOCIATED
 							| AUTHORIZED);
 				} else {
+					/* Close interface/flow-ring for specified SCB before
+					 * flushing all the the packets
+					 * TODO:
+					 * rb180768 has some additional code to handle TWT case
+					 */
+					wlc_scb_flush_queues(wlc, bsscfg, scb);
 					wlc_send_deauth(wlc, bsscfg, scb, &scb->ea, &bsscfg->BSSID,
 							&bsscfg->cur_etheraddr, (uint16)rc);
 				}

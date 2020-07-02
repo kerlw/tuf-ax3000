@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_stamon.c 774132 2019-04-11 08:56:34Z $
+ * $Id: wlc_stamon.c 779055 2019-09-18 05:08:10Z $
  */
 
 /**
@@ -82,6 +82,7 @@
 #include <wlc_macfltr.h>
 #include <wlc_keymgmt.h>
 #include <wlc_assoc.h>
+#include <wlc_scb.h>
 
 /* Maximum STAs to monitor */
 #define DFLT_STA_MONITOR_ENRTY 4
@@ -173,7 +174,6 @@ static void wlc_stamon_sta_ucode_sniff_enab(wlc_stamon_info_t *ctxt,
 static int wlc_stamon_sta_get(wlc_stamon_info_t *stamon_ctxt,
 	struct maclist *ml);
 static int wlc_stamon_rcmta_slots_reserve(wlc_stamon_info_t *ctxt);
-static int wlc_stamon_rcmta_slots_free(wlc_stamon_info_t *ctxt);
 static void wlc_stamon_timer_add(wlc_stamon_info_t *ctxt);
 static void wlc_stamon_timer_delete(wlc_stamon_info_t *ctxt);
 static void wlc_stamon_disable_timer(void *arg);
@@ -379,7 +379,7 @@ wlc_stamon_sta_sniff_enab(wlc_stamon_info_t *ctxt,
 
 	/* Searching for corresponding entry in the STAs list. */
 	cfg_idx = wlc_stamon_sta_find(ctxt, ea);
-	if (cfg_idx < 0) {
+	if (cfg_idx < 0 || ctxt->stacfg[cfg_idx].flags & STA_DELETE_FROM_STAMON) {
 #if defined(BCMDBG) || defined(WLMSG_ERROR)
 		WL_ERROR(("wl%d: %s: STA %s not found.\n",
 			WLCUNIT(ctxt), __FUNCTION__,
@@ -427,6 +427,8 @@ wlc_stamon_sta_config(wlc_stamon_info_t *ctxt, wlc_stamon_sta_config_t* cfg)
 {
 	int8 cfg_idx;
 	wlc_info_t *wlc;
+	struct scb *scb;
+	wlc_bsscfg_t *dummy_bsscfg;
 
 	if (ctxt == NULL)
 		return BCME_UNSUPPORTED;
@@ -459,8 +461,16 @@ wlc_stamon_sta_config(wlc_stamon_info_t *ctxt, wlc_stamon_sta_config_t* cfg)
 
 			/* Start sniffing the frames of STA's in list */
 			for (cfg_idx = 0; cfg_idx < ((int8)STACFG_MAX_ENTRY(ctxt)); cfg_idx++) {
+				if (ctxt->stacfg[cfg_idx].flags & STA_DELETE_FROM_STAMON) {
+					continue;
+				}
 				if (bcmp(&ether_null, &ctxt->stacfg[cfg_idx].ea,
 					ETHER_ADDR_LEN) == 0) {
+					continue;
+				}
+				scb = wlc_scbapfind(wlc, &ctxt->stacfg[cfg_idx].ea, &dummy_bsscfg);
+				/* Skip sniffing frames for the STA if it is already associated */
+				if (scb && SCB_ASSOCIATED(scb)) {
 					continue;
 				}
 				wlc_stamon_sta_ucode_sniff_enab(ctxt, cfg_idx, TRUE);
@@ -538,8 +548,11 @@ wlc_stamon_sta_config(wlc_stamon_info_t *ctxt, wlc_stamon_sta_config_t* cfg)
 		}
 
 		if (STAMON_ENAB(WLCPUB(ctxt))) {
-			/* Start sniffing the frames */
-			wlc_stamon_sta_ucode_sniff_enab(ctxt, cfg_idx, TRUE);
+			scb = wlc_scbapfind(wlc, &ctxt->stacfg[cfg_idx].ea, &dummy_bsscfg);
+			/* Start sniffing the frames for the STA only if it is not associated */
+			if (!scb || !SCB_ASSOCIATED(scb)) {
+				wlc_stamon_sta_ucode_sniff_enab(ctxt, cfg_idx, TRUE);
+			}
 		}
 
 		/* start off channel timer, only if the added STA is not in home channel */
@@ -945,7 +958,7 @@ wlc_stamon_rcmta_slots_reserve(wlc_stamon_info_t *ctxt)
 /* Free dummy key slots in wlc->wsec_keys
  * allocated per STA config.
  */
-static int
+int
 wlc_stamon_rcmta_slots_free(wlc_stamon_info_t *ctxt)
 {
 	uint8 cfg_max_idx = (uint8)STACFG_MAX_ENTRY(ctxt);
@@ -1203,9 +1216,7 @@ wlc_offchan_timer_delete(wlc_stamon_info_t *ctxt)
 	/* Make sure AP is back in home channel when deleting timer */
 	if (ctxt->chspec_return) {
 		wlc_bmac_suspend_mac_and_wait(wlc->hw);
-		wlc_bmac_set_chanspec(wlc->hw, ctxt->chspec_return,
-			(wlc_quiet_chanspec(wlc->cmi, ctxt->chspec_return) != 0),
-			NULL, NULL, NULL);
+		wlc_channel_set_chanspec(wlc->cmi, ctxt->chspec_return);
 		wlc_bmac_enable_mac(wlc->hw);
 		ctxt->chspec_return = 0;
 	}
@@ -1221,9 +1232,7 @@ wlc_stamon_offchan_timer(void *arg)
 	/* chspec_return is set when AP goes off channel. Go back to home channel if it is set */
 	if (ctxt->chspec_return) {
 		wlc_bmac_suspend_mac_and_wait(wlc->hw);
-		wlc_bmac_set_chanspec(wlc->hw, ctxt->chspec_return,
-			(wlc_quiet_chanspec(wlc->cmi, ctxt->chspec_return) != 0),
-			NULL, NULL, NULL);
+		wlc_channel_set_chanspec(wlc->cmi, ctxt->chspec_return);
 		wlc_bmac_enable_mac(wlc->hw);
 
 		/* Stay in home channel for at leaset ONCHAN_TIME, before next off channel */
@@ -1256,8 +1265,7 @@ wlc_stamon_offchan_timer(void *arg)
 			ctxt->chspec_return = WLC_BAND_PI_RADIO_CHANSPEC;
 
 			wlc_bmac_suspend_mac_and_wait(wlc->hw);
-			wlc_bmac_set_chanspec(wlc->hw, ctxt->stacfg[i].chanspec, 1,
-				NULL, NULL, NULL);
+			wlc_channel_set_chanspec(wlc->cmi, ctxt->stacfg[i].chanspec);
 			wlc_bmac_enable_mac(wlc->hw);
 
 			/* Start off channel timer */

@@ -199,7 +199,7 @@ static bool wlc_ratelinkmem_init_indices(wlc_info_t *wlc, scb_t *scb,
 	scb_ratelinkmem_info_t *scbh, int index);
 static uint16 wlc_ratelinkmem_get_scb_amt_index(wlc_info_t *wlc, scb_t *scb);
 static int wlc_ratelinkmem_update_link_entry_onsize(wlc_info_t *wlc, scb_t *scb,
-	uint16 size);
+	uint16 size, bool clr_txbf_stats);
 static void wlc_ratelinkmem_delete_link_entry(wlc_info_t *wlc, scb_t *scb);
 static int BCMFASTPATH wlc_ratelinkmem_upd_rmem(wlc_ratelinkmem_info_t *rlmi,
 	uint8 *buf, uint sz, uint16 rmem_idx);
@@ -745,7 +745,7 @@ wlc_ratelinkmem_init_indices(wlc_info_t *wlc, scb_t *scb, scb_ratelinkmem_info_t
 		amt_index = wlc_keymgmt_get_scb_amt_idx(wlc->keymgmt, scb);
 	}
 	if (amt_index < 0) {
-		WL_ERROR(("wl%d: %s: Invalid AMT index for SCB: %d, %p "MACF" \n",
+		WL_INFORM(("wl%d: %s: Invalid AMT index for SCB: %d, %p "MACF" \n",
 			wlc->pub->unit, __FUNCTION__, amt_index, scb, ETHER_TO_MACF(scb->ea)));
 		return FALSE;
 	}
@@ -961,7 +961,7 @@ wlc_ratelinkmem_get_scb_amt_index(wlc_info_t *wlc, scb_t *scb)
 	/* use AMT idx; keymgmt currently owns amt A2/TA amt allocations */
 	amt_index = wlc_keymgmt_get_scb_amt_idx(wlc->keymgmt, scb);
 	if (amt_index < 0) {
-		WL_ERROR(("wl%d: %s: Invalid AMT index for SCB: %d, %p\n",
+		WL_INFORM(("wl%d: %s: Invalid AMT index for SCB: %d, %p\n",
 			wlc->pub->unit, __FUNCTION__, amt_index, scb));
 		return D11_RATE_LINK_MEM_IDX_INVALID;
 	}
@@ -1533,7 +1533,8 @@ wlc_ratelinkmem_delete_link_entry(wlc_info_t *wlc, scb_t *scb)
 	BCM_REFERENCE(scbh);
 
 	/* Notify mac that the link is getting invalidated */
-	if (wlc_macreq_upd_lmem(wlc, scbh->rate_link_index, FALSE) != BCME_OK) {
+	if (wlc_macreq_upd_lmem(wlc, scbh->rate_link_index, FALSE /* true = update */,
+		TRUE /* clr_txbf_stats=1 */) != BCME_OK) {
 		WL_ERROR(("wl%d: %s MAC command failed to delete linkmem"
 		" for STA "MACF" index %d\n", wlc->pub->unit, __FUNCTION__,
 		ETHER_TO_MACF(scb->ea), scbh->rate_link_index));
@@ -1552,20 +1553,21 @@ int
 wlc_ratelinkmem_update_link_entry(wlc_info_t *wlc, scb_t *scb)
 {
 	return wlc_ratelinkmem_update_link_entry_onsize(wlc, scb,
-			WLC_RLM_LINK_ENTRY_SIZE_SW);
+			WLC_RLM_LINK_ENTRY_SIZE_SW, FALSE /* clr_txbf_stats=0 in mreq */);
 }
 
 /** trigger link entry update for this SCB, including ucode internal data, returns error code */
 int
-wlc_ratelinkmem_update_link_entry_with_internal_data(wlc_info_t *wlc, scb_t *scb)
+wlc_ratelinkmem_upd_lmem_int(wlc_info_t *wlc, scb_t *scb, bool clr_txbf_stats)
 {
 	return wlc_ratelinkmem_update_link_entry_onsize(wlc, scb,
-			WLC_RLM_LINK_ENTRY_SIZE_TXBF);
+			WLC_RLM_LINK_ENTRY_SIZE_TXBF, clr_txbf_stats);
 }
 
 /** trigger an update of the link entry of a certain size for this SCB, return error code */
 static int
-wlc_ratelinkmem_update_link_entry_onsize(wlc_info_t *wlc, scb_t *scb, uint16 size)
+wlc_ratelinkmem_update_link_entry_onsize(wlc_info_t *wlc, scb_t *scb, uint16 size,
+	bool clr_txbf_stats)
 {
 	wlc_ratelinkmem_info_t *rlmi = wlc->rlmi;
 	scb_ratelinkmem_info_t *scbh;
@@ -1631,11 +1633,18 @@ wlc_ratelinkmem_update_link_entry_onsize(wlc_info_t *wlc, scb_t *scb, uint16 siz
 	/* notify PSMx that update linkmem is pending */
 	wlc_mctrlx(wlc, MCTLX_UPDPEND, MCTLX_UPDPEND);
 
+	if (scbh->link_state == LINK_ENTRY_STATE_UNINITED) {
+		/* overrule size request, always initialize full link entry */
+		size = WLC_RLM_LINK_ENTRY_SIZE_TXBF;
+		clr_txbf_stats = TRUE;
+	}
+
 	/* Notify mac that the link is getting initialized */
-	if (wlc_macreq_upd_lmem(wlc, scbh->rate_link_index, TRUE /* delete? */) != BCME_OK) {
+	if (wlc_macreq_upd_lmem(wlc, scbh->rate_link_index, TRUE /* update */,
+		clr_txbf_stats) != BCME_OK) {
 		WL_ERROR(("wl%d: %s mac command failed to update linkmem"
-		" for STA "MACF" index %d\n", wlc->pub->unit, __FUNCTION__,
-		ETHER_TO_MACF(scb->ea), scbh->rate_link_index));
+		" for STA "MACF" index %d %d\n", wlc->pub->unit, __FUNCTION__,
+		ETHER_TO_MACF(scb->ea), scbh->rate_link_index, clr_txbf_stats));
 	}
 
 	/* fill link_entry contents */
@@ -1643,10 +1652,6 @@ wlc_ratelinkmem_update_link_entry_onsize(wlc_info_t *wlc, scb_t *scb, uint16 siz
 
 	/* mark it as valid */
 	scbh->link_entry.BssColor_valid |= (1 <<D11_REV128_LMEMVLD_NBIT);
-	if (scbh->link_state == LINK_ENTRY_STATE_UNINITED) {
-		/* overrule size request, always initialize full link entry */
-		size = WLC_RLM_LINK_ENTRY_SIZE_TXBF;
-	}
 
 	/* XXX: ucode internally uses the 4 bytes from offset 44 in linkmem,
 	 * but unfortunately DMA write is 8B aligned so that driver overwrites
@@ -1853,12 +1858,12 @@ wlc_ratelinkmem_scb_amt_release(wlc_info_t *wlc, scb_t *scb, int index)
 /** update all link entries, or all link entries for a certain BSSCFG */
 void
 wlc_ratelinkmem_update_link_entry_all(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, bool ampdu_only,
-	bool incl_ucodedata)
+	bool clr_txbf_stats)
 {
 	struct scb *scb;
 	struct scb_iter scbiter;
 	int idx;
-	uint16 size = incl_ucodedata ? WLC_RLM_LINK_ENTRY_SIZE_TXBF : WLC_RLM_LINK_ENTRY_SIZE_SW;
+	uint16 size = WLC_RLM_LINK_ENTRY_SIZE_SW;
 
 	ASSERT(RATELINKMEM_ENAB(wlc->pub));
 
@@ -1871,16 +1876,16 @@ wlc_ratelinkmem_update_link_entry_all(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, boo
 	FOREACHSCB(wlc->scbstate, &scbiter, scb) {
 		if (((bsscfg == NULL) || (SCB_BSSCFG(scb) == bsscfg)) &&
 			(!ampdu_only || SCB_AMPDU(scb))) {
-			wlc_ratelinkmem_update_link_entry_onsize(wlc, scb, size);
+			wlc_ratelinkmem_update_link_entry_onsize(wlc, scb, size, clr_txbf_stats);
 		}
 	}
 	if (bsscfg) {
 		wlc_ratelinkmem_update_link_entry_onsize(wlc,
-			WLC_RLM_BSSCFG_LINK_SCB(wlc, bsscfg), size);
+			WLC_RLM_BSSCFG_LINK_SCB(wlc, bsscfg), size, clr_txbf_stats);
 	} else {
 		FOREACH_BSS(wlc, idx, bsscfg) {
 			wlc_ratelinkmem_update_link_entry_onsize(wlc,
-				WLC_RLM_BSSCFG_LINK_SCB(wlc, bsscfg), size);
+				WLC_RLM_BSSCFG_LINK_SCB(wlc, bsscfg), size, clr_txbf_stats);
 		}
 	}
 	wlc_enable_mac(wlc);

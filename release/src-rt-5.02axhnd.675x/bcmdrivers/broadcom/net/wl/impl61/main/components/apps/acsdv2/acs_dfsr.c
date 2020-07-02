@@ -158,9 +158,9 @@ struct dfsr_context {
 
 static dfsr_window_params_t default_params[W_COUNT] = {
 	{ seconds:5*60, threshold:3, interval:1 },	/* Immed: > 3 switches in last 5 minutes */
-	{ seconds:7*60*60*24, threshold:5, interval:1 }, /* Defer: > 5 switches in last 7 days */
-	{ seconds:30, threshold:10*1024, interval:1 },	/* ch idle if< 100kB of RX/TX in last 30s */
-	{ seconds:360, threshold:36000, interval:30 }	/* idle interval, idle frames thld,
+	{ seconds:7*60*60*24, threshold:20, interval:1 }, /* Defer: > 20 switches in last 7 days */
+	{ seconds:30, threshold:0, interval:1 },	/* ch idle if< 100kB of RX/TX in last 30s */
+	{ seconds:3600, threshold:36000, interval:30 }	/* idle interval, idle frames thld,
 							 * slot update interval
 							 */
 };
@@ -239,9 +239,9 @@ acs_dfsr_load_config(dfsr_context_t *ctx, char *prefix)
 #define KEY_SIZE 32
 	unsigned i;
 
-	/* Load window thresholds only for first three windows, eg "wl1_acs_dfsr_immediate=60 3" */
+	/* Load window thresholds only for first window, eg "wl1_acs_dfsr_immediate=60 3" */
 
-	for (i = 0; i < (W_COUNT-1); ++i) {
+	for (i = 0; i < (W_COUNT-3); ++i) {
 		char key[KEY_SIZE];
 		char *str;
 		acs_snprintf(key, KEY_SIZE, "%sacs_dfsr_%s", prefix, dfsr_window_name(i));

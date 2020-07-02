@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_json_utility.c 771813 2019-02-08 06:08:00Z $
+ * $Id: wbd_json_utility.c 779283 2019-09-24 08:30:26Z $
  */
 
 #include "wbd_json_utility.h"
@@ -326,6 +326,8 @@ wbd_json_create_cli_cmd(void *data)
 	json_object_object_add(object_main, JSON_TAG_MSGLEVEL,
 		json_object_new_int(cmdcli->msglevel));
 
+	json_object_object_add(object_main, JSON_TAG_DISABLE, json_object_new_int(cmdcli->disable));
+
 	WBD_EXIT();
 	return wbd_json_get_jsonstring_fm_object(&object_main, TRUE);
 }
@@ -571,6 +573,7 @@ wbd_json_parse_cli_cmd(void *data)
 	clidata->chanspec = wbd_json_get_intval_fm_tag(object_main, JSON_TAG_CHANSPEC);
 	clidata->flags |= wbd_json_get_intval_fm_tag(object_main, JSON_TAG_FLAGS);
 	clidata->msglevel = wbd_json_get_intval_fm_tag(object_main, JSON_TAG_MSGLEVEL);
+	clidata->disable = wbd_json_get_intval_fm_tag(object_main, JSON_TAG_DISABLE);
 end:
 	json_object_put(object_main);
 

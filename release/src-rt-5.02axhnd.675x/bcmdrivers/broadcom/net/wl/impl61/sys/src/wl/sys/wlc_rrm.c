@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_rrm.c 777286 2019-07-25 19:43:30Z $
+ * $Id: wlc_rrm.c 779762 2019-10-07 07:12:37Z $
  */
 
 /**
@@ -2972,7 +2972,7 @@ wlc_rrm_begin_scan(wlc_rrm_info_t *rrm_info)
 			1, &bcn_req->ssid,
 			bcn_req->scan_type, 1, bcn_req->duration, bcn_req->duration,
 			-1, bcn_req->chanspec_list, bcn_req->channel_num,
-			TRUE, wlc_rrm_bcnreq_scancb, rrm_info);
+			TRUE, wlc_rrm_bcnreq_scancb, wlc);
 
 		if (ret != BCME_OK)
 			return;
@@ -3043,8 +3043,8 @@ wlc_rrm_add_empty_bcnrep(const wlc_rrm_info_t *rrm_info, uint8 *bufptr, uint buf
 static void
 wlc_rrm_bcnreq_scancb(void *arg, int status, wlc_bsscfg_t *cfg)
 {
-	wlc_rrm_info_t *rrm_info = arg;
-	wlc_info_t *wlc = rrm_info->wlc;
+	wlc_info_t *wlc = (wlc_info_t*)arg;
+	wlc_rrm_info_t *rrm_info = (wlc_rrm_info_t *)wlc->rrm_info;
 	rrm_bcnreq_t *bcn_req;
 	wlc_rrm_req_state_t *rrm_state = rrm_info->rrm_state;
 
@@ -4865,8 +4865,8 @@ wlc_rrm_sta_assoc_state_upd(void *ctx, bss_assoc_state_data_t *assoc_state_info)
 static void
 wlc_rrm_nbr_scancb(void *arg, int status, wlc_bsscfg_t *cfg)
 {
-	wlc_rrm_info_t *rrm_info = arg;
-	wlc_info_t *wlc = rrm_info->wlc;
+	wlc_info_t *wlc = (wlc_info_t*)arg;
+	wlc_rrm_info_t *rrm_info = (wlc_rrm_info_t *)wlc->rrm_info;
 	wlc_bss_list_t *bsslist;
 	int i = 0;
 	wlc_bss_info_t *bi;
@@ -5136,7 +5136,7 @@ nrreq_next_tlv:
 	if (rrm_cfg->nbr_scan) {
 		bcmerr = wlc_scan_request(wlc, DOT11_BSSTYPE_ANY, &ether_bcast, 1, &ssid,
 				DOT11_SCANTYPE_ACTIVE, -1, 0, -1, -1, NULL, 0, TRUE,
-				wlc_rrm_nbr_scancb, rrm_info);
+				wlc_rrm_nbr_scancb, wlc);
 		if (bcmerr != BCME_OK) {
 			WL_RRM(("%s: wlc_scan_request returned %d \n", __FUNCTION__, bcmerr));
 		}

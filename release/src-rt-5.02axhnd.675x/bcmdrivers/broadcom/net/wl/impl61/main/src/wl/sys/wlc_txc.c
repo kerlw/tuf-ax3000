@@ -694,6 +694,9 @@ wlc_txc_scb_dump(void *ctx, struct scb *scb, struct bcmstrbuf *b)
 	wlc_txc_t *txc = (wlc_txc_t *)ctx;
 	scb_txc_info_t *sti;
 
+	if (!WL_ERROR_ON())
+		return;
+
 	ASSERT(scb != NULL);
 
 	sti = SCB_TXC_INFO(txc, scb);

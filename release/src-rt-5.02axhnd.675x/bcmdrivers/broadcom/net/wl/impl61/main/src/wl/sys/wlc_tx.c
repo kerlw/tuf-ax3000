@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_tx.c 777947 2019-08-15 23:53:39Z $
+ * $Id: wlc_tx.c 779341 2019-09-25 16:09:02Z $
  *
  */
 
@@ -2367,14 +2367,20 @@ wlc_txq_complete(txq_info_t *txqi, txq_t *txq, uint fifo_idx, int complete_pkts)
 static int
 wlc_txq_dump(txq_info_t *txqi, txq_t *txq, struct bcmstrbuf *b)
 {
-	uint i;
+	uint fifo_idx;
 	txq_swq_t *txq_swq;			/**< a non-priority queue backing one d11 FIFO */
 	wlc_info_t *wlc = txqi->wlc;
 	const char *name;
 
+	ASSERT(txq != NULL);
+	ASSERT(txq->swq_table != NULL);
+	if (txq == NULL || txq->swq_table == NULL) {
+		return BCME_OK;
+	}
+
 	if (wlc->active_queue->low_txq == txq) {
 		name = "Active Q";
-	} else if (wlc->primary_queue->low_txq == txq) {
+	} else if (wlc->primary_queue != NULL && wlc->primary_queue->low_txq == txq) {
 		name = "Primary Q";
 	} else if (wlc->excursion_queue->low_txq == txq) {
 		name = "Excursion Q";
@@ -2384,14 +2390,14 @@ wlc_txq_dump(txq_info_t *txqi, txq_t *txq, struct bcmstrbuf *b)
 
 	bcm_bprintf(b, "txq %p: %s\n", OSL_OBFUSCATE_BUF(txq), name);
 
-	for (i = 0, txq_swq = txq->swq_table; i < txq->nfifo; i++, txq_swq++) {
+	for (fifo_idx = 0, txq_swq = txq->swq_table; fifo_idx < txq->nfifo; fifo_idx++, txq_swq++) {
 		txq_swq_flowctl_t *f = &txq_swq->flowctl;
 		struct pktq_prec  *q = &txq_swq->spktq.q; /**< single precedence packet queue */
 #ifdef WLCNT
 		txq_swq_stats_t   *s = &txq_swq->stats;
 #endif // endif
 
-		bcm_bprintf(b, "fifo %u(p%u):\n", i, WLC_HW_MAP_TXFIFO(wlc, i));
+		bcm_bprintf(b, "fifo %u(p%u):\n", fifo_idx, WLC_HW_MAP_TXFIFO(wlc, fifo_idx));
 
 		bcm_bprintf(b, "qpkts %u flags 0x%x hw %d lw %d buffered %d\n",
 		            (uint)q->n_pkts, f->flags, f->highwater, f->lowwater, f->buffered);
@@ -4850,11 +4856,14 @@ wlc_prep_sdu(wlc_info_t *wlc, struct scb *scb, void **pkts, int *npkts, uint fif
 			if (key_info.algo != CRYPTO_ALGO_OFF) {
 				WL_WSEC(("wl%d.%d: wlc_prep_sdu: using pairwise key\n",
 					wlc->pub->unit, WLC_BSSCFG_IDX(bsscfg)));
-			} else if ((key = wlc_keymgmt_get_bss_tx_key(wlc->keymgmt,
+			} else if (((bsscfg->WPA_auth == WPA_AUTH_DISABLED) ||
+				(bsscfg->WPA_auth == WPA_AUTH_NONE) ||
+				ETHER_ISMULTI(eh->ether_dhost)) &&
+				(key = wlc_keymgmt_get_bss_tx_key(wlc->keymgmt,
 				bsscfg, FALSE, &key_info)) != NULL &&
 				key_info.algo != CRYPTO_ALGO_OFF) {
 				WL_WSEC(("wl%d.%d: wlc_prep_sdu: using default tx key\n",
-				         wlc->pub->unit, WLC_BSSCFG_IDX(bsscfg)));
+					wlc->pub->unit, WLC_BSSCFG_IDX(bsscfg)));
 #ifdef AP
 			} else if (SCB_ISMULTI(scb) && BSSCFG_AP(bsscfg) &&
 				wlc_bss_assocscb_getcnt(wlc, bsscfg) == 0) {
@@ -4874,9 +4883,15 @@ wlc_prep_sdu(wlc_info_t *wlc, struct scb *scb, void **pkts, int *npkts, uint fif
 			WLC_BSSCFG_IDX(bsscfg), bsscfg->wsec));
 	}
 
-	/* ensure we have a valid (potentially null, with ALGO_OFF) key and key_info */
-	if (key == NULL)
+	/*
+	* If we get here without setting a key, it means it passed the tests above,
+	* and we intended this packet to be sent.
+	* Ensure we have a valid (potentially null, with ALGO_OFF) key and key_info
+	* for all those cases
+	*/
+	if (key == NULL) {
 		key = wlc_keymgmt_get_bss_key(wlc->keymgmt, bsscfg, WLC_KEY_ID_INVALID, &key_info);
+	}
 
 #if !defined(WLWSEC) || defined(WLWSEC_DISABLED)
 	if (key == NULL) {
@@ -5517,6 +5532,11 @@ wlc_prep_sdu_fast(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, struct scb *scb,
 					*key = wlc_keymgmt_get_tx_key(wlc->keymgmt, scb, bsscfg,
 						key_info);
 					if (key_info->algo == CRYPTO_ALGO_OFF) {
+						/* Don't use bss keys with txc with wpa/rsn */
+						if ((bsscfg->WPA_auth != WPA_AUTH_DISABLED) &&
+						    (bsscfg->WPA_auth != WPA_AUTH_NONE)) {
+						    return BCME_UNSUPPORTED;
+						}
 						*key = wlc_keymgmt_get_bss_tx_key(wlc->keymgmt,
 							bsscfg, FALSE, key_info);
 					}
@@ -7133,13 +7153,14 @@ wlc_d11hdrs_pre40(wlc_info_t *wlc, void *p, struct scb *scb, uint txparams_flags
 
 	/* RIFS(testing only): based on frameburst, non-CCK frames only */
 	if (SCB_HT_CAP(scb) &&
-	    WLC_HT_GET_FRAMEBURST(hti) &&
-	    WLC_HT_GET_RIFS(hti) &&
-	    n_prot != WLC_N_PROTECTION_MIXEDMODE &&
-	    !RSPEC_ISCCK(rspec) &&
-	    !ETHER_ISMULTI(&h->a1) &&
-	    ((fc & FC_KIND_MASK) == FC_QOS_DATA) &&
-	    (queue < TX_BCMC_FIFO)) {
+		(queue < TX_BCMC_FIFO) &&
+		WLC_HT_GET_FRAMEBURST(hti) &&
+		WLC_HT_GET_FRAMEBURST_PER_AC(hti, ac) &&
+		WLC_HT_GET_RIFS(hti) &&
+		n_prot != WLC_N_PROTECTION_MIXEDMODE &&
+		!RSPEC_ISCCK(rspec) &&
+		!ETHER_ISMULTI(&h->a1) &&
+		((fc & FC_KIND_MASK) == FC_QOS_DATA)) {
 		uint16 qos_field, *pqos;
 
 		WLPKTTAG(p)->flags |= WLF_RIFS;
@@ -7236,6 +7257,7 @@ wlc_d11hdrs_pre40(wlc_info_t *wlc, void *p, struct scb *scb, uint txparams_flags
 		uint rate = RSPEC2KBPS(rspec) / 500;
 
 		if ((WLC_HT_GET_FRAMEBURST(hti) && (rate > WLC_FRAMEBURST_MIN_RATE) &&
+			WLC_HT_GET_FRAMEBURST_PER_AC(hti, ac) &&
 			(!wlc->active_bidir) &&
 #ifdef WLAMPDU
 		     (wlc_ampdu_frameburst_override(wlc->ampdu_tx, scb) == FALSE) &&
@@ -8806,7 +8828,8 @@ wlc_d11hdrs_rev40(wlc_info_t *wlc, void *p, struct scb *scb, uint txparams_flags
 			WLC_HT_GET_RIFS(hti) &&
 			n_prot != WLC_N_PROTECTION_MIXEDMODE && !RSPEC_ISCCK(rspec) &&
 			!ETHER_ISMULTI(&parms.h->a1) && ((parms.fc & FC_KIND_MASK) ==
-			FC_QOS_DATA) && (queue < TX_BCMC_FIFO)) {
+			FC_QOS_DATA) && (queue < TX_BCMC_FIFO) &&
+			WLC_HT_GET_FRAMEBURST_PER_AC(hti, ac)) {
 			uint16 qos_field, *pqos;
 
 			WLPKTTAG(p)->flags |= WLF_RIFS;
@@ -8835,6 +8858,7 @@ wlc_d11hdrs_rev40(wlc_info_t *wlc, void *p, struct scb *scb, uint txparams_flags
 		if (parms.type == FC_TYPE_DATA && (queue < TX_BCMC_FIFO)) {
 			if ((WLC_HT_GET_FRAMEBURST(hti) &&
 				(txrate > WLC_FRAMEBURST_MIN_RATE) &&
+				WLC_HT_GET_FRAMEBURST_PER_AC(hti, ac) &&
 				(!wlc->active_bidir) &&
 #ifdef WLAMPDU
 				(wlc_ampdu_frameburst_override(wlc->ampdu_tx, scb) == FALSE) &&
@@ -10612,6 +10636,7 @@ wlc_d11hdrs_rev128(wlc_info_t *wlc, void *p, struct scb *scb, uint txparams_flag
 		use_mimops_rts = TRUE;
 	if ((parms.type == FC_TYPE_DATA) && (queue != TX_BCMC_FIFO) && (queue != TX_ATIM_FIFO) &&
 		(WLC_HT_GET_FRAMEBURST(hti) &&
+		WLC_HT_GET_FRAMEBURST_PER_AC(hti, ac) &&
 		(wf_rspec_to_rate(rspec) > WLC_FRAMEBURST_MIN_RATE) &&
 		(!wlc->active_bidir) &&
 #ifdef WLAMPDU
@@ -13105,7 +13130,7 @@ wlc_txflowcontrol_reset_qi(wlc_info_t *wlc, wlc_txq_info_t *qi)
 }
 
 /** enqueue SDU on a remote party ('scb') specific queue */
-void BCMFASTPATH
+int BCMFASTPATH
 wlc_txq_enq_pkt(wlc_info_t *wlc, struct scb *scb, void *sdu, uint prec)
 {
 	wlc_txq_info_t *qi = SCB_WLCIFP(scb)->qi;
@@ -13135,7 +13160,6 @@ wlc_txq_enq_pkt(wlc_info_t *wlc, struct scb *scb, void *sdu, uint prec)
 			WL_INFORM(("wl%d: %s: txq overflow\n", wlc->pub->unit, __FUNCTION__));
 
 		PKTDBG_TRACE(wlc->osh, sdu, PKTLIST_FAIL_PRECQ);
-		PKTFREE(wlc->osh, sdu, TRUE);
 		WLCNTINCR(wlc->pub->_cnt->txnobuf);
 		WLCIFCNTINCR(scb, txnobuf);
 		WLCNTSCB_COND_INCR(scb, scb->scb_stats.tx_failures);
@@ -13143,7 +13167,10 @@ wlc_txq_enq_pkt(wlc_info_t *wlc, struct scb *scb, void *sdu, uint prec)
 		wlc_rrm_stat_qos_counter(wlc, scb, PKTPRIO(sdu),
 			OFFSETOF(rrm_stat_group_qos_t, txfail));
 #endif // endif
+		PKTFREE(wlc->osh, sdu, TRUE);
+		return BCME_TXFAIL;
 	}
+	return BCME_OK;
 } /* wlc_txq_enq_pkt */
 
 void BCMFASTPATH
@@ -13181,24 +13208,29 @@ wlc_txq_enq(void *ctx, struct scb *scb, void *sdu, uint prec)
 	int prio;
 	int datahiwat;
 
-	wlc_txq_enq_pkt(wlc, scb, sdu, prec);
-
-	/* Check if flow control needs to be turned on after enqueuing the packet
-	 *   Don't turn on flow control if EDCF is enabled. Driver would make the decision on what
-	 *   to drop instead of relying on stack to make the right decision
-	 */
-	datahiwat = (WLPKTTAG(sdu)->flags & WLF_AMPDU_MPDU)
-		  ? wlc->pub->tunables->ampdudatahiwat
-		  : wlc->pub->tunables->datahiwat;
-	if (!WME_ENAB(wlc->pub) || (wlc->pub->wlfeatureflag & WL_SWFL_FLOWCONTROL)) {
-		if (pktq_n_pkts_tot(common_q) >= datahiwat) {
-			wlc_txflowcontrol(wlc, qi, ON, ALLPRIO);
+	if (wlc_txq_enq_pkt(wlc, scb, sdu, prec) == BCME_OK) {
+		/* Check if flow control needs to be turned on after enqueuing
+		 * the packet Don't turn on flow control if EDCF is enabled.
+		 * Driver would make the decision on what to drop instead of
+		 * relying on stack to make the right decision
+		 */
+		datahiwat = (WLPKTTAG(sdu)->flags & WLF_AMPDU_MPDU)
+			  ? wlc->pub->tunables->ampdudatahiwat
+			  : wlc->pub->tunables->datahiwat;
+		if (!WME_ENAB(wlc->pub) ||
+				(wlc->pub->wlfeatureflag & WL_SWFL_FLOWCONTROL)) {
+			if (pktq_n_pkts_tot(common_q) >= datahiwat) {
+				wlc_txflowcontrol(wlc, qi, ON, ALLPRIO);
+			}
+		} else if (wlc->pub->_priofc) {
+			prio = PKTPRIO(sdu);
+			if (pktqprec_n_pkts(common_q, wlc_prio2prec_map[prio]) >= datahiwat) {
+				wlc_txflowcontrol(wlc, qi, ON, prio);
+			}
 		}
-	} else if (wlc->pub->_priofc) {
-		prio = PKTPRIO(sdu);
-		if (pktqprec_n_pkts(common_q, wlc_prio2prec_map[prio]) >= datahiwat) {
-			wlc_txflowcontrol(wlc, qi, ON, prio);
-		}
+	} else {
+		/* sdu has been freed by wlc_txq_enq_pkt() */
+		sdu = NULL;
 	}
 } /* wlc_txq_enq */
 

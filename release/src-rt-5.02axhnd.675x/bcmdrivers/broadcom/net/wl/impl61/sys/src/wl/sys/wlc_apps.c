@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_apps.c 777531 2019-08-05 09:51:10Z $
+ * $Id: wlc_apps.c 779372 2019-09-26 08:16:26Z $
  */
 
 /**
@@ -257,7 +257,6 @@ struct apps_scb_psinfo {
 	uint8		ps_requester;	/* source of ps requests */
 	uint32		last_in_ps_tsf;
 	uint32		last_in_pvb_tsf;
-	bool		PS_TWT;
 	bool		delayed_pstwt_release;
 };
 
@@ -2683,15 +2682,9 @@ wlc_apps_pvb_update(wlc_info_t *wlc, struct scb *scb)
 	}
 #endif // endif
 
-	if (ps_count > 0 && SCB_PS(scb)) {
+	if (ps_count > 0 && (SCB_PS(scb) || SCB_TWTPS(scb))) {
 		if (scb_psinfo->in_pvb)
 			return;
-		if (wlc_twt_scb_active(wlc->twti, scb)) {
-			WL_PS(("wl%d.%d: %s ignoring PVB update AID %d, TWT active\n",
-				wlc->pub->unit, WLC_BSSCFG_IDX(SCB_BSSCFG(scb)), __FUNCTION__,
-				aid));
-			return;
-		}
 		WL_PS(("wl%d.%d: %s setting AID %d scb:%p\n", wlc->pub->unit,
 			WLC_BSSCFG_IDX(SCB_BSSCFG(scb)), __FUNCTION__, aid, scb));
 		/* set the bit in the pvb */
@@ -3664,7 +3657,7 @@ wlc_apps_twt_enter_ps(wlc_info_t *wlc, scb_t *scb)
 	if (scb_psinfo == NULL) {
 		return TRUE;
 	}
-	if (scb_psinfo->PS_TWT) {
+	if (SCB_TWTPS(scb)) {
 		return TRUE;
 	}
 	/* There is a race condition possible which is tough to handle.The SCB may
@@ -3682,7 +3675,7 @@ wlc_apps_twt_enter_ps(wlc_info_t *wlc, scb_t *scb)
 	WL_PS(("wl%d.%d: %s Activating PS_TWT AID %d\n", wlc->pub->unit,
 		WLC_BSSCFG_IDX(SCB_BSSCFG(scb)), __FUNCTION__, AID2PVBMAP(scb->aid)));
 
-	scb_psinfo->PS_TWT = TRUE;
+	scb->PS_TWT = TRUE;
 	/* NOTE: set first_suppr_handled to TRUE then this function does not have to
 	 * use txstatus towards wlc_apps_suppr_frame_enq. So if suppport for
 	 * first_suppr_handled is needed then txstatus has to be passed on this fuction !!
@@ -3756,7 +3749,7 @@ wlc_apps_twt_release(wlc_info_t *wlc, scb_t *scb)
 	if (scb_psinfo == NULL)
 		return;
 
-	if (!scb_psinfo->PS_TWT) {
+	if (!SCB_TWTPS(scb)) {
 		return;
 	}
 
@@ -3771,8 +3764,13 @@ wlc_apps_twt_release(wlc_info_t *wlc, scb_t *scb)
 
 	WL_PS(("wl%d.%d: %s PS_TWT active, releasing AID %d\n", wlc->pub->unit,
 		WLC_BSSCFG_IDX(SCB_BSSCFG(scb)), __FUNCTION__, AID2PVBMAP(scb->aid)));
-	scb_psinfo->PS_TWT = FALSE;
+	scb->PS_TWT = FALSE;
 	scb_psinfo->delayed_pstwt_release = FALSE;
+
+	/* clear the PVB entry since we are leaving PM mode */
+	if (scb_psinfo->in_pvb) {
+		wlc_apps_pvb_update(wlc, scb);
+	}
 
 #ifdef PROP_TXSTATUS
 	if (PROP_TXSTATUS_ENAB(wlc->pub)) {
@@ -4322,7 +4320,7 @@ wlc_apps_bss_wd_ps_check(void *handle)
 			bss_info = APPS_BSSCFG_CUBBY(wlc->psinfo, bsscfg);
 			ASSERT(bss_info);
 			if ((SCB_PS(bcmc_scb) == TRUE) && (TXPKTPENDGET(wlc, TX_BCMC_FIFO) == 0) &&
-			    (!(bss_info->ps_trans_status & BSS_PS_ON_BY_TWT))) {
+				(!(bss_info->ps_trans_status & BSS_PS_ON_BY_TWT))) {
 				if (MBSS_ENAB(wlc->pub)) {
 					if (bsscfg->bcmc_fid_shm != INVALIDFID) {
 						WL_ERROR(("wl%d.%d: %s cfg(%p) bcmc_fid = 0x%x"

@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wl_linux.h 776775 2019-07-09 10:59:34Z $
+ * $Id: wl_linux.h 779941 2019-10-10 17:12:37Z $
  */
 
 #ifndef _wl_linux_h_
@@ -298,6 +298,9 @@ struct wl_info {
 #ifdef WL_CFG80211
 	struct wiphy *wiphy;
 #endif // endif
+#if defined(CONFIG_BCM_WLAN_DPDCTL)
+	char pciname[32];
+#endif /* CONFIG_BCM_WLAN_DPDCTL */
 };
 
 #if (defined(NAPI_POLL) && defined(WL_ALL_PASSIVE))

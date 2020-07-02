@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_chanctxt.c 771309 2019-01-22 10:08:00Z $
+ * $Id: wlc_chanctxt.c 778698 2019-09-09 04:28:21Z $
  */
 
 /* Define wlc_cfg.h to be the first header file included as some builds
@@ -1598,7 +1598,12 @@ wlc_chanctxt_delete_txqueue(wlc_info_t *wlc, wlc_bsscfg_t *cfg, wlc_chanctxt_t *
 		BSSCFG_AP(cfg) ? "AP" : "STA",
 		wf_chspec_ntoa_ex(chanctxt->chanspec, chanbuf)));
 
-	wlc_lq_chanim_delete_bss_chan_context(wlc, chanctxt->chanspec);
+	/* chanim stas are per radio stats. This has to be deleted
+	 * only when there are no other active bss's available.
+	 */
+	if (wlc_bsscfg_none_bss_active(wlc)) {
+		wlc_lq_chanim_delete_bss_chan_context(wlc, chanctxt->chanspec);
+	}
 
 	/* temporarily clear the cfg associated state.
 	 * during roam, we are associated so when we do roam,

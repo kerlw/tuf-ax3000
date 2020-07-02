@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scan_utils.c 774133 2019-04-11 09:15:54Z $
+ * $Id: wlc_scan_utils.c 779762 2019-10-07 07:12:37Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -392,12 +392,15 @@ wlc_scan_request_ex(
 			return err;
 		}
 #endif /* WL_SCAN_DFS_HOME */
+		if (fn != NULL)
+			wlc_scan_set_request_ex_cb(wlc->scan, fn);
 
 		err = wlc_scan(wlc->scan, bss_type, bssid, nssid, ssids,
 		               scan_type, nprobes, active_time, passive_time, home_time,
 		               chanspec_list, chanspec_num, chanspec_start, save_prb,
-		               fn, arg, 0, FALSE, FALSE, SCANCACHE_ENAB(wlc->scan),
-		               scan_flags, cfg, usage, act_cb, act_cb_arg, sa_override);
+		               wlc_scan_request_ex_cb, arg, 0, FALSE, FALSE,
+		               SCANCACHE_ENAB(wlc->scan), scan_flags, cfg, usage,
+		               act_cb, act_cb_arg, sa_override);
 		/* wlc_scan() invokes 'fn' even in error cases */
 		cb = FALSE;
 	} else {
@@ -408,7 +411,7 @@ wlc_scan_request_ex(
 	if (cb && fn != NULL) {
 		WL_SCAN(("wl%d: %s, can not scan due to error %d\n",
 		          wlc->pub->unit, __FUNCTION__, err));
-		(fn)(arg, WLC_E_STATUS_ERROR, cfg);
+		wlc_scan_request_ex_cb(arg, WLC_E_STATUS_ERROR, cfg);
 	}
 
 	return err;
@@ -514,14 +517,6 @@ wlc_custom_scan_complete(void *arg, int status, wlc_bsscfg_t *cfg)
 	} else if (sui->custom_scan_results_state == WL_SCAN_RESULTS_PENDING) {
 		sui->custom_scan_results_state = status;
 	}
-
-#ifdef WL_SCAN_DFS_HOME
-	/* On scan completion, get into ISM state if home channel is DFS */
-	if (WL11H_ENAB(wlc) &&
-			wlc_radar_chanspec(wlc->cmi, wlc->home_chanspec)) {
-		wlc_set_dfs_cacstate(wlc->dfs, ON, cfg);
-	}
-#endif /* WL_SCAN_DFS_HOME */
 
 } /* wlc_custom_scan_complete */
 

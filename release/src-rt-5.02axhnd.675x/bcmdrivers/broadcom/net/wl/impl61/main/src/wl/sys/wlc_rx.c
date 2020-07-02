@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_rx.c 777731 2019-08-07 19:37:44Z $
+ * $Id: wlc_rx.c 780059 2019-10-15 02:58:47Z $
  *
  */
 #include <wlc_cfg.h>
@@ -596,6 +596,7 @@ wlc_recv(wlc_info_t *wlc, void *p)
 			corerev, pub->corerev_minor, mrxs)));
 #ifdef BCMDBG
 		wlc_print_hdrs(wlc, "rxpkt hdr (invalid short rxs)", NULL, NULL, wrxh, 0);
+		if (WL_ERROR_ON())
 		prhex("rxpkt body (invalid short rxs)", PKTDATA(osh, p), PKTLEN(osh, p));
 #endif /* BCMDBG */
 		ASSERT(is_amsdu != 0);
@@ -713,6 +714,7 @@ wlc_recv(wlc_info_t *wlc, void *p)
 			corerev, RxStatus1)));
 #ifdef BCMDBG
 		wlc_print_hdrs(wlc, "rxpkt hdr (RxStat with FCSERR)", NULL, NULL, wrxh, 0);
+		if (WL_ERROR_ON())
 		prhex("rxpkt body (RxStat with FCSERR)", PKTDATA(osh, p), PKTLEN(osh, p));
 #endif /* BCMDBG */
 		toss_reason = WLC_RX_STS_TOSS_RXS_FCSERR;
@@ -8043,6 +8045,7 @@ wlc_rxframe_chainable(wlc_info_t *wlc, void **pp, uint16 index)
 			wlc->pub->corerev, wlc->pub->corerev_minor, mrxs)));
 #ifdef BCMDBG
 		wlc_print_hdrs(wlc, "rxpkt hdr (invalid short rxs)", NULL, NULL, wrxh, 0);
+		if (WL_ERROR_ON())
 		prhex("rxpkt body (invalid short rxs)", PKTDATA(wlc->osh, p),
 			PKTLEN(wlc->osh, p));
 #endif /* BCMDBG */
@@ -8545,6 +8548,9 @@ wlc_sendup_chain(wlc_info_t *wlc, void *head)
 			chained_sendup = FALSE;
 #endif // endif
 
+		/* Handle HTC field of 802.11 header if available */
+		wlc_he_htc_recv(wlc, scb, rxh, h);
+
 		body_offset_diff = (body_offset - body_offset_sav);
 		BCM_REFERENCE(body_offset_diff);
 
@@ -8657,8 +8663,6 @@ skip_conv:
 			}
 #endif /* WL_LEAKY_AP_STATS */
 		}
-		/* Handle HTC field of 802.11 header if available */
-		wlc_he_htc_recv(wlc, scb, rxh, h);
 
 		prev = p;
 		p = next;

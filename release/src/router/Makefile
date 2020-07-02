@@ -20,6 +20,10 @@ ifeq ($(HND_ROUTER_AX_675X),)
 export HND_ROUTER_AX_675X := $(shell pwd | sed 's/.*axhnd.675x.*/y/g' | sed 's/.*src.*//g')
 endif
 
+ifeq ($(BRCM_SDK_502L07p1),)
+export BRCM_SDK_502L07p1 := $(shell pwd | sed 's/.*p1axhnd.675x.*/y/g' | sed 's/.*src.*//g')
+endif
+
 ifeq ($(HND_ROUTER_AX_675X),y)
 ifeq ($(CUR_CHIP_PROFILE),)
 export CHIP_CONFIG_DIR := $(shell pwd | sed 's/\(.*src-rt-.*hnd.*\).*/\1/')
@@ -574,7 +578,10 @@ ifneq ($(RTCONFIG_RALINK)$(RTCONFIG_QCA)$(RTCONFIG_REALTEK)$(RTCONFIG_QCA)$(RTCO
 obj-y += ctf
 endif
 endif
-obj-$(RTCONFIG_DHDAP) += dhd $(if $(or $(RTCONFIG_BCM7),$(RTCONFIG_HND_ROUTER_AX_675X)),pciefd)
+obj-$(RTCONFIG_DHDAP) += dhd
+ifeq ($(wildcard $(SRCBASE_DHD)/dongle/sysdeps),)
+obj-$(RTCONFIG_DHDAP) += $(if $(or $(RTCONFIG_BCM7),$(RTCONFIG_HND_ROUTER_AX_675X)),pciefd)
+endif
 
 ifeq ($(or $(RTCONFIG_BCM_7114),$(HND_ROUTER)),y)
 obj-y += dhd_monitor
@@ -812,11 +819,13 @@ obj-$(RTCONFIG_CONNTRACK) += libmnl-1.0.4
 obj-$(RTCONFIG_CONNTRACK) += libnetfilter_conntrack-1.0.7
 obj-$(RTCONFIG_CONNTRACK) += libnetfilter_cttimeout-1.0.0
 
+obj-$(RTCONFIG_TCPLUGIN) += ipset-7.6
+
 obj-$(RTCONFIG_PERMISSION_MANAGEMENT) += sqlite
 obj-$(RTCONFIG_PERMISSION_MANAGEMENT) += sqlCipher
 obj-$(RTCONFIG_PERMISSION_MANAGEMENT) += PMS_DBapis
 
-obj-$(RTCONFIG_SPEEDTEST) += curl-7.21.7
+obj-$(RTCONFIG_SPEEDTEST) += curl
 
 obj-$(RTCONFIG_BWDPI) += sqlite
 obj-$(RTCONFIG_BWDPI) += bwdpi_source
@@ -831,10 +840,12 @@ obj-$(RTCONFIG_LETSENCRYPT) += socat
 #obj-$(RTCONFIG_SYSSTATE) += sysstate
 obj-y += sysstate
 
-obj-$(RTCONFIG_AHS) += openssl
-obj-$(RTCONFIG_AHS) += $(CURL)
+obj-$(RTCONFIG_LIBASC) += libasc
+
 obj-$(RTCONFIG_AHS) += json-c
 obj-$(RTCONFIG_AHS) += ahs
+
+obj-$(RTCONFIG_ASD) += asd
 
 obj-$(RTCONFIG_OPENVPN) += openssl
 obj-$(RTCONFIG_OPENVPN) += libvpn
@@ -948,6 +959,7 @@ ifeq ($(RTCONFIG_AMAS),y)
 obj-y  += jansson-2.7
 obj-y  += libevent-2.0.21
 obj-y  += lldpd-0.9.8
+obj-y  += libxml2
 endif
 
 .PHONY: emf$(BCMEX)$(EX7) igs$(BCMEX)$(EX7) hspot_ap$(BCMEX)$(EX7) wps$(BCMEX)$(EX7)
@@ -1172,9 +1184,9 @@ endif
 #add by gauss for cloudsync
 obj-$(RTCONFIG_CLOUDSYNC) += openssl
 obj-$(RTCONFIG_CLOUDSYNC) += libxml2
-obj-$(RTCONFIG_CLOUDSYNC) += curl-7.21.7
+obj-$(RTCONFIG_CLOUDSYNC) += curl
 # workaround for 675x
-obj-$(RTCONFIG_HND_ROUTER_AX_675X) += curl-7.21.7
+obj-$(RTCONFIG_HND_ROUTER_AX_675X) += curl
 obj-$(RTCONFIG_CLOUDSYNC) += smartsync_api
 obj-$(RTCONFIG_CLOUDSYNC) += asuswebstorage
 obj-$(RTCONFIG_CLOUDSYNC) += inotify
@@ -1192,7 +1204,7 @@ obj-$(RTCONFIG_USBCLIENT) += usbclient
 
 #aaews,asusnatnl related
 obj-$(RTCONFIG_TUNNEL) += libxml2
-obj-$(RTCONFIG_TUNNEL) += curl-7.21.7
+obj-$(RTCONFIG_TUNNEL) += curl
 obj-$(RTCONFIG_TUNNEL) += wb
 obj-$(RTCONFIG_TUNNEL) += aaews
 obj-$(RTCONFIG_TUNNEL) += mastiff
@@ -1237,7 +1249,7 @@ obj-$(RTCONFIG_COOVACHILLI) += coovachilli
 obj-$(RTCONFIG_FREERADIUS) += sqlite pcre-8.31
 obj-$(RTCONFIG_FREERADIUS) += talloc-2.1.1
 obj-$(RTCONFIG_FREERADIUS) += freeradius-server-3.0.0
-obj-$(RTCONFIG_CAPTIVE_PORTAL) += sqlite libxml2 pcre-8.31 lighttpd-1.4.39 libexif curl-7.21.7
+obj-$(RTCONFIG_CAPTIVE_PORTAL) += sqlite libxml2 pcre-8.31 lighttpd-1.4.39 libexif curl
 obj-$(RTCONFIG_CAPTIVE_PORTAL) += samba-3.5.8
 
 obj-$(RTCONFIG_FBWIFI) += fb_wifi
@@ -1343,7 +1355,7 @@ obj-$(RTCONFIG_PUSH_EMAIL) += openssl
 obj-$(RTCONFIG_PUSH_EMAIL) += email-3.1.3
 
 obj-$(RTCONFIG_FRS_FEEDBACK) += openssl
-obj-$(RTCONFIG_FRS_FEEDBACK) += curl-7.21.7
+obj-$(RTCONFIG_FRS_FEEDBACK) += curl
 ifeq ($(RTCONFIG_FRS_FEEDBACK),y)
 obj-$(RTCONFIG_DBLOG) += dblog
 endif
@@ -1388,7 +1400,7 @@ obj-$(RTCONFIG_BONDING) += ifenslave
 
 obj-$(RTCONFIG_GEOIP) += GeoIP-1.6.2
 
-obj-$(RTCONFIG_TRANSMISSION) += Transmission curl-7.21.7 libevent-2.0.21
+obj-$(RTCONFIG_TRANSMISSION) += Transmission curl libevent-2.0.21
 
 ifeq ($(RTCONFIG_TOR),y)
 obj-y += openssl
@@ -1420,6 +1432,8 @@ obj-$(HND_ROUTER) += wlan
 ifeq ($(HND_ROUTER_AX_675X),y)
 obj-$(HND_ROUTER) += sys_util
 obj-$(HND_ROUTER) += gen_util
+obj-$(BRCM_SDK_502L07p1) += archer_lib
+#obj-y += archer_lib
 obj-$(HND_ROUTER) += archerctl
 endif
 obj-$(HND_ROUTER) += bcm_util
@@ -1486,7 +1500,7 @@ obj-$(HND_ROUTER) += memaccess
 obj-$(HND_ROUTER_AX) += bdmf_lib
 obj-$(HND_ROUTER_AX) += mdkshell
 obj-$(HND_ROUTER_AX) += bcm_bootstate
-obj-$(RTCONFIG_BRCM_HOSTAPD) += libnl hostapd wpa_supplicant-2.7 iw
+obj-$(RTCONFIG_BRCM_HOSTAPD) += libnl openssl hostapd wpa_supplicant-2.7 iw
 # ALPINE compile package
 obj-$(RTCONFIG_ALPINE) += qsr10g_image
 obj-$(RTCONFIG_ALPINE) += aqr107_image
@@ -1495,8 +1509,12 @@ obj-$(RTCONFIG_RSYSLOGD) += libestr
 obj-$(RTCONFIG_RSYSLOGD) += libfastjson
 obj-$(RTCONFIG_RSYSLOGD) += rsyslog
 
-obj-$(RTCONFIG_FRS_LIVE_UPDATE) += curl-7.21.7
+obj-$(RTCONFIG_FRS_LIVE_UPDATE) += curl
 obj-$(RTCONFIG_FRS_LIVE_UPDATE) += openssl
+
+ifeq ($(RTAX86U),y)
+obj-y += nuc029ctrl
+endif
 
 ifeq ($(RTCONFIG_BCMARM),y)
 obj-prelibs =$(filter busybox% nvram$(BCMEX)$(EX7) libbcmcrypto shared netconf libupnp$(BCMEX)$(EX7) libz libbcm pciefd, $(obj-y))
@@ -1536,10 +1554,20 @@ all: clean-build kernel_header libc version obj_prelibs kernel $(obj-y)
 endif
 
 ifeq ($(RTCONFIG_BCMARM),y)
+ifneq ($(RTCONFIG_HND_ROUTER_AX_6710),y)
 version: $(SRCBASE)/include/epivers.h
 	$(SEP)
+endif
 
 EPIVERS_OPTION =
+
+ifeq ($(RTCONFIG_HND_ROUTER_AX_6710),y)
+version:  $(SRCBASE)/include/epivers.h
+	$(MAKE) -C $(SRCBASE)/include $(EPIVERS_OPTION) REUSE_VERSION=1
+ifeq ($(RTCONFIG_DHDAP),y)
+	$(MAKE) pciefd-version
+endif
+endif
 
 $(SRCBASE)/include/epivers.h:
 	$(MAKE) -C $(SRCBASE)/include $(EPIVERS_OPTION)
@@ -2626,7 +2654,7 @@ libnfnetlink-1.0.1-clean:
 	-@$(MAKE) -C  libnfnetlink-1.0.1 clean
 
 libmnl-1.0.4: libmnl-1.0.4/Makefile
-	$(MAKE) -C libmnl-1.0.4
+	$(MAKE) -C $@ && $(MAKE) $@-stage
 
 libmnl-1.0.4/Makefile:
 	(cd libmnl-1.0.4 && autoreconf -i -f)
@@ -2698,6 +2726,34 @@ libnetfilter_cttimeout-1.0.0-install:
 
 libnetfilter_cttimeout-1.0.0-clean:
 	-@$(MAKE) -C libnetfilter_cttimeout-1.0.0 clean
+
+ipset-7.6/configure:
+	cd ipset-7.6 && ./autogen.sh
+
+ipset-7.6/Makefile: ipset-7.6/configure
+	cd ipset-7.6 && \
+	libmnl_CFLAGS="-I$(STAGEDIR)/usr/include" \
+	libmnl_LIBS="-L$(STAGEDIR)/usr/lib -lmnl" \
+	CFLAGS="-Os -Wall $(EXTRACFLAGS) -ffunction-sections -fdata-sections" \
+	LDFLAGS="-Wl,--gc-sections" \
+	$(CONFIGURE) --prefix=/usr --disable-rpath \
+		--with-kmod=no --with-kbuild=$(LINUXDIR)
+
+ipset-7.6: libmnl-1.0.4 ipset-7.6/Makefile
+	$(MAKE) -C $@ && $(MAKE) $@-stage
+
+ipset-7.6-install:
+	install -D ipset-7.6/src/ipset $(INSTALLDIR)/ipset-7.6/usr/sbin/ipset
+	install -D ipset-7.6/lib/.libs/libipset.so.13.1.0 $(INSTALLDIR)/ipset-7.6/usr/lib/libipset.so.13.1.0
+	cd $(INSTALLDIR)/ipset-7.6/usr/lib/ && \
+		ln -sf libipset.so.13.1.0 libipset.so.13 && \
+		ln -sf libipset.so.13.1.0 libipset.so
+	$(STRIP) $(INSTALLDIR)/ipset-7.6/usr/sbin/ipset
+	$(STRIP) $(INSTALLDIR)/ipset-7.6/usr/lib/*.so*
+
+ipset-7.6-clean:
+	[ ! -f ipset-7.6/Makefile ] || $(MAKE) -C ipset-7.6 distclean
+	@rm -f ipset-7.6/Makefile
 
 stress-1.x: stress-1.x/Makefile
 	$(MAKE) -C stress-1.x
@@ -2894,12 +2950,12 @@ mssl: openssl
 mssl-install:
 	$(MAKE) -C mssl INSTALLDIR=$(INSTALLDIR)/mssl install
 
-wb: json-c openssl libxml2 curl-7.21.7
+wb: json-c openssl libxml2 curl
 
 wb-install:
 	$(MAKE) -C wb INSTALLDIR=$(INSTALLDIR)/wb install
 
-rc: shared nvram$(BCMEX)$(EX7) libdisk $(if $(RTCONFIG_FBWIFI),fb_wifi) $(if $(RTCONFIG_QTN),libqcsapi_client) $(if $(CONFIG_LIBBCM),libbcm) $(if $(RTCONFIG_BWDPI),bwdpi_source) $(if $(RTCONFIG_USB_SMS_MODEM),smspdu) $(if $(RTCONFIG_HND_ROUTER),bcm_flashutil bcm_util bcm_boardctl) $(if $(RTCONFIG_OPENVPN),libvpn) $(if $(RTCONFIG_LANTIQ),libfapi-0.1) $(if $(RTCONFIG_CFGSYNC), $(CFGSYNC_PKG) $(if $(RTCONFIG_AMAS), amas-utils) $(if $(RTCONFIG_LANTIQ),hostapd-2.6)) json-c $(if $(RTCONFIG_FRS_FEEDBACK), curl-7.21.7) $(if $(and $(RTCONFIG_HND_ROUTER_AX_675X),$(RTCONFIG_BRCM_HOSTAPD)),sys_util gen_util) $(if $(RTCONFIG_BRCM_HOSTAPD),wpa_supplicant-2.7)
+rc: shared nvram$(BCMEX)$(EX7) libdisk $(if $(RTCONFIG_FBWIFI),fb_wifi) $(if $(RTCONFIG_QTN),libqcsapi_client) $(if $(CONFIG_LIBBCM),libbcm) $(if $(RTCONFIG_BWDPI),bwdpi_source) $(if $(RTCONFIG_USB_SMS_MODEM),smspdu) $(if $(RTCONFIG_HND_ROUTER),bcm_flashutil bcm_util bcm_boardctl) $(if $(RTCONFIG_OPENVPN),libvpn) $(if $(RTCONFIG_LANTIQ),libfapi-0.1) $(if $(RTCONFIG_CFGSYNC), $(CFGSYNC_PKG) $(if $(RTCONFIG_AMAS), amas-utils) $(if $(RTCONFIG_LANTIQ),hostapd-2.6)) json-c $(if $(RTCONFIG_FRS_FEEDBACK), curl) $(if $(and $(RTCONFIG_HND_ROUTER_AX_675X),$(RTCONFIG_BRCM_HOSTAPD)),sys_util gen_util) $(if $(RTCONFIG_BRCM_HOSTAPD),wpa_supplicant-2.7)
 
 rc-install:
 	$(MAKE) -C rc INSTALLDIR=$(INSTALLDIR)/rc install
@@ -5051,7 +5107,7 @@ sysstate-install:
 	echo "install sysstate"
 	$(MAKE) -C sysstate install
 
-ahs: openssl $(CURL) json-c
+ahs: libasc json-c
 	@$(SEP)
 	echo "build ahs"
 	$(MAKE) -C ahs
@@ -5063,6 +5119,19 @@ ahs-clean:
 ahs-install:
 	echo "install ahs"
 	$(MAKE) -C ahs install
+
+libasc: openssl curl
+	@$(SEP)
+	echo "build libasc"
+	$(MAKE) -C libasc
+
+libasc-clean:
+	echo "clean libasc"
+	$(MAKE) -C libasc clean
+
+libasc-install:
+	echo "install libasc"
+	$(MAKE) -C libasc install
 
 qsr10g_image:
 aqr107_image:
@@ -5292,7 +5361,7 @@ libnl-clean:
 $(HOSTAPD_DIR)/hostapd/.config: $(HOSTAPD_DIR)/hostapd/brcm.config
 	cp $(HOSTAPD_DIR)/hostapd/brcm.config $(HOSTAPD_DIR)/hostapd/.config;
 
-hostapd: libnl $(HOSTAPD_DIR)/hostapd/.config
+hostapd: libnl openssl $(HOSTAPD_DIR)/hostapd/.config
 	+$(MAKE) -C $(HOSTAPD_DIR)/hostapd
 
 hostapd-install:
@@ -5676,7 +5745,7 @@ else
 endif
 	@touch $@
 
-lighttpd-1.4.39: shared nvram$(BCMEX)$(EX7) libpasswd libdisk samba-3.5.8 pcre-8.31 libxml2 sqlite libexif openssl curl-7.21.7 $(if $(RTCONFIG_PERMISSION_MANAGEMENT),PMS_DBapis) lighttpd-1.4.39/stamp-h1
+lighttpd-1.4.39: shared nvram$(BCMEX)$(EX7) libpasswd libdisk samba-3.5.8 pcre-8.31 libxml2 sqlite libexif openssl curl $(if $(RTCONFIG_PERMISSION_MANAGEMENT),PMS_DBapis) lighttpd-1.4.39/stamp-h1
 
 lighttpd-1.4.39-install:
 	if [ -f lighttpd-1.4.39/Makefile ] ; then \
@@ -5971,7 +6040,7 @@ webdav_client-clean:
 fb_wifi/stamp-h1:
 	touch $@
 
-fb_wifi: curl-7.21.7 fb_wifi/stamp-h1
+fb_wifi: curl fb_wifi/stamp-h1
 	@$(MAKE) -C fb_wifi
 
 fb_wifi-install: fb_wifi
@@ -5987,31 +6056,53 @@ fb_wifi-clean:
 	-@$(MAKE) -C fb_wifi clean
 	rm -rf fb_wifi/stamp-h1
 
-#add by gauss
-#add install libcurl
-curl-7.21.7: curl-7.21.7/Makefile
-	@$(MAKE) -C $@ && $(MAKE) $@-stage && sed 's|/usr/lib|$(STAGEDIR)/usr/lib|g' -i $(STAGEDIR)/usr/lib/libcurl.la
+curl/configure:
+	@cd curl && buildconf
 
-curl-7.21.7/Makefile: curl-7.21.7/configure
-	@cd curl-7.21.7 && $(CONFIGURE) CC=$(CC) \
+curl/Makefile: curl/configure
+	@cd curl && $(CONFIGURE) CC=$(CC) \
 		--prefix=/usr --bindir=/usr/sbin --libdir=/usr/lib \
-		--enable-http --with-ssl=$(TOP)/openssl LDFLAGS="-ldl $(EXTRALDFLAGS)" \
-		--with-ca-bundle=/etc/ssl/certs/ca-certificates.crt
+		--enable-silent-rules \
+		--disable-debug --disable-curldebug \
+		--enable-http --enable-ftp --enable-file \
+		--disable-ldap --disable-ldaps --disable-rtsp \
+		--disable-proxy --disable-dict --disable-telnet \
+		--disable-tftp --disable-pop3 --disable-imap \
+		--disable-smb --disable-smtp --disable-gopher \
+		--disable-manual --disable-libcurl-option $(if $(RTCONFIG_IPV6),--enable-ipv6,--disable-ipv6) \
+		--disable-threaded-resolver --disable-ntlm-wb \
+		--disable-doh --disable-netrc --disable-dnsshuffle \
+		--disable-progress-meter --without-zlib \
+		--with-ssl=$(STAGEDIR)/usr --with-ca-fallback \
+		--with-ca-bundle=/etc/ssl/certs/ca-certificates.crt \
+		CFLAGS="-Os -Wall -ffunction-sections -fdata-sections" \
+		CPPFLAGS="-I$(STAGEDIR)/usr/include" \
+		LDFLAGS="-Wl,--gc-sections $(LDFLAGS) -L$(STAGEDIR)/usr/lib"
 
-curl-7.21.7-install: curl-7.21.7
+curl: openssl curl/Makefile
 	@$(SEP)
-	install -D curl-7.21.7/lib/.libs/libcurl.so.4.2.0 $(INSTALLDIR)/curl-7.21.7/usr/lib/libcurl.so.4.2.0
-	$(STRIP) $(INSTALLDIR)/curl-7.21.7/usr/lib/libcurl.so.4.2.0
-	cd $(INSTALLDIR)/curl-7.21.7/usr/lib && ln -sf libcurl.so.4.2.0 libcurl.so && ln -sf libcurl.so.4.2.0 libcurl.so.4
+# temporary curl-7.21.7 path compatibility
+	[ "$(notdir $(realpath $curl-7.21.7))" = "$@" ] || (rm -f curl-7.21.7 && ln -s $@ curl-7.21.7)
+	$(MAKE) -C $@ && $(MAKE) $@-stage && sed 's|/usr/lib|$(STAGEDIR)/usr/lib|g' -i $(STAGEDIR)/usr/lib/libcurl.la
+
+curl-install:
+	@$(SEP)
+	install -D curl/lib/.libs/libcurl.so.4.6.0 $(INSTALLDIR)/curl/usr/lib/libcurl.so.4.6.0
+	$(STRIP) $(INSTALLDIR)/curl/usr/lib/libcurl.so.4.6.0
+	cd $(INSTALLDIR)/curl/usr/lib && \
+		ln -sf libcurl.so.4.6.0 libcurl.so && \
+		ln -sf libcurl.so.4.6.0 libcurl.so.4
 ifeq ($(or $(RTCONFIG_SPEEDTEST),$(RTCONFIG_LETSENCRYPT)),y)
 	# for speedtest
-	install -D curl-7.21.7/src/.libs/curl $(INSTALLDIR)/curl-7.21.7/usr/sbin/curl
-	$(STRIP) $(INSTALLDIR)/curl-7.21.7/usr/sbin/curl
+	install -D curl/src/.libs/curl $(INSTALLDIR)/curl/usr/sbin/curl
+	$(STRIP) $(INSTALLDIR)/curl/usr/sbin/curl
 endif
 
-curl-7.21.7-clean:
-	[ ! -f curl-7.21.7/Makefile ] || $(MAKE) -C curl-7.21.7 clean
-	@rm -f curl-7.21.7/Makefile
+curl-clean:
+	[ ! -f curl/Makefile ] || $(MAKE) -C curl distclean
+	@rm -f curl/Makefile
+# temporary curl-7.21.7 path compatibility
+	rm -f curl-7.21.7
 
 #snmp with asus mib and openssl 1.0.0
 net-snmp-5.7.2/stamp-h1:
@@ -6819,7 +6910,7 @@ Transmission-configure:
 Transmission/Makefile:
 	$(MAKE) Transmission-configure
 
-Transmission: curl-7.21.7 libevent-2.0.21 Transmission/Makefile
+Transmission: curl libevent-2.0.21 Transmission/Makefile
 	@$(SEP)
 	$(MAKE) -C $@
 
@@ -6837,12 +6928,14 @@ wget/Makefile.in: wget/Makefile.am
 
 wget/Makefile: wget/Makefile.in
 	cd wget && $(CONFIGURE) \
-		--with-ssl=openssl --with-libssl-prefix=$(TOP)/openssl \
-		--disable-opie --disable-ntlm --disable-debug --disable-nls --disable-rpath \
-		$(if $(RTCONFIG_IPV6),,--disable-ipv6) --disable-iri --without-included-regex  \
-		--disable-dependency-tracking \
-		CFLAGS="-Os -Wall $(EXTRACFLAGS) -ffunction-sections -fdata-sections -I$(TOP)/openssl/include -I$(TOP)/zlib" \
-		LDFLAGS="$(EXTRALDFLAGS) -Wl,--gc-sections -L$(TOP)/openssl -lssl -lcrypto -L$(TOP)/zlib -lz"
+		--prefix=/usr --sysconfdir=/etc --with-ssl=openssl --with-openssl \
+		--disable-opie --disable-ntlm --disable-debug --disable-nls --disable-xattr \
+		$(if $(RTCONFIG_IPV6),,--disable-ipv6) --disable-iri --disable-pcre --disable-pcre2 \
+		--disable-rpath --disable-dependency-tracking \
+		--without-libpsl --without-libiconv-prefix --without-libintl-prefix \
+		--without-included-regex --without-libuuid \
+		CFLAGS="-Os -Wall $(EXTRACFLAGS) -ffunction-sections -fdata-sections -I$(STAGEDIR)/usr/include $(if $(RTCONFIG_PIPEFW),-I$(TOP)/shared -DHAVE_PIPEFW)" \
+		LDFLAGS="$(EXTRALDFLAGS) -Wl,--gc-sections -L$(STAGEDIR)/usr/lib -pthread" \
 
 wget: openssl zlib wget/Makefile
 	$(MAKE) -C $@
@@ -6854,6 +6947,8 @@ wget-clean:
 wget-install:
 	install -D wget/src/wget $(INSTALLDIR)/wget/usr/sbin/wget
 	$(STRIP) $(INSTALLDIR)/wget/usr/sbin/wget
+	install -d $(INSTALLDIR)/wget/rom/etc
+	echo "ca_certificate=/etc/ssl/certs/ca-certificates.crt" > $(INSTALLDIR)/wget/rom/etc/wgetrc
 
 libqcacommon:
 	$(MAKE) -C $@ && $(MAKE) $@-stage
@@ -7596,6 +7691,18 @@ sysstat-10.0.3-install:
 	$(MAKE) -C sysstat-10.0.3 install_base DESTDIR=$(INSTALLDIR)/sysstat-10.0.3 INSTALL_DOC=n
 	mv $(INSTALLDIR)/sysstat-10.0.3/etc $(INSTALLDIR)/sysstat-10.0.3/etc_sysstat
 	rm -rf $(INSTALLDIR)/sysstat-10.0.3/var
+
+asd: shared nvram$(BCMEX)$(EX7) curl openssl libasc
+	$(MAKE) -C $@
+
+asd-install:
+	install -D asd/asd $(INSTALLDIR)/asd/usr/bin/asd
+	$(STRIP) $(INSTALLDIR)/asd/usr/bin/asd
+
+asd-clean:
+	$(MAKE) -C asd clean
+
+
 #
 # tunnel related
 #
@@ -7647,7 +7754,7 @@ lantiq_cmd-clean:
 
 #aaews: wb
 
-#wb: shared nvram curl-7.21.7 openssl libxml2 asusnatnl
+#wb: shared nvram curl openssl libxml2 asusnatnl
 aaews: wb
 	cd aaews && \
 	CC=$(CC) CXX=$(CXX) AR=$(AR) RANLIB=$(RANLIB) LD=$(LD) CFLAGS="-Os -Wall $(EXTRACFLAGS)" \
@@ -8099,6 +8206,12 @@ bridgeutil:
 	$(MAKE) -C $(TOPX_DIR)
 
 .PHONY : bridgeutil
+
+archer_lib:
+	@$(eval TOPX_DIR:=$(firstword $(wildcard $(TOP_PLATFORM)/$@) $(wildcard $@)))
+	$(MAKE) -C $(TOPX_DIR)
+
+.PHONY : archer_lib
 
 archerctl:
 	@$(eval TOPX_DIR:=$(firstword $(wildcard $(TOP_PLATFORM)/$@) $(wildcard $@)))

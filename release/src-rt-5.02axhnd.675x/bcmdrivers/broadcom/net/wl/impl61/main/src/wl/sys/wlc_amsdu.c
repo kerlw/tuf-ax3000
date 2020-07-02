@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_amsdu.c 777412 2019-08-01 00:36:17Z $
+ * $Id: wlc_amsdu.c 778671 2019-09-06 15:34:43Z $
  */
 
 /**
@@ -759,7 +759,7 @@ BCMATTACHFN(wlc_amsdu_detach)(amsdu_info_t *ami)
 
 	wlc_module_unregister(ami->pub, "amsdu", ami);
 
-#ifdef BCMDBG
+#if defined(BCMDBG) || defined(BCMDBG_AMSDU)
 	if (ami->amdbg) {
 		MFREE(ami->pub->osh, ami->amdbg, sizeof(amsdu_dbg_t));
 		ami->amdbg = NULL;

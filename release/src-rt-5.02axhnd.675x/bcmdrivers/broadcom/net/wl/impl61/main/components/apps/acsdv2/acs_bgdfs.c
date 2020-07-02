@@ -46,7 +46,7 @@
  *      OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *      NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_bgdfs.c 777995 2019-08-20 06:13:13Z $
+ *	$Id: acs_bgdfs.c 779769 2019-10-07 10:14:09Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -116,6 +116,7 @@ acs_bgdfs_attempt_2g(acs_chaninfo_t * ci_2g, acs_chaninfo_t * ci_5g,
 {
 	int ret = 0;
 	acs_bgdfs_info_t *acs_bgdfs = ci_2g->acs_bgdfs;
+	time_t now = uptime();
 
 	if (ci_5g->cac_mode != ACS_CAC_MODE_AUTO &&
 			ci_5g->cac_mode != ACS_CAC_MODE_ZDFS_2G_ONLY) {
@@ -151,6 +152,17 @@ acs_bgdfs_attempt_2g(acs_chaninfo_t * ci_2g, acs_chaninfo_t * ci_5g,
 	/* If setting channel, ensure chanspec is neighbor friendly */
 	if (((int)chspec) > 0 && !stunt) {
 		chspec = acs_adjust_ctrl_chan(ci_5g, chspec);
+	}
+
+	if (!stunt && CHSPEC_CHANNEL(chspec) ==
+			CHSPEC_CHANNEL(ci_5g->recent_prev_chspec)) {
+		if (now - ci_5g->acs_prev_chan_at <
+				2 * ci_5g->acs_chan_dwell_time) {
+			ACSD_INFO("%s: staying on same channel because of"
+					" prev_chspec dwell restrictions\n",
+					ci_5g->name);
+			return ret;
+		}
 	}
 
 	ACSD_INFO("%s####Attempting BGDFS 2G on channel 0x%x stunt %d\n", ci_2g->name,
@@ -626,6 +638,7 @@ acs_bgdfs_ahead_trigger_scan(acs_chaninfo_t * c_info)
 	chanspec_t chosen_chspec = 0;
 	bool is_etsi = c_info->country_is_edcrs_eu;
 	bool is_dfs = c_info->cur_is_dfs;
+	bool chan_least_dwell = FALSE;
 
 	if (c_info->cac_mode == ACS_CAC_MODE_FULL_ONLY) {
 		ACSD_INFO("%s BGDFS disabled due to CAC mode %d\n",
@@ -639,6 +652,25 @@ acs_bgdfs_ahead_trigger_scan(acs_chaninfo_t * c_info)
 
 	/* In FCC, and already on a DFS channel return silently */
 	if (!is_etsi && is_dfs) {
+		return BCME_OK;
+	}
+
+	chan_least_dwell = chanim_record_chan_dwell(c_info,
+			c_info->chanim_info);
+
+	/* If last channel change happened within the dwell time period, not allowing
+	 * scan or channel change.
+	 */
+	if (!chan_least_dwell) {
+		ACSD_5G("%s: chan_least_dwell is FALSE\n", c_info->name);
+		return FALSE;
+	}
+
+	ret = acs_check_for_txop_on_curchan(c_info);
+	if (!ret) {
+		ACSD_INFO("ifname: %s Don't allow BGDFS/DFS_REENTRY when txop score is:%d"
+			"greater than limit:%d\n", c_info->name, c_info->txop_score,
+			c_info->acs_txop_limit);
 		return BCME_OK;
 	}
 
@@ -666,7 +698,9 @@ acs_bgdfs_ahead_trigger_scan(acs_chaninfo_t * c_info)
 	/* In FCC/ETSI, if on a low power Non-DFS, attempt a DFS 3+1 move */
 	if (!(FIXCHSPEC(c_info) || (c_info->wet_enabled && acs_check_assoc_scb(c_info)) || MONITORCHECK(c_info)) &&
 			!acs_is_dfs_chanspec(c_info, c_info->cur_chspec) &&
-			acsd_is_lp_chan(c_info, c_info->cur_chspec)) {
+			((c_info->acs_enable_dfsr_on_highpwr &&
+			(c_info->acs_dfs == ACS_DFS_REENTRY)) ||
+			acsd_is_lp_chan(c_info, c_info->cur_chspec))) {
 		ACSD_INFO("%s: moving to DFS channel 0x%0x\n", c_info->name, chosen_chspec);
 		if ((ret = acs_bgdfs_attempt(c_info, chosen_chspec, FALSE)) != BCME_OK) {
 			ACSD_ERROR("dfs_ap_move Failed\n");
@@ -717,6 +751,7 @@ acs_bgdfs_attempt_on_txfail(acs_chaninfo_t * c_info)
 	int bw = ACS_BW_20;
 	int chbw = CHSPEC_BW(c_info->cur_chspec);
 	time_t now = uptime();
+	acs_chaninfo_t *zdfs_2g_ci = NULL;
 
 	if (c_info->cac_mode == ACS_CAC_MODE_FULL_ONLY) {
 		ACSD_INFO("%s BGDFS disabled due to CAC mode %d\n",
@@ -765,7 +800,13 @@ acs_bgdfs_attempt_on_txfail(acs_chaninfo_t * c_info)
 				return TRUE;
 			}
 		}
-
+		ret = acs_check_for_txop_on_curchan(c_info);
+		if (!ret) {
+			ACSD_INFO("ifname: %s Don't allow BGDFS/DFS_REENTRY when txop score is:%d"
+				"greater than limit:%d\n", c_info->name, c_info->txop_score,
+				c_info->acs_txop_limit);
+			return TRUE;
+		}
 		ACSD_INFO("%s Selected chan 0x%x for attempting bgdfs\n", c_info->name, chspec);
 		if (chspec) {
 			ret = acs_bgdfs_attempt(c_info, chspec, FALSE);
@@ -773,9 +814,13 @@ acs_bgdfs_attempt_on_txfail(acs_chaninfo_t * c_info)
 				ACSD_ERROR("%s: Failed bgdfs on %x\n", c_info->name, chspec);
 				return FALSE;
 			}
-			c_info->acs_bgdfs->acs_bgdfs_on_txfail = TRUE;
-			chanim_upd_acs_record(c_info->chanim_info, c_info->selected_chspec,
-					c_info->switch_reason);
+			if ((zdfs_2g_ci = acs_get_zdfs_2g_ci()) != NULL && zdfs_2g_ci->acs_bgdfs &&
+					zdfs_2g_ci->acs_bgdfs->state != BGDFS_STATE_IDLE) {
+				zdfs_2g_ci->acs_bgdfs->acs_bgdfs_on_txfail = TRUE;
+			} else {
+				c_info->acs_bgdfs->acs_bgdfs_on_txfail = TRUE;
+			}
+			c_info->switch_reason_type = APCS_DFS_REENTRY;
 			c_info->recent_prev_chspec = c_info->cur_chspec;
 			c_info->acs_prev_chan_at = uptime();
 			return TRUE;

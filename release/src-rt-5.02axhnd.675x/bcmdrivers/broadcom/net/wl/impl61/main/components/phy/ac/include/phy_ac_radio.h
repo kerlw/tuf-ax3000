@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_radio.h 775385 2019-05-29 11:30:21Z $
+ * $Id: phy_ac_radio.h 778770 2019-09-10 09:50:17Z $
  */
 
 #ifndef _phy_ac_radio_h_
@@ -176,6 +176,8 @@ void phy_ac_radio_parse_idcode(phy_info_t *pi, uint32 idcode);
 /* ************************************************************************* */
 void wlc_phy_lp_mode(phy_ac_radio_info_t *ri, int8 lp_mode);
 void acphy_set_lpmode(phy_info_t *pi, acphy_lp_opt_levels_t lp_opt_lvl);
+int wlc_phy_get_recip_LO_div_phase(phy_info_t *pi);
+int wlc_phy_get_recip_LO_div_phase_20704(phy_info_t *pi);
 void wlc_phy_force_lpvco_2G(phy_info_t *pi, int8 force_lpvco_2G);
 bool wlc_phy_poweron_dac_clocks(phy_info_t *pi, uint8 core, uint16 *orig_dac_clk_pu,
 	uint16 *orig_ovr_dac_clk_pu);

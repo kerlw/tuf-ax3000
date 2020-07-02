@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_noise.c 777128 2019-07-19 20:03:15Z $
+ * $Id: phy_noise.c 779658 2019-10-03 21:24:43Z $
  */
 
 #include <phy_cfg.h>
@@ -340,15 +340,7 @@ wlc_phy_noise_calc(phy_info_t *pi, uint32 *cmplx_pwr, int8 *pwr_ant, uint8 extra
 		M_PWRIND_BLKS(pi)+0xC)));
 #endif /* WL_EAP_NOISE_MEASUREMENTS */
 
-#ifdef WL_EAP_NOISE_MEASUREMENTS
-	/* Compute total gain as a function of active antennas, e.g., for a
-	 * 2x2 deployment of a 4x4 chip
-	 */
-	math_cmplx_computedB(cmplx_pwr, cmplx_pwr_dbm,
-		PHY_BITSCNT(phy_stf_get_data(pi->stfi)->phyrxchain));
-#else
 	math_cmplx_computedB(cmplx_pwr, cmplx_pwr_dbm, PHYCORENUM(pi->pubpi->phy_corenum));
-#endif /* WL_EAP_NOISE_MEASUREMENTS */
 
 	if (fns->calc != NULL)
 		(fns->calc)(fns->ctx, cmplx_pwr_dbm, extra_gain_1dB);

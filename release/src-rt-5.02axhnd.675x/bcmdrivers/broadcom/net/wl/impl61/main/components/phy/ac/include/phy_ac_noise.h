@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_noise.h 776005 2019-06-17 15:01:05Z $
+ * $Id: phy_ac_noise.h 778951 2019-09-16 04:24:00Z $
  */
 
 #ifndef _phy_ac_noise_h_
@@ -146,12 +146,14 @@ void phy_ac_noise_unregister_impl(phy_ac_noise_info_t *ac_info);
 	ACMAJORREV_36(pi->pubpi->phy_rev) || ACMAJORREV_GE40(pi->pubpi->phy_rev))
 #define ACPHY_HWACI_WITH_DESENSE_ENG(pi) (ACMAJORREV_4((pi)->pubpi->phy_rev) || \
 	ACMAJORREV_36(pi->pubpi->phy_rev) || ACMAJORREV_GE40(pi->pubpi->phy_rev))
-#define ACPHY_HWACI_HWTBL_MITIGATION(pi) (ACMAJORREV_33((pi)->pubpi->phy_rev) || \
-	ACMAJORREV_51((pi)->pubpi->phy_rev))
+#define ACPHY_HWACI_HWTBL_MITIGATION(pi) (ACMAJORREV_33((pi)->pubpi->phy_rev))
+#define ACPHY_MCLIP_ACI_MITIGATION(pi) (ACMAJORREV_51((pi)->pubpi->phy_rev) || \
+	ACMAJORREV_128((pi)->pubpi->phy_rev))
 #else
 #define ACPHY_ENABLE_FCBS_HWACI(pi) 0
 #define ACPHY_HWACI_WITH_DESENSE_ENG(pi) (0)
 #define ACPHY_HWACI_HWTBL_MITIGATION(pi) (0)
+#define ACPHY_MCLIP_ACI_MITIGATION(pi) (0)
 #endif // endif
 
 #define ACPHY_HWACI_28NM(pi)  ACMAJORREV_GE40(pi->pubpi->phy_rev)

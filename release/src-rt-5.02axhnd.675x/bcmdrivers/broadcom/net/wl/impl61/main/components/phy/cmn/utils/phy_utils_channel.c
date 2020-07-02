@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_utils_channel.c 777833 2019-08-13 05:49:18Z $
+ * $Id: phy_utils_channel.c 778375 2019-08-29 13:16:46Z $
  */
 
 #include <typedefs.h>
@@ -149,7 +149,8 @@ static const phy_chan_info_basic_t chan_info_all[] = {
 /* 64 */	{216,   5080},
 /* 65 */	{169,   5845},
 /* 66 */	{173,   5865},
-/* 67 */	{171,   5855}
+/* 67 */	{171,   5855},
+/* 68 */	{167,   5835}
 
 #else
 

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_slave_com_hdlr.c 777559 2019-08-06 06:57:38Z $
+ * $Id: wbd_slave_com_hdlr.c 779933 2019-10-10 09:42:10Z $
  */
 
 #include "wbd.h"
@@ -1536,6 +1536,31 @@ wbd_slave_process_event_msg(wbd_info_t* info, char* pkt, int len)
 		}
 		break;
 
+		case WLC_E_CAC_STATE_CHANGE:
+		{
+			wlc_cac_event_t *cac_event = NULL;
+			wl_dfs_status_all_t *all = NULL;
+			wl_dfs_sub_status_t *sub0 = NULL;
+
+			/* extract event information */
+			cac_event = (wlc_cac_event_t *)data;
+			all = (wl_dfs_status_all_t*)&(cac_event->scan_status);
+			sub0 = &(all->dfs_sub_status[0]);
+
+			/* as of now monitoring only for full time CAC, so sub0 is sufficient */
+			if (sub0->state == WL_DFS_CACSTATE_PREISM_CAC) {
+				WBD_DEBUG("FULL Time CAC started, wait for CACSTATE_ISM state \n");
+				break;
+			}
+			if (sub0->state == WL_DFS_CACSTATE_ISM) {
+				WBD_DEBUG("ifname[%s] send chan preference report \n", ifname);
+
+				/* send channel preference report to controller */
+				ieee1905_send_chan_preference_report();
+			}
+			break;
+		}
+
 		default:
 			WBD_INFO("Band[%d] Slave["MACF"] Ifname[%s] Event[0x%x] UnKnown Event\n",
 				in_band, ETHER_TO_MACF(slave->wbd_ifr.mac), ifname, evt_type);
@@ -2142,6 +2167,7 @@ wbd_slave_send_fbt_config_request_cmd()
 	WBD_CHECK_ERR_MSG(WBDE_DS_1905_ERR, "Failed to send "
 		"FBT_CONFIG_REQ from Device["MACDBG"], Error : %s\n",
 		MAC2STRDBG(ieee1905_get_al_mac()), wbderrorstr(ret));
+	wbd_get_ginfo()->wbd_slave->flags |= WBD_BKT_SLV_FLAGS_FBT_REQ_SENT;
 
 end:
 	/* If FBT Config Request List is filled up */
@@ -2449,6 +2475,12 @@ wbd_slave_process_fbt_config_resp_cmd(unsigned char *neighbor_al_mac,
 	wbd_info_t *info = wbd_get_ginfo();
 
 	WBD_ENTER();
+
+	if (!(info->wbd_slave->flags & WBD_BKT_SLV_FLAGS_FBT_REQ_SENT)) {
+		WBD_WARNING("Not Processing FBT config response as a request was never sent\n");
+		WBD_EXIT();
+		return ret;
+	}
 
 	/* Initialize FBT Config Response Data */
 	memset(&fbt_config_resp, 0, sizeof(fbt_config_resp));

@@ -98,6 +98,7 @@ wbd_app_set_eventmask(eapd_app_t *app)
 	setbit(app->bitvec, WLC_E_REASSOC);
 	setbit(app->bitvec, WLC_E_PROBREQ_MSG);
 	setbit(app->bitvec, WLC_E_ASSOC_REASSOC_IND_EXT);
+	setbit(app->bitvec, WLC_E_CAC_STATE_CHANGE);
 
 	return;
 }

@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_bmac.h 777264 2019-07-25 05:42:17Z $
+ * $Id: wlc_bmac.h 780059 2019-10-15 02:58:47Z $
  */
 
 /* XXXXX this interface is under wlc.c by design
@@ -505,6 +505,8 @@ extern int wlc_bmac_p2p_set(wlc_hw_info_t *wlc_hw, bool enable);
 #define wlc_bmac_mcnx_enab(hw, en) wlc_bmac_p2p_set(hw, en)
 extern void wlc_bmac_retrylimit_upd(wlc_hw_info_t *wlc_hw, uint16 SRL, uint16 LRL);
 extern void wlc_bmac_fifoerrors(wlc_hw_info_t *wlc_hw);
+extern bool wlc_bmac_pktpool_empty(wlc_info_t *wlc);
+
 /* API for BMAC driver (e.g. wlc_phy.c etc) */
 
 extern void wlc_bmac_bw_set(wlc_hw_info_t *wlc_hw, uint16 bw);

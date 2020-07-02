@@ -91,11 +91,11 @@ extern void wlc_disable_hw_beacons(wlc_info_t *wlc);
 int airiq_doiovar(void *hdl, uint32 actionid, void *p, uint plen,
 	void *arg, uint alen, uint vsize, struct wlc_if *wlcif);
 
-#ifdef BCMDBG
+#if defined(BCMDBG) || defined(WLTEST)
 static void wlc_airiq_reset_fft_counters(airiq_info_t *airiqh);
-
 static void wlc_airiq_dump_fft_counters(airiq_info_t *airiqh, struct bcmstrbuf *b);
-#endif /* BCMDBG */
+static int wlc_airiq_dump(airiq_info_t * airiqh, struct bcmstrbuf *b);
+#endif // endif
 void wlc_airiq_default_scan_channels(airiq_info_t *airiqh);
 
 static const uint16 airiq_fft_latency_bins[AIRIQ_HISTOGRAM_BINCNT] =
@@ -142,7 +142,7 @@ BCMATTACHFN(wlc_airiq_attach) (wlc_info_t * wlc)
 			    NULL, /* up fcn */
 			    NULL); /* down fcn */
 
-#ifdef BCMDBG
+#if defined(BCMDBG) || defined(WLTEST)
 	wlc_dump_register(wlc->pub, "airiq", (dump_fn_t)wlc_airiq_dump, (void*)airiqh);
 #endif // endif
 	/* This code is for platforms where the WL driver scanning is used */
@@ -228,8 +228,7 @@ BCMATTACHFN(wlc_airiq_detach) (airiq_info_t * airiqh)
 	MFREE(airiqh->wlc->osh, airiqh, sizeof(airiq_info_t));
 }
 
-#ifdef BCMDBG
-
+#if defined(BCMDBG) || defined(WLTEST)
 static void
 wlc_airiq_dump_fft_counters(airiq_info_t *airiqh, struct bcmstrbuf *b)
 {
@@ -282,7 +281,7 @@ wlc_airiq_log_fft(airiq_info_t *airiqh, uint16 channel, uint16 latency)
 	airiqh->fft_latency[channel].bin[AIRIQ_HISTOGRAM_BINCNT - 1]++;
 }
 
-int
+static int
 wlc_airiq_dump(airiq_info_t *airiqh, struct bcmstrbuf *b)
 {
 
@@ -292,7 +291,7 @@ wlc_airiq_dump(airiq_info_t *airiqh, struct bcmstrbuf *b)
 
 	return 0;
 }
-#endif /* BCMDBG */
+#endif // endif
 
 static void
 wlc_airiq_updown_cb(void *ctx, bsscfg_up_down_event_data_t *updown_data)
@@ -395,7 +394,7 @@ wlc_airiq_set_enable(airiq_info_t *airiqh, bool enable)
 {
 	airiqh->scan_enable = enable;
 	if (airiqh->phy_mode != PHYMODE_3x3_1x1) {
-		wlc_phy_hold_upd(WLC_PI(airiqh->wlc),PHY_HOLD_FOR_SCAN, enable);
+		wlc_phy_hold_upd(WLC_PI(airiqh->wlc), PHY_HOLD_FOR_SCAN, enable);
 	}
 	wlc_set_wake_ctrl(airiqh->wlc);
 }

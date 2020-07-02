@@ -2269,6 +2269,9 @@ wlc_dfs_dump(void *ctx, struct bcmstrbuf *b)
 	wlc_dfs_info_t *dfs = (wlc_dfs_info_t *)ctx;
 	uint32 i;
 
+	if (!WL_ERROR_ON())
+		return BCME_OK;
+
 	bcm_bprintf(b, "radar %d\n", dfs->radar);
 	bcm_bprhex(b, "chan_blocked ", TRUE,
 	           (uint8 *)dfs->chan_blocked, sizeof(dfs->chan_blocked));

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_rxgcrs.c 777333 2019-07-29 08:57:52Z $
+ * $Id: phy_ac_rxgcrs.c 780027 2019-10-14 10:11:20Z $
  */
 
 #include <phy_cfg.h>
@@ -67,6 +67,7 @@
 #include <phy_misc_api.h>
 #include <phy_ocl_api.h>
 #include <phy_ac_ocl.h>
+#include <phy_ac_chanmgr.h>
 
 /* ************************ */
 /* Modules used by this module */
@@ -298,6 +299,7 @@ static void* BCMRAMFN(phy_ac_get_rxg_param_tbl)(phy_info_t *pi, phy_ac_rxg_param
 		uint8 ind_2d_tbl);
 static void wlc_phy_adjust_ed_thres_acphy(phy_type_rxgcrs_ctx_t * ctx, int32 *assert_thresh_dbm,
 	bool set_threshold);
+static bool wlc_phy_is_edcrs_high_acphy(phy_info_t *pi);
 static int phy_ac_rxgcrs_setup_fixedgain_noisecal(phy_ac_rxgcrs_info_t *rxgcrsi);
 static int phy_ac_rxgcrs_enable_fixedgain_noisecal(phy_ac_rxgcrs_info_t *rxgcrsi, uint16 enable);
 #ifndef ATE_BUILD
@@ -434,6 +436,7 @@ BCMATTACHFN(phy_ac_rxgcrs_register_impl)(phy_info_t *pi, phy_ac_info_t *aci,
 	fns.init_rxgcrs = phy_ac_rxgcrs_init;
 	fns.set_locale = phy_ac_rxgcrs_set_locale;
 	fns.adjust_ed_thres = wlc_phy_adjust_ed_thres_acphy;
+	fns.is_edcrs_high = wlc_phy_is_edcrs_high_acphy;
 	fns.get_rxdesens = phy_ac_rxgcrs_get_rxdesens;
 	fns.set_rxdesens = phy_ac_rxgcrs_set_rxdesens;
 	fns.get_rxgainindex = acphy_get_rxgain_index;
@@ -462,7 +465,7 @@ BCMATTACHFN(phy_ac_rxgcrs_register_impl)(phy_info_t *pi, phy_ac_info_t *aci,
 		goto fail;
 	}
 
-	if (ACPHY_HWACI_HWTBL_MITIGATION(pi)) {
+	if (ACPHY_HWACI_HWTBL_MITIGATION(pi) || ACPHY_MCLIP_ACI_MITIGATION(pi)) {
 		phy_ac_noise_hwaci_switching_regs_tbls_list_init(pi);
 	}
 
@@ -473,7 +476,7 @@ BCMATTACHFN(phy_ac_rxgcrs_register_impl)(phy_info_t *pi, phy_ac_info_t *aci,
 		goto fail;
 	}
 
-	if (ACMAJORREV_40_128(pi->pubpi->phy_rev)) {
+	if (ACMAJORREV_40(pi->pubpi->phy_rev)) {
 		/* Read lesimode from NVRAM for 2G (Aux slice) */
 		if (pi->pubpi->slice == DUALMAC_AUX) {
 			rxgcrs_info->lesi_cap = (uint8)PHY_GETINTVAR_ARRAY_SLICE(pi,
@@ -1051,7 +1054,7 @@ BCMATTACHFN(phy_ac_populate_rxg_params)(phy_ac_rxgcrs_info_t *rxgcrs_info)
 				rxg_params->lna1_byp_gain_2g = -16;
 				rxg_params->lna1_byp_rout_2g = 0;
 			} else {
-				rxg_params->lna1_byp_gain_2g = -15;
+				rxg_params->lna1_byp_gain_2g = -17;
 				rxg_params->lna1_byp_rout_2g = 10;
 			}
 			rxg_params->lna1_byp_gain_5g = -8;
@@ -1221,7 +1224,8 @@ BCMATTACHFN(phy_ac_rxgcrs_std_params_attach)(phy_ac_rxgcrs_info_t *ri)
 	}
 	if (ACMAJORREV_37(pi->pubpi->phy_rev) ||
 	    (ACMAJORREV_47(pi->pubpi->phy_rev) && !ACMINORREV_0(pi)) ||
-		(ACMAJORREV_129(pi->pubpi->phy_rev) && elna_present)) {
+	    ACMAJORREV_128(pi->pubpi->phy_rev) ||
+	    (ACMAJORREV_129(pi->pubpi->phy_rev) && elna_present)) {
 		ri->lesi_cap = TRUE;
 	} else if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
 		ri->lesi_cap = FALSE;
@@ -4506,7 +4510,7 @@ wlc_phy_desense_apply_default_acphy(phy_info_t *pi)
 	wlc_phy_desense_print_phyregs_acphy(pi, "restore");
 	/* turn on LESI */
 	if (pi_ac->rxgcrsi->lesi_cap) {
-		phy_ac_rxgcrs_lesi(pi_ac->rxgcrsi, TRUE, 0);
+		phy_ac_rxgcrs_lesi(pi_ac->rxgcrsi, phy_ac_chanmgr_lesi_en(pi), 0);
 	}
 	/* channal update reset for default */
 	if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev)) {
@@ -4703,7 +4707,7 @@ wlc_phy_desense_apply_acphy(phy_info_t *pi, bool apply_desense)
 		*/
 		wlc_phy_desense_mf_high_thresh_acphy(pi, (ofdm_desense > 0));
 
-		if (pi_ac->rxgcrsi->lesi_cap) {
+		if (pi_ac->rxgcrsi->lesi_cap && phy_ac_chanmgr_lesi_en(pi)) {
 			/* First ACPHY_ACI_MAX_LESI_DESENSE_DB-1 of desense is done using lesi_crs
 			   ACPHY_ACI_MAX_LESI_DESENSE_DB+ dB is done by turning off lesi
 			   remainder is done using initgain/crsmin (with lesi off)
@@ -9441,7 +9445,7 @@ chanspec_setup_rxgcrs(phy_info_t *pi)
 	/* set the crsmin_th from cache at chan_change */
 	(void) phy_ac_rxgcrs_min_pwr_cal(pi->u.pi_acphy->rxgcrsi, PHY_CRS_SET_FROM_CACHE);
 
-	if (ACPHY_HWACI_HWTBL_MITIGATION(pi)) {
+	if (ACPHY_HWACI_HWTBL_MITIGATION(pi) || ACPHY_MCLIP_ACI_MITIGATION(pi)) {
 		desense_state_init = 1;
 	} else {
 		desense_state_init = 0;
@@ -9496,7 +9500,7 @@ chanspec_setup_rxgcrs(phy_info_t *pi)
 	}
 #endif /* WLC_DISABLE_ACI */
 	for (desense_state = desense_state_init; desense_state >= 0; desense_state--) {
-		if ((ACPHY_HWACI_HWTBL_MITIGATION(pi)) && (!ACMAJORREV_51(pi->pubpi->phy_rev)))  {
+		if ((ACPHY_HWACI_HWTBL_MITIGATION(pi)))  {
 			phy_ac_noise_hwaci_mitigation(pi->u.pi_acphy->noisei, desense_state);
 		}
 
@@ -9534,12 +9538,13 @@ chanspec_setup_rxgcrs(phy_info_t *pi)
 			wlc_phy_desense_apply_acphy(pi, pi_ac->rxgcrsi->total_desense->on);
 		}
 		if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev) ||
-		    ACMAJORREV_51(pi->pubpi->phy_rev)) {
+		    ACPHY_MCLIP_ACI_MITIGATION(pi)) {
 			stall_val = READ_PHYREGFLD(pi, RxFeCtrl1, disable_stalls);
 			wlapi_suspend_mac_and_wait(pi->sh->physhim);
 			ACPHY_DISABLE_STALL(pi);
 
-			if (ACPHY_HWACI_HWTBL_MITIGATION(pi) && desense_state == 1) {
+			if ((ACPHY_HWACI_HWTBL_MITIGATION(pi) ||
+			    ACPHY_MCLIP_ACI_MITIGATION(pi)) && desense_state == 1) {
 				for (reg_list_ptr =
 					phy_ac_noise_get_data(pi_ac->noisei)->hwaci_phyreg_list;
 					reg_list_ptr->regaddr != 0xFFFF; reg_list_ptr++) {
@@ -9584,7 +9589,8 @@ chanspec_setup_rxgcrs(phy_info_t *pi)
 					}
 				}
 				/* copy initgain for ACI to corresponding rfseq table */
-				if (ACMAJORREV_51_129(pi->pubpi->phy_rev)) {
+				if (ACMAJORREV_51_129(pi->pubpi->phy_rev) ||
+				  ACMAJORREV_128(pi->pubpi->phy_rev)) {
 				       wlc_phy_table_read_acphy(pi, ACPHY_TBL_ID_RFSEQ, 1,
 				               0xf6, 16, &rfseq_aci_a_c0);
 				       wlc_phy_table_read_acphy(pi, ACPHY_TBL_ID_RFSEQ, 1,
@@ -9603,7 +9609,7 @@ chanspec_setup_rxgcrs(phy_info_t *pi)
 				               0x5d3, 16, &rfseq_aci_b_c1);
 				}
 			}
-			if (ACMAJORREV_51(pi->pubpi->phy_rev) &&
+			if (ACPHY_MCLIP_ACI_MITIGATION(pi) &&
 			    (pi->sh->interference_mode & ACPHY_MCLIP_ACI_MIT))
 				wlc_phy_mclip_aci_mitigation(pi, TRUE);
 			ACPHY_ENABLE_STALL(pi, stall_val);
@@ -9758,8 +9764,8 @@ static void wlc_phy_mclip_agc(phy_info_t *pi, bool init, bool band_change, bool 
 	uint8 core;
 	const uint aci_diff_th_rev51 = 1;
 	const uint16 aci_idx_offset_rev51 = 0;
-	const uint aci_diff_th_rev128 = 2;
-	const uint16 aci_idx_offset_rev128 = 1;
+	const uint aci_diff_th_rev128 = 1;
+	const uint16 aci_idx_offset_rev128 = 0;
 	const uint aci_diff_th_rev129 = 8;
 	const uint16 aci_idx_offset_rev129 = 1;
 	info->curr_desense->elna_bypass = wlc_phy_get_max_lna_index_acphy(pi, ELNA_ID);
@@ -10687,6 +10693,40 @@ static void wlc_phy_adjust_ed_thres_acphy(phy_type_rxgcrs_ctx_t *ctx, int32 *ass
 
 	/* Resume MAC */
 	if (!suspend) wlc_phy_conditional_resume(pi, &suspend);
+}
+
+static bool wlc_phy_is_edcrs_high_acphy(phy_info_t *pi)
+{
+	bool edcrs = FALSE, suspend;
+	uint loop_count = 100, percentage = 60, edcrs_high_count = 0;
+	uint16 reg_val;
+	uint8 i = 0;
+
+	if (!pi->sh->up)
+		return edcrs;
+
+	/* suspend mac if haven't done so */
+	wlc_phy_conditional_suspend(pi, &suspend);
+	phy_utils_phyreg_enter(pi);
+
+	/* Check EDCRS a few times to decide if the medium is busy.
+	   If medium is busy, skip PAPD this time around.
+	*/
+	for (i = 0; i < loop_count; i++) {
+		reg_val = READ_PHYREG(pi, ed_crs);
+		if ((reg_val & 0xffff) > 0) {
+			edcrs_high_count++;
+		}
+	}
+
+	if (edcrs_high_count > (loop_count * percentage / 100))
+		edcrs = TRUE;
+
+	/* Resume MAC */
+	phy_utils_phyreg_exit(pi);
+	wlc_phy_conditional_resume(pi, &suspend);
+
+	return edcrs;
 }
 
 #ifndef ATE_BUILD

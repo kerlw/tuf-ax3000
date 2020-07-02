@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_ds.h 777368 2019-07-30 16:20:53Z $
+ * $Id: wbd_ds.h 779858 2019-10-09 06:04:24Z $
  */
 
 #ifndef _WBD_DS_H_
@@ -208,6 +208,9 @@ typedef struct wbd_blanket_master wbd_blanket_master_t;
 #define WBD_ASSOC_ITEM_IS_TBSS_TIMER(flags)	((flags) & WBD_FLAGS_ASSOC_ITEM_TBSS)
 #define WBD_ASSOC_ITEM_IS_BH_OPT(flags)		((flags) & WBD_FLAGS_ASSOC_ITEM_BH_OPT)
 #define WBD_ASSOC_ITEM_IS_BH_OPT_DONE(flags)	((flags) & WBD_FLAGS_ASSOC_ITEM_BH_OPT_DONE)
+
+/* IEEE1905 Interface vendor item bit flags */
+#define WBD_FLAGS_IFR_AP_SCAN_DISABLED	0x0001	/* WPA Supplicant AP Scan Disabled */
 
 /* Slave Info Bit flags */
 #define WBD_FLAGS_BSS_FBT_ENABLED	0x0001	/* FBT enabled */
@@ -609,6 +612,7 @@ typedef struct wbd_device_item {
 
 /* WBD Vendor Specific Information of each interface on this Device */
 typedef struct wbd_ifr_item {
+	uint16 flags;				/* Bit flags of type WBD_FLAGS_IFR_XXX */
 	unsigned char chan_util_thld;		/* Channel utilization threshold value from
 						 * metric policy
 						 */

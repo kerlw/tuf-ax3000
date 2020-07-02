@@ -1425,6 +1425,9 @@ wlc_dump_obss(wlc_obss_info_t *obssi, struct bcmstrbuf *b)
 	int idx;
 	wlc_bsscfg_t *cfg;
 
+	if (!WL_ERROR_ON())
+		return 0;
+
 	bcm_bprintf(b, "num chans: %u\n", obssi->num_chan);
 	bcm_bprhex(b, "chanvec: ", TRUE, obssi->chanvec, OBSS_CHANVEC_SIZE);
 	bcm_bprhex(b, "map: ", TRUE, obssi->coex_map, CH_MAX_2G_CHANNEL);

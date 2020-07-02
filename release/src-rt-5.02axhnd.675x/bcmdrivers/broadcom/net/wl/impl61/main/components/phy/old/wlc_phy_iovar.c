@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_phy_iovar.c 775443 2019-05-30 09:07:19Z $
+ * $Id: wlc_phy_iovar.c 778770 2019-09-10 09:50:17Z $
  */
 
 /*
@@ -382,6 +382,9 @@ static const bcm_iovar_t phy_iovars[] = {
 #if defined(WLTEST)
 	{"rpcalvars", IOV_RPCALVARS,
 	(IOVF_SET_DOWN | IOVF_MFG), 0, IOVT_BUFFER, 2*WL_NUM_RPCALVARS * sizeof(wl_rpcal_t)
+	},
+	{"rpcalphasevars", IOV_RPCALPHASEVARS,
+	(IOVF_SET_DOWN | IOVF_MFG), 0, IOVT_BUFFER, WL_NUM_RPCALPHASEVARS * sizeof(wl_rpcal_phase_t)
 	},
 #endif // endif
 #if defined(WLTEST)
@@ -1850,10 +1853,16 @@ wlc_phy_iovar_forceimpbf(phy_info_t *pi)
 			!ACMAJORREV_128(pi->pubpi->phy_rev)) {
 			/* put the steering report in index 127 */
 			uint16 tmpdata16;
-			uint32 tmpdata32 = 0x26002400;
+			uint32 tmpdata32;
+			if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+				tmpdata16 = 0x17C0;
+				tmpdata32 = 0x17C00000;
+			} else {
+				tmpdata16 = 0x2600;
+				tmpdata32 = 0x26002400;
+			}
 			wlc_phy_table_write_acphy(pi, ACPHY_TBL_ID_BFDINDEXLUT,
 				1, 159, 32, &tmpdata32);
-			tmpdata16 = 0x2600;
 			wlc_phy_table_write_acphy(pi, ACPHY_TBL_ID_IBFERPTADDRLUT,
 				1, 63, 16, &tmpdata16);
 		}
@@ -3442,6 +3451,59 @@ phy_doiovar(void *ctx, uint32 actionid, void *p, uint plen, void *a, uint alen, 
 				rpcal[WL_NUM_RPCALVARS+WL_CHAN_FREQ_RANGE_5G_BAND3].value =
 				pi->sromi->rpcal5gb3core3;
 			}
+		}
+		break;
+	}
+	case IOV_SVAL(IOV_RPCALPHASEVARS): {
+		const wl_rpcal_phase_t *rpcal_phase = p;
+		if (ACMAJORREV_1(pi->pubpi->phy_rev)) {
+			PHY_ERROR(("Number of TX Chain has to be > 1!\n"));
+			err = BCME_UNSUPPORTED;
+		} else {
+			pi->u.pi_acphy->sromi->rpcal_phase2g =
+				rpcal_phase[WL_CHAN_FREQ_RANGE_2G].update ?
+				rpcal_phase[WL_CHAN_FREQ_RANGE_2G].value :
+				pi->u.pi_acphy->sromi->rpcal_phase2g;
+
+			pi->u.pi_acphy->sromi->rpcal_phase5gb0 =
+				rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND0].update ?
+				rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND0].value :
+				pi->u.pi_acphy->sromi->rpcal_phase5gb0;
+
+			pi->u.pi_acphy->sromi->rpcal_phase5gb1 =
+				rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND1].update ?
+				rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND1].value :
+				pi->u.pi_acphy->sromi->rpcal_phase5gb1;
+
+			pi->u.pi_acphy->sromi->rpcal_phase5gb2 =
+				rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND2].update ?
+				rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND2].value :
+				pi->u.pi_acphy->sromi->rpcal_phase5gb2;
+
+			pi->u.pi_acphy->sromi->rpcal_phase5gb3 =
+				rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND3].update ?
+				rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND3].value :
+				pi->u.pi_acphy->sromi->rpcal_phase5gb3;
+		}
+		break;
+	}
+
+	case IOV_GVAL(IOV_RPCALPHASEVARS): {
+		wl_rpcal_phase_t *rpcal_phase = a;
+		if (ACMAJORREV_1(pi->pubpi->phy_rev)) {
+			PHY_ERROR(("Number of TX Chain has to be > 1!\n"));
+			err = BCME_UNSUPPORTED;
+		} else {
+			rpcal_phase[WL_CHAN_FREQ_RANGE_2G].value =
+				pi->u.pi_acphy->sromi->rpcal_phase2g;
+			rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND0].value =
+				pi->u.pi_acphy->sromi->rpcal_phase5gb0;
+			rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND1].value =
+				pi->u.pi_acphy->sromi->rpcal_phase5gb1;
+			rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND2].value =
+				pi->u.pi_acphy->sromi->rpcal_phase5gb2;
+			rpcal_phase[WL_CHAN_FREQ_RANGE_5G_BAND3].value =
+				pi->u.pi_acphy->sromi->rpcal_phase5gb3;
 		}
 		break;
 	}

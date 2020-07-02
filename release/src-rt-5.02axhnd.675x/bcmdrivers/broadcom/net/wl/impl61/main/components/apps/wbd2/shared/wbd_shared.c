@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_shared.c 777559 2019-08-06 06:57:38Z $
+ * $Id: wbd_shared.c 779283 2019-09-24 08:30:26Z $
  */
 
 #include <ctype.h>
@@ -89,6 +89,7 @@ static wbd_cli_cmd_t g_wbd_cli_cmds[] = {
 	{"weakcancel",		WBD_CMD_CLI_WEAK_CANCEL},
 	{"logs",		WBD_CMD_CLI_LOGS},
 	{"msglevel",		WBD_CMD_CLI_MSGLEVEL},
+	{"bhopt",		WBD_CMD_CLI_BHOPT},
 };
 
 /* Get Random Bytes */

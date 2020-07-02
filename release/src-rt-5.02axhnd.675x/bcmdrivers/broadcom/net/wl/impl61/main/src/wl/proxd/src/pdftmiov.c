@@ -2338,11 +2338,14 @@ ftm_iov_tune(pdftm_t *ftm, wlc_bsscfg_t *bsscfg, wl_proxd_session_id_t sid,
 				tunep->Ki = tunep->Kt = 0;
 			tunep->setflags &= ~WL_PROXD_SETFLAG_K;
 #ifdef BCMDBG
+		if (WL_ERROR_ON())
+		{
 		prhex("ftm_iov_tune: ORIG", (uint8 *)proxd_get_tunep(ftm->wlc, NULL),
 			sizeof(wl_proxd_params_tof_tune_t));
 		prhex("ftm_iov_tune: dig", (uint8 *)dig->tune,
 			sizeof(wl_proxd_params_tof_tune_t));
 		prhex("ftm_iov_tune: SET", (const uint8 *)req_tlvs->data, req_tlvs->len);
+		}
 #endif /* BCMDBG */
 		}
 	}

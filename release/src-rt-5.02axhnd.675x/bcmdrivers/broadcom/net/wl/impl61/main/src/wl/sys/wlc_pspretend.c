@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_pspretend.c 773259 2019-03-15 12:30:06Z $
+ * $Id: wlc_pspretend.c 778700 2019-09-09 04:39:46Z $
  */
 
 /* Define wlc_cfg.h to be the first header file included as some builds
@@ -561,6 +561,13 @@ wlc_pspretend_on(wlc_pps_info_t *pps, struct scb *scb, uint8 flags)
 	}
 
 	ASSERT(!SCB_PS(scb));
+
+	if (SCB_LEGACY_WDS(scb) && !(scb->flags & SCB_WDS_LINKUP)) {
+		/* Do not enter into pspretend if WDS link is down */
+		WL_PS(("wl%d.%d: "MACF" skipping pspretend_on since WDS link is down\n",
+		       wlc->pub->unit, WLC_BSSCFG_IDX(SCB_BSSCFG(scb)), ETHER_TO_MACF(scb->ea)));
+		return ps_retry;
+	}
 
 #ifdef AP
 	wlc_apps_scb_ps_on(wlc, scb);

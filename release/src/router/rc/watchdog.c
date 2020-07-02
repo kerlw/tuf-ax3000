@@ -138,6 +138,10 @@ static int bc_wps_led = 0;
 #define EJUSB_WAIT_COUNT	2		/* 2 seconds */
 #endif
 
+#ifdef RTAX82U
+#define	LEDG_WAIT		2
+#endif
+
 //#if defined(RTCONFIG_JFFS2LOG) && defined(RTCONFIG_JFFS2)
 #if defined(RTCONFIG_JFFS2LOG) && (defined(RTCONFIG_JFFS2)||defined(RTCONFIG_BRCM_NAND_JFFS2))
 #define LOG_COMMIT_PERIOD	2		/* 2 x 30 seconds */
@@ -180,6 +184,10 @@ static int u3_chk_life = 6;
 #endif
 static int btn_pressed = 0;
 static int btn_count = 0;
+#ifdef RTAX82U
+static int btn_led_pressed = 0;
+static int btn_led_count = 0;
+#endif
 #ifdef BTN_SETUP
 static int btn_pressed_setup = 0;
 static int btn_count_setup = 0;
@@ -391,6 +399,15 @@ void led_control_normal(void)
 	if (nvram_get_int("led_pwr_gpio") != nvram_get_int("led_wps_gpio"))
 		led_control(LED_WPS, LED_OFF);
 #endif
+
+#ifdef RTAX82U
+	nvram_set_int("ledg_mode", 0);
+	if (nvram_get_int("x_Setting") && nvram_get_int("link_internet") == 2)
+		nvram_set_int("ledg_color", 4);
+	else
+		nvram_set_int("ledg_color", 0);
+	kill_pidfile_s("/var/run/ledg.pid", SIGTSTP);
+#endif
 }
 
 #ifndef HND_ROUTER
@@ -430,10 +447,10 @@ int init_toggle(void)
 		case MODEL_GTAX11000:
 		case MODEL_RTAX92U:
 		case MODEL_RTAX95Q:
+		case MODEL_RTAX56_XD4:
 		case MODEL_RTAX58U:
 		case MODEL_RTAX56U:
 		case MODEL_RTAX86U:
-		case MODEL_RTAX68U:
 			nvram_set("btn_ez_radiotoggle", "1");
 			return BTN_WIFI_TOG;
 #endif
@@ -2532,6 +2549,10 @@ static inline void __handle_led_onoff_button(int led_onoff)
 #endif
 #if defined(GTAX11000)
 		eval("wl", "-i", "eth8", "ledbh", "15", "7");
+#ifdef RTCONFIG_EXTPHY_BCM84880
+		eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x7fff0", "0x1");
+		eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a832", "0x6");
+#endif
 #endif
 #ifdef RTCONFIG_LOGO_LED
 		led_control(LED_LOGO, LED_ON);
@@ -2779,9 +2800,21 @@ void btn_check(void)
 						led_control(LED_WPS, LED_ON);
 					}
 #else	/* ! (RTN11P || RTN300) */
+					{
 						led_control(LED_POWER, LED_OFF);
+#ifdef RTAX82U
+						LEDGroupReset(LED_OFF);
+#endif
+					}
 					else
+					{
 						led_control(LED_POWER, LED_ON);
+#ifdef RTAX82U
+						nvram_set_int("ledg_mode", 0);
+						nvram_set_int("ledg_color", 3);
+						kill_pidfile_s("/var/run/ledg.pid", SIGTSTP);
+#endif
+					}
 #endif	/* ! (RTN11P || RTN300) */
 #endif
 				}
@@ -3168,10 +3201,63 @@ void btn_check(void)
 
 #if (defined(RTCONFIG_LED_BTN) || !defined(RTCONFIG_WIFI_TOG_BTN)) && !defined(RTCONFIG_QCA)
 	LED_status_old = LED_status;
-#ifndef RTCONFIG_WIFI_TOG_BTN
+#if !defined(RTCONFIG_LED_BTN) && !defined(RTCONFIG_WIFI_TOG_BTN)
 	LED_status = button_pressed(BTN_WPS) && nvram_match("btn_ez_radiotoggle", "0") && nvram_match("btn_ez_mode", "1");
 #else
+#ifndef RTAX82U
 	LED_status = button_pressed(BTN_LED);
+#else
+	LED_status = 0;
+	int val = button_pressed(BTN_LED);
+	if (!btn_pressed && !btn_pressed_setup) {
+		if (val) {
+			dbg("button LED pressed\n");
+
+			if (!btn_led_pressed)
+			{
+				btn_led_pressed = 1;
+				btn_led_count = 0;
+
+				int ledg_mode = nvram_get_int("ledg_mode");
+
+				if (ledg_mode == LEDG_OFF) {
+					LED_status = 1;
+					ledg_mode = LEDG_STEADY_MODE;
+				} else if (ledg_mode == LEDG_BLINKING_MODE) {
+					ledg_mode = LEDG_STEADY_MODE;
+				} else
+					ledg_mode = (ledg_mode + 1) % (LEDG_MODE_MAX - 2);
+
+				nvram_set_int("ledg_color", 0);
+				nvram_set_int("ledg_mode", ledg_mode);
+				nvram_commit();
+
+				dbg("switch effect\n");
+				kill_pidfile_s("/var/run/ledg.pid", SIGTSTP);
+			}
+			else if (++btn_led_count > LEDG_WAIT)
+			{
+				dbg("You can release LED button now!\n");
+				btn_led_pressed = 2;
+			}
+		} else {
+			if (btn_led_pressed == 2)
+			{
+				nvram_set_int("ledg_color", 0);
+				nvram_set_int("ledg_mode", LEDG_OFF);
+				nvram_commit();
+
+				dbg("turn off cled\n");
+				kill_pidfile_s("/var/run/ledg.pid", SIGTSTP);
+
+				LED_status = 1;
+			}
+
+			btn_led_count = 0;
+			btn_led_pressed = 0;
+		}
+	}
+#endif
 #endif
 
 #if defined(RTAC68U) || defined(RTAC3200) || defined(RTCONFIG_BCM_7114) || defined(HND_ROUTER)
@@ -3287,10 +3373,16 @@ void btn_check(void)
 				eval("wl", "-i", "eth5", "ledbh", "10", "7");
 #elif defined(RTAX95Q)
 				eval("wl", "-i", "eth4", "ledbh", "10", "7");
+#elif defined(RTAX56_XD4)
+				eval("wl", "-i", "wl0", "ledbh", "10", "7");
+#elif defined(RTAX55)
+				eval("wl", "-i", "eth2", "ledbh", "0", "25");
 #elif defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
 				eval("wl", "-i", "eth5", "ledbh", "0", "25");
-#elif defined(RTAX86U) || defined(RTAX5700) || defined(RTAX68U)
+#elif defined(RTAX86U) || defined(RTAX5700)
 				eval("wl", "-i", "eth6", "ledbh", "7", "7");
+#elif defined(RTAX68U)
+				eval("wl", "-i", "eth5", "ledbh", "7", "7");
 #elif defined(RTAX56U)
 				eval("wl", "-i", "eth5", "ledbh", "0", "25");
 #elif defined(RTCONFIG_BCM_7114) || defined(RTAC86U) || defined(AC2900)
@@ -3310,10 +3402,16 @@ void btn_check(void)
 				eval("wl", "-i", "eth6", "ledbh", "10", "7");
 #elif defined(RTAX95Q)
 				eval("wl", "-i", "eth5", "ledbh", "10", "7");
+#elif defined(RTAX56_XD4)
+				eval("wl", "-i", "wl1", "ledbh", "10", "7");
+#elif defined(RTAX55)
+				eval("wl", "-i", "eth3", "ledbh", "0", "25");
 #elif defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
 				eval("wl", "-i", "eth6", "ledbh", "15", "7");
-#elif defined(RTAX86U) || defined(RTAX5700) || defined(RTAX68U)
+#elif defined(RTAX86U) || defined(RTAX5700)
 				eval("wl", "-i", "eth7", "ledbh", "15", "7");
+#elif defined(RTAX68U)
+				eval("wl", "-i", "eth6", "ledbh", "7", "7");
 #elif defined(RTAX56U)
 				eval("wl", "-i", "eth6", "ledbh", "0", "25");
 #elif defined(RTAC86U) || defined(AC2900)
@@ -3339,10 +3437,25 @@ void btn_check(void)
 #endif
 			}
 #endif
+#ifdef RTCONFIG_EXTPHY_BCM84880
+#if defined(RTAX86U) || defined(RTAX5700)
+			if(nvram_get_int("ext_phy_model") == 0){
+				if(nvram_get_int("wans_extwan")){
+					led_control(LED_LAN, LED_ON);
+				}
+
+				eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a832", "0x6");	// default. CTL LED3 MASK LOW
+				eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a835", "0x40");	// default. CTL LED4 MASK LOW
+			}
+#endif
+#endif
 #ifdef RTCONFIG_LOGO_LED
 			led_control(LED_LOGO, LED_ON);
 #endif
 			kill_pidfile_s("/var/run/usbled.pid", SIGTSTP); // inform usbled to reset status
+#ifdef RTAX82U
+			kill_pidfile_s("/var/run/ledg.pid", SIGTSTP);
+#endif
 		}
 		else
 			setAllLedOff();
@@ -3520,6 +3633,14 @@ void btn_check(void)
 #ifdef BLUECAVE
 #else
 			wps_led_control(LED_ON);
+#ifdef RTAX82U
+			nvram_set_int("ledg_mode", 0);
+			if (nvram_get_int("x_Setting") && nvram_get_int("link_internet") == 2)
+				nvram_set_int("ledg_color", 4);
+			else
+				nvram_set_int("ledg_color", 0);
+			kill_pidfile_s("/var/run/ledg.pid", SIGTSTP);
+#endif
 #endif
 #endif
 			btn_count_setup = 0;
@@ -3554,6 +3675,12 @@ void btn_check(void)
 				/* Whenever it is pushed steady, again... */
 				if (++btn_count_setup_second > WPS_WAIT_COUNT)
 				{
+#ifdef RTCONFIG_HND_ROUTER_AX
+					if (!nvram_get_int("w_Setting") && !is_wps_stopped()) {
+						dbg("skip WPS PBC re-triggering\n");
+						return;
+					}
+#endif
 					btn_pressed_setup = BTNSETUP_START;
 					btn_count_setup_second = 0;
 					nvram_set("wps_ign_btn", "1");
@@ -3707,13 +3834,23 @@ void btn_check(void)
 		if ((btn_count_setup % 2) == 0 && (btn_count_setup > 10))
 		{
 			wps_led_control(LED_ON);
+#ifdef RTAX82U
+			nvram_set_int("ledg_mode", 0);
+			nvram_set_int("ledg_color", 0);
+			kill_pidfile_s("/var/run/ledg.pid", SIGTSTP);
+#endif
 #if defined(RTCONFIG_BCM_CLED) && defined(RTCONFIG_SINGLE_LED)
 			nvram_set("bcm_cled_in_wps", "1");
 			bcm_cled_ctrl(BCM_CLED_BLUE, BCM_CLED_STEADY_BLINK);
 #endif
 		}
 		else
+		{
 			wps_led_control(LED_OFF);
+#ifdef RTAX82U
+			LEDGroupReset(LED_OFF);
+#endif
+		}
 #endif
 #if defined(RTCONFIG_CONCURRENTREPEATER) && defined(RTCONFIG_MTK_REP)
 		if(sw_mode() == SW_MODE_AP)
@@ -3934,6 +4071,10 @@ void timecheck(void)
 	char wl_vifs[256], nv[40];
 	int expire, need_commit = 0;
 
+#ifdef RTCONFIG_AMAS_WGN
+	char wloff_vifs[256], *p_vifs = NULL, cfgVer[9] = {0};
+#endif	
+
 #ifndef CONFIG_BCMWL5
 #if defined(RTCONFIG_PROXYSTA)
 	if (mediabridge_mode())
@@ -4017,6 +4158,11 @@ void timecheck(void)
 		snprintf(lan_ifname, sizeof(lan_ifname), "%s", nvram_safe_get("lan_ifname"));
 		sprintf(wl_vifs, "%s %s %s", nvram_safe_get("wl0_vifs"), nvram_safe_get("wl1_vifs"), nvram_safe_get("wl2_vifs"));
 
+#ifdef RTCONFIG_AMAS_WGN
+		memset(wloff_vifs, 0, sizeof(wloff_vifs));
+		p_vifs = &wloff_vifs[0];
+#endif		
+
 		foreach (word, wl_vifs, next) {
 			snprintf(nv, sizeof(nv) - 1, "%s_expire_tmp", wif_to_vif (word));
 			expire = nvram_get_int(nv);
@@ -4052,6 +4198,9 @@ void timecheck(void)
 						eval("hive_hyd");
 					}
 #endif
+#ifdef RTCONFIG_AMAS_WGN
+					p_vifs += snprintf(p_vifs, sizeof(wloff_vifs) - (p_vifs - wloff_vifs), "%s ", word);
+#endif						
 				}
 				else
 				{
@@ -4067,6 +4216,19 @@ void timecheck(void)
 			need_commit = 0;
 			nvram_commit();
 		}
+
+#ifdef RTCONFIG_AMAS_WGN
+		if (strlen(wloff_vifs) > 0)
+		{
+			nvram_set("wgn_wloff_vifs", wloff_vifs);
+	        /* update cfg_ver info */
+	        srand(time(NULL));
+	        snprintf(cfgVer, sizeof(cfgVer), "%d%d", rand(), rand());
+	        nvram_set("cfg_ver", cfgVer);
+	        nvram_commit();
+			kill_pidfile_s("/var/run/cfg_server.pid", SIGUSR2);			
+		}		
+#endif
 	}
 
 #ifdef RTCONFIG_REBOOT_SCHEDULE
@@ -4296,11 +4458,11 @@ unsigned long get_etlan_count()
 	char buf[256];
 	char *ifname, *p;
 	unsigned long counter=0;
-#if defined(GTAC5300) || defined(RTAX88U) || defined(GTAX11000) || defined(RTAX92U) || defined(RTAX95Q) || defined(RTAX56U)
+#if defined(GTAC5300) || defined(RTAX88U) || defined(GTAX11000) || defined(RTAX92U) || defined(RTAX95Q) || defined(RTAX56U) || defined(RTAX56_XD4) || defined(RTAX86U) || defined(RTAX5700) || defined(RTAX68U) || defined(RTAX55)
 	unsigned long tmpcnt=0;
 #endif
 
-#ifdef RTAX95Q
+#if defined(RTAX95Q) || defined(RTAX56_XD4)
 	return -1;
 #endif
 
@@ -4315,14 +4477,23 @@ unsigned long get_etlan_count()
 		if ((ifname = strrchr(buf, ' ')) == NULL) ifname = buf;
 		else ++ifname;
 
-#if defined(GTAC5300) || defined(RTAX88U) || defined(GTAX11000) || defined(RTAX92U) || defined(RTAX95Q) || defined(RTAX56U)
-		if (strcmp(ifname, "eth1") && strcmp(ifname, "eth2") && strcmp(ifname, "eth3") && strcmp(ifname, "eth4")
+#if defined(GTAC5300) || defined(RTAX88U) || defined(GTAX11000) || defined(RTAX92U) || defined(RTAX95Q) || defined(RTAX56U) || defined(RTAX68U) || defined(RTAX55)
+		if (strcmp(ifname, "eth1")
+#if defined(GTAC5300) || defined(RTAX88U) || defined(GTAX11000) || defined(RTAX92U) || defined(RTAX95Q) || defined(RTAX56U) || defined(RTAX68U)
+			&& strcmp(ifname, "eth2") && strcmp(ifname, "eth3") && strcmp(ifname, "eth4")
+#endif
 #ifdef RTCONFIG_EXT_BCM53134
  			&& strcmp(ifname, "eth5")
 #elif defined(RTCONFIG_EXTPHY_BCM84880)
 			&& (strcmp(ifname, "eth5") && !nvram_get_int("wans_extwan"))
 #endif
 		) continue;
+
+		if (sscanf(p+1, "%lu", &tmpcnt) != 1) continue;
+		counter += tmpcnt;
+#elif defined(RTAX86U) || defined(RTAX5700)
+		if (strcmp(ifname, "eth5"))
+			continue;
 
 		if (sscanf(p+1, "%lu", &tmpcnt) != 1) continue;
 		counter += tmpcnt;
@@ -4337,7 +4508,7 @@ unsigned long get_etlan_count()
 	return counter;
 }
 
-#if defined(GTAC5300) || defined(RTAX88U) || defined(GTAX11000) || defined(RTAX92U) || defined(RTAX95Q) || defined(RTAX56U)
+#if defined(GTAC5300) || defined(RTAX88U)
 enum {
 	AGGLED_ACT_ALLOFF,
 	AGGLED_ACT_ALLON,
@@ -4364,7 +4535,9 @@ aggled_control(int mode)
 }
 #endif
 
+#ifndef RTAX55
 static int lstatus = 0;
+#endif
 #if defined(RTCONFIG_LED_BTN) || defined(RTCONFIG_WPS_ALLLED_BTN) || (!defined(RTCONFIG_WIFI_TOG_BTN) && !defined(RTCONFIG_QCA))
 static int allstatus = 0;
 #endif
@@ -4383,6 +4556,11 @@ void fake_etlan_led(void)
 	static int status_old;
 	int phystatus = 0;
 
+#if defined(RTAX86U) || defined(RTAX5700)
+	if (!nvram_get_int("wans_extwan"))
+		return;
+#endif
+
 #if defined(RTCONFIG_LED_BTN) || defined(RTCONFIG_WPS_ALLLED_BTN) || (!defined(RTCONFIG_WIFI_TOG_BTN) && !defined(RTCONFIG_QCA))
 	if (nvram_match("AllLED", "0")) {
 		if (allstatus)
@@ -4393,17 +4571,30 @@ void fake_etlan_led(void)
 	allstatus = 1;
 #endif
 
+#if defined(RTAX55)
+	phystatus = rtkswitch_lanPorts_phyStatus();
+	if (!phystatus) {
+		led_control(LED_LAN, LED_OFF);
+		status = -1;
+		return;
+	}
+#else
+#if defined(RTAX86U) || defined(RTAX5700)
+	phystatus = hnd_get_phy_status("eth5");
+	if (!phystatus)
+#else
 	phystatus = GetPhyStatus(0);
 #if defined(RTCONFIG_EXTPHY_BCM84880)
-	if (	(nvram_get_int("wans_extwan") && !(phystatus & 0x3e)) || // configure 2.5G port as WAN, need to consider 1G WAN connectivity
-		(!nvram_get_int("wans_extwan") && !(phystatus & 0x1e)))  // configure 2.5G port as LAN, ignore 2.5G port
+	if ((nvram_get_int("wans_extwan") && !(phystatus & 0x3e)) || // configure 2.5G port as WAN, need to consider 1G WAN connectivity
+			(!nvram_get_int("wans_extwan") && !(phystatus & 0x1e)))  // configure 2.5G port as LAN, ignore 2.5G port
 #else
 	if (!phystatus
-#if defined(RTAX92U) || defined(RTAX95Q)
-		|| phystatus == 1 // ignore WAN
+#if defined(RTAX92U) || defined(RTAX95Q) || defined(RTAX68U)
+			|| phystatus == 1 // ignore WAN
 #endif
 			)
-#endif
+#endif // RTCONFIG_EXTPHY_BCM84880
+#endif // RTAX86U
 	{
 		if (lstatus){
 #if defined(GTAC5300) || defined(RTAX88U)
@@ -4418,6 +4609,7 @@ void fake_etlan_led(void)
 		return;
 	}
 	lstatus = 1;
+#endif
 
 #if defined(GTAC5300) || defined(RTAX88U)
 	status_old = status;
@@ -4939,6 +5131,7 @@ void led_check(int sig)
 		case MODEL_GTAX11000:
 		case MODEL_RTAX92U:
 		case MODEL_RTAX95Q:
+		case MODEL_RTAX56_XD4:
 		case MODEL_RTAX58U:
 		case MODEL_RTAX56U:
 		default:
@@ -5777,6 +5970,9 @@ static void softcenter_sig_check()
 			if(f_exists("/jffs/softcenter/bin/softcenter.sh")) {
 				softcenter_eval(SOFTCENTER_MOUNT);
 				nvram_set_int("sc_mount_sig", 0);
+			} else if(!f_exists("/jffs/softcenter/bin/softcenter.sh") && nvram_match("sc_mount", "1")) {
+				//remount to sdb sdc not sda
+				doSystem("sh /jffs/softcenter/automount.sh &");
 			}
 		}
 		if(nvram_match("sc_services_sig", "1")) {
@@ -6173,7 +6369,7 @@ void ntevent_intranet_usage_insight()
 	tm = localtime(&now);
 
 	/* send event at 9:00 each Monday */
-	if (tm->tm_wday == 1 && tm->tm_hour == 9) {
+	if (tm->tm_wday == 1 && tm->tm_hour == 9 && tm->tm_min == 0) {
 		snprintf(str, 32, "0x%x", HINT_INTERNET_USAGE_INSIGHT_EVENT);
 		eval("Notify_Event2NC", str, "");
 	}
@@ -6238,49 +6434,49 @@ static void ntevent_disk_usage_check(){
 
 static void auto_firmware_check()
 {
-	static int period_retry = -1;
-	static int period = 2877;
+	int periodic_check = 0;
+	static int period_retry = 0;
+	static int bootup_check_period = 3;	//wait 3 times(90s) to check
 	static int bootup_check = 1;
 #ifndef RTCONFIG_FW_JUMP
-	static int periodic_check = 0;
-	int cycle_manual = nvram_get_int("fw_check_period");
-	int cycle = (cycle_manual > 1) ? cycle_manual : 2880;
 	char *datestr[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 	time_t now;
 	struct tm local;
 	static int rand_hr, rand_min;
 #endif
 
+#if defined(RTAX58U) || defined(RTAX56U)
+	if (!strncmp(nvram_safe_get("territory_code"), "CX", 2))
+		return;
+#endif
 	if (!nvram_get_int("ntp_ready")){
 		//FAUPGRADE_DBG("ntp_ready false");
+		return;
+	}
+
+	if(bootup_check_period > 0){	//bootup wait 90s to check
+		bootup_check_period--;
 		return;
 	}
 
 	time(&now);
 	localtime_r(&now, &local);
 
-#ifdef RTCONFIG_FW_JUMP
-	period = 0;
-#else
-	if (!bootup_check && !periodic_check)
-	{
-		if ((local.tm_hour == (2 + rand_hr)) &&	// every 24 hours at 2 am + random offset
-		    (local.tm_min == rand_min))
-		{
-			periodic_check = 1;
-			period = -1;
-		}
-	}
+	if(local.tm_hour == (2 + rand_hr) && local.tm_min == rand_min) //at 2 am + random offset to check
+		periodic_check = 1;
 
-	if (bootup_check || periodic_check)
-		period = (period + 1) % cycle;
-	else
-		return;
+	//FAUPGRADE_DBG("periodic_check = %d, period_retry = %d, bootup_check = %d", periodic_check, period_retry, bootup_check);
+#ifndef RTCONFIG_FW_JUMP
+	if (bootup_check || periodic_check || period_retry!=0)
 #endif
-
-	//FAUPGRADE_DBG("period = %d, period_retry = %d, bootup_check = %d", period, period_retry, bootup_check);
-	if (!period || (period_retry < 2 && bootup_check == 0))
 	{
+#ifdef RTCONFIG_ASD
+		//notify asd to download version file
+		if (pids("asd"))
+		{
+			killall("asd", SIGUSR1);
+		}
+#endif
 #ifndef RTCONFIG_FW_JUMP
 		if(nvram_get_int("webs_state_dl_error")){
 			if(!strncmp(datestr[local.tm_wday], nvram_safe_get("webs_state_dl_error_day"), 3))
@@ -6289,21 +6485,26 @@ static void auto_firmware_check()
 				nvram_set("webs_state_dl_error", "0");
 		}
 
-		period_retry = (period_retry+1) % 3;
-		FAUPGRADE_DBG("period_retry = %d", period_retry);
 		if (bootup_check)
 		{
 			bootup_check = 0;
 			rand_hr = rand_seed_by_time() % 4;
 			rand_min = rand_seed_by_time() % 60;
 			FAUPGRADE_DBG("periodic_check AM %d:%d", 2 + rand_hr, rand_min);
+#ifdef RTCONFIG_AMAS
+			if(nvram_match("re_mode", "1"))
+				return;
+#endif
 		}
+
+		period_retry = (period_retry+1) % 3;
 #endif
 
 		if(!nvram_contains_word("rc_support", "noupdate")){
 #if defined(RTL_WTDOG)
 			stop_rtl_watchdog();
 #endif
+			nvram_set("webs_update_trigger", "watchdog");
 			eval("/usr/sbin/webs_update.sh");
 #if defined(RTL_WTDOG)
 			start_rtl_watchdog();
@@ -6335,6 +6536,7 @@ static void auto_firmware_check()
 
 			if (nvram_get_int("webs_state_flag") != 2)
 			{
+				period_retry = 0; //stop retry
 				FAUPGRADE_DBG("no need to upgrade firmware");
 				return;
 			}
@@ -6485,6 +6687,12 @@ static void bt_turn_off_service()
 	char *delim=";";
 	char *tmp;
 
+#if defined(RTAX56_XD4)
+	if(nvram_match("HwId", "B") || nvram_match("HwId", "D")){
+		/* Slave, no bluetooth */
+		return;
+	}
+#endif
 	memset(buf, '\0', sizeof(buf));
 	strncpy(buf, nvram_safe_get("bt_turn_off_service"), sizeof(buf));
 
@@ -6855,7 +7063,6 @@ void wlcnt_chk()
 			printf("\nWL go insanity! calm down it\n");
 #ifndef RTCONFIG_AHS
 			logmessage("watchdog", "detect wl reinit count %d", val - pre_val);
-			system("reboot&");
 #else
 			/* export specific string to syslog for ahsd recover action*/
 			logmessage("watchdog", "wl reinit count %d", val - pre_val);
@@ -7684,7 +7891,7 @@ void watchdog(int sig)
 	ate_temperature_record();
 #endif
 
-#ifdef RTCONFIG_HND_ROUTER_AX
+#ifdef HND_ROUTER
 	dump_WlGetDriverStats(0, 1);
 #endif
 

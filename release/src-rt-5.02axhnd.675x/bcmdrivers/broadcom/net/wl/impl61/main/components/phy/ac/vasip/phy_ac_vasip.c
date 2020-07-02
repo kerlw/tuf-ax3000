@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_vasip.c 776984 2019-07-15 23:14:47Z $
+ * $Id: phy_ac_vasip.c 779337 2019-09-25 14:44:56Z $
  */
 
 #include <phy_cfg.h>
@@ -292,8 +292,8 @@ phy_ac_vasip_write_bin(phy_type_vasip_ctx_t *ctx, const uint32 vasip_code[], con
 {
 	phy_ac_vasip_info_t *info = (phy_ac_vasip_info_t *)ctx;
 	phy_info_t *pi = info->pi;
-	uint8	stall_val, mem_id;
-	uint32	count;
+	uint8	stall_val;
+	uint32	count, mem_id;
 	uint32 svmp_addr = 0x0;
 
 	wlapi_suspend_mac_and_wait(pi->sh->physhim);
@@ -320,8 +320,8 @@ phy_ac_vasip_write_spectrum_tbl(phy_type_vasip_ctx_t *ctx,
 {
 	phy_ac_vasip_info_t *info = (phy_ac_vasip_info_t *)ctx;
 	phy_info_t *pi = info->pi;
-	uint8  stall_val, mem_id_tbl;
-	uint32 count_tbl;
+	uint8  stall_val;
+	uint32 count_tbl, mem_id_tbl;
 	uint32 svmp_tbl_addr = 0x3400; // (0x26800-0x8000*4)>>1
 
 	wlapi_suspend_mac_and_wait(pi->sh->physhim);
@@ -348,8 +348,8 @@ phy_ac_vasip_write_svmp(phy_type_vasip_ctx_t *ctx, uint32 offset, uint16 val)
 {
 	phy_ac_vasip_info_t *info = (phy_ac_vasip_info_t *)ctx;
 	phy_info_t *pi = info->pi;
-	uint32 tbl_val;
-	uint8  stall_val, mem_id, odd_even;
+	uint32 tbl_val, mem_id;
+	uint8  stall_val, odd_even;
 
 	mem_id = offset/0x8000;
 	offset = offset%0x8000;
@@ -384,8 +384,8 @@ phy_ac_vasip_read_svmp(phy_type_vasip_ctx_t *ctx, uint32 offset, uint16 *val)
 {
 	phy_ac_vasip_info_t *info = (phy_ac_vasip_info_t *)ctx;
 	phy_info_t *pi = info->pi;
-	uint32 tbl_val;
-	uint8 stall_val, mem_id, odd_even;
+	uint32 tbl_val, mem_id;
+	uint8 stall_val, odd_even;
 
 	mem_id = offset/0x8000;
 	offset = offset%0x8000;
@@ -414,8 +414,8 @@ phy_ac_vasip_write_svmp_blk(phy_type_vasip_ctx_t *ctx, uint32 offset, uint16 len
 {
 	phy_ac_vasip_info_t *info = (phy_ac_vasip_info_t *)ctx;
 	phy_info_t *pi = info->pi;
-	uint32 tbl_val;
-	uint8  stall_val, mem_id;
+	uint32 tbl_val, mem_id;
+	uint8  stall_val;
 	uint16 n, odd_start, odd_end;
 
 	mem_id = offset / 0x8000;
@@ -464,8 +464,8 @@ phy_ac_vasip_read_svmp_blk(phy_type_vasip_ctx_t *ctx, uint32 offset, uint16 len,
 {
 	phy_ac_vasip_info_t *info = (phy_ac_vasip_info_t *)ctx;
 	phy_info_t *pi = info->pi;
-	uint32 tbl_val;
-	uint8 stall_val, mem_id;
+	uint32 tbl_val, mem_id;
+	uint8 stall_val;
 	uint16 n, odd_start, odd_end;
 
 	mem_id = offset / 0x8000;

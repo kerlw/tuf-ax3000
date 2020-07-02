@@ -236,10 +236,18 @@ typedef struct wlc_musched_ulofdma_info {
 	uint16	csthr0;			/* min lsig len to not clear CS for basic/brp trig */
 	uint16	csthr1;			/* min lsig len to not clear CS for all other trig */
 
-	/* admit / evict params */
+	/* additional admit / evict params */
 	int	min_rssi;
-	uint32	rx_pktcnt_thrsh;   /* threshold of num of pkts per second to enable ul-ofdma */
+	uint32	rx_pktcnt_thrsh;	/* threshold of num of pkts per second to enable ul-ofdma */
 	uint16	idle_prd;
+	bool	ban_nonbrcm_160sta; /* No ulofdma admission for non-brcm 160Mhz-capable sta */
+	bool	brcm_only;		/* Only admit brcm client for ulofdma */
+	uint8	always_admit;		/* 0: use additional admit/evict params like
+					 * min_rssi, rx_pktcnt_thrsh, wlc_scb_ampdurx_on();
+					 * 1: always admit ulofdma capable station;
+					 * 2: admit trig-enab twt users only
+					 */
+	 uint16 g_ucfg;			/* global ucfg info */
 } wlc_musched_ulofdma_info_t;
 
 /* module info */
@@ -679,7 +687,7 @@ BCMATTACHFN(wlc_muscheduler_attach)(wlc_info_t *wlc)
 	ulosched->txd.minidle = 100; /* Init to 100us */
 	ulosched->txd.rxlowat0 = 3;
 	ulosched->txd.rxlowat1 = 30;
-	wlc_umusched_set_fb(musched, wlc_ht_get_frameburst(wlc->hti));
+	wlc_umusched_set_fb(musched, WLC_HT_GET_FRAMEBURST(wlc->hti));
 	ulosched->txd.txctl = (DOT11_HETB_2XLTF_1U6S_GI << D11_ULOTXD_TXCTL_CPF_SHIFT) |
 		(DOT11_HETB_2XHELTF_NLTF << D11_ULOTXD_TXCTL_NLTF_SHIFT);
 	ulosched->txlmt = 0x206;
@@ -687,7 +695,10 @@ BCMATTACHFN(wlc_muscheduler_attach)(wlc_info_t *wlc)
 	ulosched->csthr0 = 76;
 	ulosched->csthr1 = 418;
 	ulosched->is_start = TRUE;
+	ulosched->brcm_only = FALSE;
+	ulosched->ban_nonbrcm_160sta = FALSE;
 
+	D11_ULOTXD_UCFG_SET_MCSNSS(ulosched->g_ucfg, 0x17); /* auto rate by default */
 	/* register module up/down, watchdog, and iovar callbacks */
 	if (wlc_module_register(wlc->pub, muscheduler_iovars, "muscheduler", musched,
 		wlc_muscheduler_doiovar, wlc_musched_watchdog, wlc_muscheduler_wlc_init, NULL)) {
@@ -1246,6 +1257,10 @@ wlc_umusched_cmd_get_dispatch(wlc_muscheduler_info_t *musched, wl_musched_cmd_pa
 	} else if (!strncmp(params->keystr, "maxclients", strlen("maxclients"))) {
 		bcm_bprintf(&bstr, "max num of admitted clients: %d\n",
 		wlc_txcfg_max_clients_get(wlc->txcfg, ULOFDMA));
+	} else if (!strncmp(params->keystr, "ban_nonbrcm_160sta", strlen("ban_nonbrcm_160sta"))) {
+		bcm_bprintf(&bstr, "ban nonbrcm 160sta: %d\n", ulosched->ban_nonbrcm_160sta);
+	} else if (!strncmp(params->keystr, "brcm_only", strlen("brcm_only"))) {
+		bcm_bprintf(&bstr, "brcm only: %d\n", ulosched->brcm_only);
 	} else if (!strncmp(params->keystr, "start", strlen("start"))) {
 		bcm_bprintf(&bstr, "%d\n", ulosched->is_start);
 	} else {
@@ -1374,6 +1389,8 @@ wlc_umusched_cmd_set_dispatch(wlc_muscheduler_info_t *musched, wl_musched_cmd_pa
 		if (val16 != 1 && val16 != 0) {
 			return BCME_RANGE;
 		}
+		ulosched->g_ucfg &= (val16 == 0) ? (uint16) -1 :
+			~D11_ULOTXD_UCFG_FIXRT_MASK;
 		for (schpos = 0; schpos < max_ulofdma_usrs; schpos++) {
 			if (WL_MUSCHED_FLAGS_MACADDR(params) && (schpos !=
 				wlc_musched_ulofdma_find_addr(ulosched, &params->ea, scb))) {
@@ -1391,6 +1408,8 @@ wlc_umusched_cmd_set_dispatch(wlc_muscheduler_info_t *musched, wl_musched_cmd_pa
 		if (!(val16 >= 0 && val16 <= 11)) {
 			return BCME_RANGE;
 		}
+		D11_ULOTXD_UCFG_SET_MCS(ulosched->g_ucfg, val16);
+		ulosched->g_ucfg |= D11_ULOTXD_UCFG_FIXRT_MASK;
 		for (schpos = 0; schpos < max_ulofdma_usrs; schpos++) {
 			if (WL_MUSCHED_FLAGS_MACADDR(params) && (schpos !=
 				wlc_musched_ulofdma_find_addr(ulosched, &params->ea, scb))) {
@@ -1401,13 +1420,15 @@ wlc_umusched_cmd_set_dispatch(wlc_muscheduler_info_t *musched, wl_musched_cmd_pa
 				continue;
 			}
 			musched_scb = SCB_MUSCHED(musched, scb);
-				D11_ULOTXD_UCFG_SET_MCS(musched_scb->ucfg, val16);
-				musched_scb->ucfg |= D11_ULOTXD_UCFG_FIXRT_MASK;
+			D11_ULOTXD_UCFG_SET_MCS(musched_scb->ucfg, val16);
+			musched_scb->ucfg |= D11_ULOTXD_UCFG_FIXRT_MASK;
 		}
 	} else if (!strncmp(params->keystr, "nss", strlen("nss"))) {
 		if (val16 < 1 || val16 > 4) {
 			return BCME_RANGE;
 		}
+		D11_ULOTXD_UCFG_SET_NSS(ulosched->g_ucfg, val16 - 1);
+		ulosched->g_ucfg |= D11_ULOTXD_UCFG_FIXRT_MASK;
 		for (schpos = 0; schpos < max_ulofdma_usrs; schpos++) {
 			if (WL_MUSCHED_FLAGS_MACADDR(params) && (schpos !=
 				wlc_musched_ulofdma_find_addr(ulosched, &params->ea, scb))) {
@@ -1422,6 +1443,8 @@ wlc_umusched_cmd_set_dispatch(wlc_muscheduler_info_t *musched, wl_musched_cmd_pa
 			musched_scb->ucfg |= D11_ULOTXD_UCFG_FIXRT_MASK;
 		}
 	} else if (!strncmp(params->keystr, "trssi", strlen("trssi"))) {
+		D11_ULOTXD_UCFG_SET_TRSSI(ulosched->g_ucfg, val16);
+		ulosched->g_ucfg |= D11_ULOTXD_UCFG_FIXRSSI_MASK;
 		for (schpos = 0; schpos < max_ulofdma_usrs; schpos++) {
 			if (WL_MUSCHED_FLAGS_MACADDR(params) && (schpos !=
 				wlc_musched_ulofdma_find_addr(ulosched, &params->ea, scb))) {
@@ -1457,6 +1480,16 @@ wlc_umusched_cmd_set_dispatch(wlc_muscheduler_info_t *musched, wl_musched_cmd_pa
 		txd->mlen = val16;
 	} else if (!strncmp(params->keystr, "aggn", strlen("aggn"))) {
 		txd->aggnum = val16;
+	} else if (!strncmp(params->keystr, "ban_nonbrcm_160sta", strlen("ban_nonbrcm_160sta"))) {
+		if (wlc->pub->up) {
+			return BCME_NOTDOWN;
+		}
+		ulosched->ban_nonbrcm_160sta = (val16 != 0) ? TRUE : FALSE;
+	} else if (!strncmp(params->keystr, "brcm_only", strlen("brcm_only"))) {
+		if (wlc->pub->up) {
+			return BCME_NOTDOWN;
+		}
+		ulosched->brcm_only = (val16 != 0) ? TRUE : FALSE;
 	} else if (!strncmp(params->keystr, "minulusers", strlen("minulusers"))) {
 		if (val16 >= 0 && (val16 <= (uint8) -1)) {
 			ulosched->min_ulofdma_usrs = val16;
@@ -1473,6 +1506,11 @@ wlc_umusched_cmd_set_dispatch(wlc_muscheduler_info_t *musched, wl_musched_cmd_pa
 		ulosched->rx_pktcnt_thrsh = val16;
 	} else if (!strncmp(params->keystr, "idleprd", strlen("idleprd"))) {
 		ulosched->idle_prd = val16;
+	} else if (!strncmp(params->keystr, "always_admit", strlen("always_admit"))) {
+		if ((uint16)val16 > 2) {
+			return BCME_RANGE;
+		}
+		ulosched->always_admit = val16;
 	} else {
 		upd = FALSE;
 		err = BCME_BADARG;
@@ -1549,6 +1587,7 @@ wlc_muscheduler_wlc_init(void *ctx)
 	wlc->musched->ulosched->min_rssi = MUSCHED_SCB_MIN_RSSI;
 	wlc->musched->ulosched->rx_pktcnt_thrsh = MUSCHED_SCB_RX_PKTCNT_THRSH;
 	wlc->musched->ulosched->idle_prd = MUSCHED_SCB_IDLEPRD;
+	wlc->musched->ulosched->always_admit = 0;
 
 	wlc_musched_write_lowat(musched);
 	wlc_musched_write_maxn(musched);
@@ -1617,37 +1656,50 @@ wlc_musched_watchdog(void *ctx)
 	bool admit_clients = TRUE;
 	bool commit_change = FALSE;
 
-	/* eviction */
-	for (schpos = 0; schpos < max_ulofdma_usrs; schpos++) {
-		if ((scb = ulosched->scb_list[schpos]) == NULL) {
-			continue;
-		}
+	if (ulosched->always_admit != 1) {
+		/* eviction */
+		for (schpos = 0; schpos < max_ulofdma_usrs; schpos++) {
+			if ((scb = ulosched->scb_list[schpos]) == NULL) {
+				continue;
+			}
 
-		if (!SCB_ULOFDMA(scb)) {
-			continue;
-		}
-		musched_scb = SCB_MUSCHED(musched, scb);
-		ASSERT(musched_scb != NULL);
-		if (!musched_scb) {
-			continue;
-		}
+			if (!SCB_ULOFDMA(scb)) {
+				continue;
+			}
+			musched_scb = SCB_MUSCHED(musched, scb);
+			ASSERT(musched_scb != NULL);
+			if (!musched_scb) {
+				continue;
+			}
 #ifdef WLCNTSCB
-		musched_scb->idle_cnt++;
+			musched_scb->idle_cnt++;
 
-		if ((uint32)scb->scb_stats.rx_ucast_pkts - (uint32)musched_scb->last_rx_pkts >=
-			ulosched->rx_pktcnt_thrsh) {
-			musched_scb->idle_cnt = 0;
-		}
+			if ((uint32)scb->scb_stats.rx_ucast_pkts -
+				(uint32)musched_scb->last_rx_pkts >=
+				ulosched->rx_pktcnt_thrsh) {
+				musched_scb->idle_cnt = 0;
+			}
 
-		musched_scb->last_rx_pkts = scb->scb_stats.rx_ucast_pkts;
+			musched_scb->last_rx_pkts = scb->scb_stats.rx_ucast_pkts;
 #else
-		musched_scb->idle_cnt = 0;
+			musched_scb->idle_cnt = 0;
 #endif /* WLCNTSCB */
-		rssi = wlc_lq_rssi_get(wlc, SCB_BSSCFG(scb), scb);
-		if ((musched_scb->idle_cnt >= ulosched->idle_prd) ||
-			(rssi < ulosched->min_rssi)) {
-			wlc_musched_ulofdma_del_usr(ulosched, scb);
-			commit_change = TRUE;
+			/* Do not evict trigger based twt user */
+			if (wlc_twt_scb_is_trig_mode(wlc->twti, scb)) {
+				continue;
+			} else if (ulosched->always_admit == 2) {
+				/* admit twt only mode */
+				wlc_musched_ulofdma_del_usr(ulosched, scb);
+				commit_change = TRUE;
+				continue;
+			}
+
+			rssi = wlc_lq_rssi_get(wlc, SCB_BSSCFG(scb), scb);
+			if ((musched_scb->idle_cnt >= ulosched->idle_prd) ||
+				(rssi < ulosched->min_rssi)) {
+				wlc_musched_ulofdma_del_usr(ulosched, scb);
+				commit_change = TRUE;
+			}
 		}
 	}
 
@@ -1892,29 +1944,32 @@ wlc_musched_dump_ulofdma(wlc_musched_ulofdma_info_t *ulosched, bcmstrbuf_t *b, b
 	int i;
 	uint16 max_ulofdma_usrs = wlc_txcfg_max_clients_get(wlc->txcfg, ULOFDMA);
 
-	bcm_bprintf(b, "UL OFDMA admitted %d maxclients %d minulusers %d fb %d\n",
+	bcm_bprintf(b, "UL OFDMA admitted %d maxclients %d minulusers %d "
+		"fb %d brcm_only %d ban_nonbrcm_160sta %d\n",
 		ulosched->num_usrs, max_ulofdma_usrs, ulosched->min_ulofdma_usrs,
-		(txd->mctl0 & D11AC_TXC_MBURST) ? 1 : 0);
-		bcm_bprintf(b, "maxn ");
-		for (i = 0; i < D11_REV128_BW_SZ; i++) {
-			bcm_bprintf(b, "bw%d: %d ", 20 << i, ulosched->maxn[i]);
-		}
-		bcm_bprintf(b, "trigger: %s\n", (ulosched->is_start && (ulosched->num_usrs >=
-			ulosched->min_ulofdma_usrs)) ? "ON" : "OFF");
+		(txd->mctl0 & D11AC_TXC_MBURST) ? 1 : 0, ulosched->brcm_only,
+		ulosched->ban_nonbrcm_160sta);
+	bcm_bprintf(b, "maxn ");
+	for (i = 0; i < D11_REV128_BW_SZ; i++) {
+		bcm_bprintf(b, "bw%d: %d ", 20 << i, ulosched->maxn[i]);
+	}
+	bcm_bprintf(b, "trigger: %s\n", (ulosched->is_start && (ulosched->num_usrs >=
+		ulosched->min_ulofdma_usrs)) ? "ON" : "OFF");
 
 	bcm_bprintf(b, "Scheduler parameters\n"
 		"  mctl 0x%04x txcnt %d burst %d maxtw %d\n"
 		"  interval %d maxdur %d minidle %d cpltf %d nltf %d\n"
 		"  txlmt 0x%x txlowat0 %d txlowat1 %d rxlowat0 %d rxlowat1 %d\n"
 		"  mlen %d mmlen %d aggn %d csthr0 %d csthr1 %d\n"
-		"  minrssi %d pktthrsh %d idleprd %d\n",
+		"  minrssi %d pktthrsh %d idleprd %d always_admit %d\n",
 		txd->macctl, txd->txcnt, txd->burst, txd->maxtw,
 		txd->interval, txd->maxdur, txd->minidle,
 		(txd->txctl & D11_ULOTXD_TXCTL_CPF_MASK),
 		((txd->txctl & D11_ULOTXD_TXCTL_NLTF_MASK) >> D11_ULOTXD_TXCTL_NLTF_SHIFT),
 		ulosched->txlmt, txd->txlowat0, txd->txlowat1, txd->rxlowat0, txd->rxlowat1,
 		txd->mlen, txd->mmlen, txd->aggnum, ulosched->csthr0, ulosched->csthr1,
-		ulosched->min_rssi, ulosched->rx_pktcnt_thrsh, ulosched->idle_prd);
+		ulosched->min_rssi, ulosched->rx_pktcnt_thrsh, ulosched->idle_prd,
+		ulosched->always_admit);
 	if (ulosched->num_usrs) {
 		bcm_bprintf(b, "List of admitted clients:\n");
 	}
@@ -2757,7 +2812,7 @@ wlc_musched_scb_state_upd(void *ctx, scb_state_upd_data_t *notif_data)
 			}
 		}
 		/* Let the rx monitoring trigger the UL MU admission */
-	} else if ((oldstate & ASSOCIATED) && !SCB_ASSOCIATED(scb)) {
+	} else if ((oldstate & ASSOCIATED) && !(SCB_ASSOCIATED(scb) && SCB_AUTHENTICATED(scb))) {
 		if (musched_scb->dlul_assoc == TRUE && ofdma_en) {
 			ASSERT(musched->num_dlofdma_users >= 1);
 			musched->num_dlofdma_users--;
@@ -3401,6 +3456,20 @@ wlc_musched_ulofdma_add_usr(wlc_musched_ulofdma_info_t *ulosched, scb_t *scb)
 	D11_ULOTXD_UCFG_SET_MCSNSS(musched_scb->ucfg, 0x17);
 	D11_ULOTXD_UCFG_SET_TRSSI(musched_scb->ucfg,
 		wlc_lq_rssi_get(wlc, SCB_BSSCFG(scb), scb));
+
+	/* check if need to override with global fixed settings */
+	if ((ulosched->g_ucfg & D11_ULOTXD_UCFG_FIXRT_MASK)) {
+		D11_ULOTXD_UCFG_SET_MCSNSS(musched_scb->ucfg,
+			D11_ULOTXD_UCFG_GET_MCSNSS(ulosched->g_ucfg));
+		musched_scb->ucfg |= D11_ULOTXD_UCFG_FIXRT_MASK;
+	}
+
+	if ((ulosched->g_ucfg & D11_ULOTXD_UCFG_FIXRSSI_MASK)) {
+		D11_ULOTXD_UCFG_SET_TRSSI(musched_scb->ucfg,
+			D11_ULOTXD_UCFG_GET_TRSSI(ulosched->g_ucfg));
+		musched_scb->ucfg |= D11_ULOTXD_UCFG_FIXRSSI_MASK;
+	}
+
 	/* TODO: now just use hardcoded bw80 mcsmap */
 	for (i = 0; i < ARRAYSIZE(rmem->mcsbmp); i++) {
 		rmem->mcsbmp[i] = HE_MAX_MCS_TO_MCS_MAP(
@@ -3480,14 +3549,19 @@ wlc_musched_scb_isulofdma_eligible(wlc_musched_ulofdma_info_t *ulosched, scb_t* 
 	wlc_info_t* wlc = musched->wlc;
 	ret = (HE_ULMU_ENAB(wlc->pub) && scb && !SCB_INTERNAL(scb) &&
 		SCB_HE_CAP(scb) && SCB_AUTHENTICATED(scb) && SCB_ASSOCIATED(scb) &&
+		(SCB_IS_BRCM(scb) || (!ulosched->brcm_only)) &&
+		(!ulosched->ban_nonbrcm_160sta || !wlc_he_is_nonbrcm_160sta(wlc->hei, scb)) &&
 		(!WSEC_ENABLED(SCB_BSSCFG(scb)->wsec) ||
 		(WSEC_ENABLED(SCB_BSSCFG(scb)->wsec) && SCB_AUTHORIZED(scb))) &&
 		!SCB_ULOFDMA(scb) && !BSSCFG_STA(SCB_BSSCFG(scb)) && !SCB_DWDS(scb) &&
 		wlc_he_get_ulmu_allow(wlc->hei, scb) &&
 		(musched->ul_policy != MUSCHED_UL_POLICY_DISABLE) &&
-		wlc_scb_ampdurx_on(scb) &&
+		((wlc_scb_ampdurx_on(scb) && ulosched->always_admit != 2) ||
+		ulosched->always_admit == 1 ||
+		wlc_twt_scb_is_trig_mode(wlc->twti, scb)) &&
 		(wlc_he_get_omi_tx_nsts(wlc->hei, scb) <= MUMAX_NSTS_ALLOWED));
-	if (ret) {
+	/* unconditionally admit twt user in trigger mode */
+	if (ret && !ulosched->always_admit && !wlc_twt_scb_is_trig_mode(wlc->twti, scb)) {
 		int rssi;
 		/* additional admit criteria */
 		/* 1) a-mpdu traffic meets certain threshold
@@ -3661,6 +3735,9 @@ wlc_musched_ulofdma_commit_change(wlc_musched_ulofdma_info_t* ulosched)
 		}
 	}
 
+	WL_MUTX(("wl%d: %s: interval 0x%x burst %d maxtw %d\n", wlc->pub->unit, __FUNCTION__,
+		ulosched->txd.interval, ulosched->txd.burst, ulosched->txd.maxtw));
+
 	/* copy the info to MX_TRIG_TXCFG block */
 	for (offset = MX_TRIG_TXCFG(wlc), ptr = (uint16 *) &ulosched->txd;
 		offset < MX_TRIG_TXCFG(wlc) + sizeof(d11ulotxd_rev128_t);
@@ -3818,4 +3895,30 @@ wlc_musched_ul_oper_state_upd(wlc_muscheduler_info_t *musched, scb_t *scb, uint8
 			break;
 	}
 }
+
+/* set ul ofdma admission params for TWT setting */
+void
+wlc_musched_ul_twt_params(wlc_muscheduler_info_t *musched, bool on)
+{
+	wlc_musched_ulofdma_info_t *ulosched = musched->ulosched;
+
+	WL_MUTX(("wl%d: %s: on is %d\n",
+		musched->wlc->pub->unit, __FUNCTION__, on));
+	if (on) {
+		/* For TWT
+		 * - admit even 1 user as ul ofdma
+		 * - set the trigger interval to 1ms
+		 * - guarantee to tx at least 1 trigger per interval
+		 * - tx max 2 triggers per interval
+		 */
+		ulosched->min_ulofdma_usrs = 1;
+	} else {
+		/* there is no trig based twt user so restore default settings */
+		ulosched->min_ulofdma_usrs = MUSCHED_ULOFDMA_MIN_USERS;
+	}
+	if (musched->wlc->pub->up) {
+		wlc_musched_ulofdma_commit_change(ulosched);
+	}
+}
+
 #endif /* WL_MUSCHEDULER */

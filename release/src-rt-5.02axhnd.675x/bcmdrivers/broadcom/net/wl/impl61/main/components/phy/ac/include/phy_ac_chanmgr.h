@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_chanmgr.h 775385 2019-05-29 11:30:21Z $
+ * $Id: phy_ac_chanmgr.h 778950 2019-09-16 04:03:44Z $
  */
 
 #ifndef _phy_ac_chanmgr_h_
@@ -536,4 +536,6 @@ extern void wlc_phy_set_rfseqext_tbl_majrev47(phy_info_t *pi, uint8 mode);
 /* WAR */
 extern void phy_ac_chanmgr_mutx_war(wlc_phy_t *pih, bool enable);
 extern void impbf_radio_ovrs_4347(phy_info_t *pi, bool ovr);
+
+extern bool phy_ac_chanmgr_lesi_en(phy_info_t *pi);
 #endif /* _phy_ac_chanmgr_h_ */

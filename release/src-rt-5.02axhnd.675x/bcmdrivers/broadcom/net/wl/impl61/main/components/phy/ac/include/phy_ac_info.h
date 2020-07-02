@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_info.h 775385 2019-05-29 11:30:21Z $
+ * $Id: phy_ac_info.h 778770 2019-09-10 09:50:17Z $
  */
 
 #ifndef _phy_ac_info_h_
@@ -2377,6 +2377,11 @@ typedef struct {
 	uint16  rpcal5gb1;
 	uint16  rpcal5gb2;
 	uint16  rpcal5gb3;
+	uint16	rpcal_phase2g;   /* rpcal_phase ref for Implicit TXBF */
+	uint16	rpcal_phase5gb0; /* rpcal_phase ref for Implicit TXBF */
+	uint16	rpcal_phase5gb1; /* rpcal_phase ref for Implicit TXBF */
+	uint16	rpcal_phase5gb2; /* rpcal_phase ref for Implicit TXBF */
+	uint16	rpcal_phase5gb3; /* rpcal_phase ref for Implicit TXBF */
 	uint8 num_rssi_cal_gi_2g;
 	uint8 num_rssi_cal_gi_5g;
 	uint16 clb_swctrl_smask_ant0;

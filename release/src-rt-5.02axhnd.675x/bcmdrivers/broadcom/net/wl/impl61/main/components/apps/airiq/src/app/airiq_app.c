@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: airiq_app.c 777631 2019-08-06 21:49:36Z $
+ * $Id: airiq_app.c 779805 2019-10-08 03:42:57Z $
  */
 
 /* bsa_service.c: Starts manager service and SIRP server */
@@ -2118,6 +2118,11 @@ void ComputeScanSpecs(airiq_scan_req_t *scanreq, airiq_scan_specs_t *scanspecs)
 	scanspecs->phy_mode         = scanreq->phy_mode;
 	scanspecs->capture_interval = scanreq->capture_interval;
 	scanspecs->revinfo          = scanreq->revinfo;
+
+	// adjust longfftcnt to base on capture interval to make
+	// sure the overall duration does not exceed longdwell time
+	scanspecs->longfftcnt = MIN(scanspecs->longfftcnt,
+		(scanspecs->longdwell*1000)/scanspecs->capture_interval);
 
 	if (scanreq->revinfo.corerev == 56) {
 		scanspecs->scan80only = 1;

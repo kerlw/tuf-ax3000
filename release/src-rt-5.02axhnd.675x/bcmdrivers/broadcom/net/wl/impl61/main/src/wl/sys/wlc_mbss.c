@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_mbss.c 777923 2019-08-15 00:27:48Z $
+ * $Id: wlc_mbss.c 779595 2019-10-03 06:26:35Z $
  */
 
 /**
@@ -2161,7 +2161,7 @@ wlc_mbss16_updssid_len(wlc_info_t *wlc, wlc_bsscfg_t *cfg)
 	start = M_MBS_SSIDLEN_BLK(wlc) + (ucidx & 0xFE);
 	val = wlc_read_shm(wlc, start);
 	/* set bit indicating closed net if appropriate */
-	if (cfg->closednet_nobcnssid)
+	if (cfg->closednet || cfg->nobcnssid)
 		ssidlen |= SHM_MBSS_CLOSED_NET(wlc);
 
 	if (ucidx & 0x01) {
@@ -2200,7 +2200,7 @@ wlc_mbss16_upd_closednet(wlc_info_t *wlc, wlc_bsscfg_t *cfg)
 	start = M_MBS_SSIDLEN_BLK(wlc) + (ucidx & 0xFE);
 	val = wlc_read_shm(wlc, start);
 	val = val & ~(SHM_MBSS_CLOSED_NET(wlc) << shift);
-	if (cfg->closednet_nobcnssid)
+	if (cfg->closednet || cfg->nobcnssid)
 		val = val | (SHM_MBSS_CLOSED_NET(wlc) << shift);
 	wlc_write_shm(wlc, start, val);
 }
@@ -2561,7 +2561,7 @@ wlc_prq_response(wlc_info_t *wlc, wlc_prq_info_t *info)
 	} else if (MBSS_SUPPORT(wlc->pub)) {	/* Broadcast probe response */
 		for (idx = 0; idx < WLC_MAXBSSCFG; idx++) {
 			cfg = wlc->bsscfg[(idx + wlc->mbss->bcast_next_start) % WLC_MAXBSSCFG];
-			if (CFG_SOFT_PRB_RESP(cfg) && !cfg->closednet_nobcprbresp) {
+			if (CFG_SOFT_PRB_RESP(cfg) && !cfg->closednet) {
 				wlc_prq_directed(wlc, cfg, info);
 			}
 		}

@@ -922,11 +922,13 @@ wlc_dotxstatus(wlc_info_t *wlc, tx_status_t *txs, uint32 frm_tx2)
 					p2 = dma_getnexttxp(WLC_HW_DI(wlc, i), HNDDMA_RANGE_ALL);
 					if (p2) {
 						txhdr = PKTDATA(wlc->osh, p2);
+						if (WL_ERROR_ON()) {
 						wlc_print_hdrs(wlc, "DMA txpkt hdr", txhdr,
 							txh, NULL,
 							PKTLEN(wlc->osh, p2));
 						prhex("DMA txpkt body", txhdr,
 							PKTLEN(wlc->osh, p2));
+						}
 					}
 				 }
 			}

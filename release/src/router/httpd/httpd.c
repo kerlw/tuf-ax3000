@@ -64,6 +64,7 @@
 typedef unsigned int __u32;   // 1225 ham
 
 #include <httpd.h>
+#include <common.h>
 //2008.08 magic{
 #include <bcmnvram.h>	//2008.08 magic
 #include <arpa/inet.h>	//2008.08 magic
@@ -295,6 +296,7 @@ static int check_if_inviteCode(const char *dirpath){
 }
 #endif
 
+#ifndef RTCONFIG_LIBASUSLOG
 static int
 log_pass_handler(char *url)
 {
@@ -334,6 +336,7 @@ void Debug2File(const char *path, const char *fmt, ...)
 	} else
 		fprintf(stderr, "Open %s Error!\n", path);
 }
+#endif
 
 void sethost(char *host)
 {
@@ -584,7 +587,7 @@ send_headers( int status, char* title, char* extra_header, char* mime_type, int 
     if ( extra_header != (char*) 0 )
 	(void) fprintf( conn_fp, "%s\r\n", extra_header );
     if ( mime_type != (char*) 0 ){
-	if(fromapp != 0)
+	if(fromapp != FROM_BROWSER && fromapp != FROM_WebView)
 		(void) fprintf( conn_fp, "Content-Type: %s\r\n", "application/json;charset=UTF-8" );		
 	else
 		(void) fprintf( conn_fp, "Content-Type: %s\r\n", mime_type );
@@ -722,6 +725,8 @@ int check_user_agent(char* user_agent){
 				fromapp=FROM_IFTTT;
 			else if(strcmp( app_framework, "Alexa") == 0)
 				fromapp=FROM_ALEXA;
+			else if(strcmp( app_framework, "WebView") == 0)
+				fromapp=FROM_WebView;
 			else
 				fromapp=FROM_UNKNOWN;
 		}
@@ -770,69 +775,17 @@ int do_fwrite(const char *buffer, int len, FILE *stream)
 	return r;
 }
 
-#if 0 //defined(GTAX6000)
-#define MOD_URL_ODMPID	"GX-AC5400"
-static const char *mod_filter = ".png";
-static const char *mod_url_fn[] = { "/modem_plug.png", "/modem_unplug.png", "/WANunplug.png",
-	"/WAN-connection-defaultPage.png", "/WAN-connection-type.png", "/GT-bg_header.png", NULL
-};
-
-/**
- * This function is used to select different files for different models
- * that share same firmware. If @path include one string of mod_url_fn,
- * insert /.MODEL_NAME/ before it.
- * If mod_filter is not NULL, ignore @path that doesn't contait it.
- */
-static char *mod_url_path(char *path, char *tpath, size_t tpath_size)
-{
-	int l;
-	char *_path = path;
-	const char **v, *q, tmpl[] = "/." MOD_URL_ODMPID "/";
-
-	if (!path || !tpath || !tpath_size)
-		return path;
-
-	if (!nvram_match("odmpid", MOD_URL_ODMPID) || (mod_filter && !strstr(path, mod_filter)))
-		return path;
-
-	l = strlen(path) + strlen(tmpl) + 1;	/* Insert "/.MODEL_NAME/ */
-	for (v = &mod_url_fn[0]; *v != NULL; ++v) {
-		if (!(q = strstr(path, *v)) || strstr(path, tmpl))
-			continue;
-		if (tpath_size < l) {
-			if (!(tpath = malloc(l)))
-				break;
-			tpath_size = l;
-		}
-
-		strlcpy(tpath, path, q - path + 1);
-		strlcat(tpath, tmpl, tpath_size);
-		strlcat(tpath, q + 1, tpath_size);
-		_path = tpath;
-		break;
-	}
-
-	return _path;
-}
-#else
-static inline char *mod_url_path(char *path, char *tpath, size_t tpath_size) { return path; }
-#endif
-
 void do_file(char *path, FILE *stream)
 {
 	FILE *fp;
-	char buf[1024], tmp_path[256];
-	char *_path = mod_url_path(path, tmp_path, sizeof(tmp_path));
+	char buf[1024];
 	int nr;
 
-	if ((fp = fopen(_path, "r")) != NULL) {
+	if ((fp = fopen(path, "r")) != NULL) {
 		while ((nr = fread(buf, 1, sizeof(buf), fp)) > 0)
 			do_fwrite(buf, nr, stream);
 		fclose(fp);
 	}
-
-	if (_path != path && _path != tmp_path)
-		free(_path);
 }
 
 #endif
@@ -1120,7 +1073,7 @@ handle_request(void)
 	}
 
 //2008.08 magic{
-	if (file[0] == '\0' || (index(file, '?') == NULL && file[len-1] == '/')){
+	if (file[0] == '\0' || file[len-1] == '/'){
 		if (is_firsttime()
 #ifdef RTCONFIG_FINDASUS
 		    && !isDeviceDiscovery
@@ -1136,6 +1089,7 @@ handle_request(void)
 			file = indexpage;
 	}
 
+// 2007.11 James. {
 	char *query;
 	int file_len;
 
@@ -1152,6 +1106,7 @@ handle_request(void)
 	{
 		strncpy(url, file, sizeof(url)-1);
 	}
+// 2007.11 James. }
 
 	if( (strstr(url, ".asp") || strstr(url, ".htm")) && !strstr(url, "update_networkmapd.asp") && !strstr(url, "update_clients.asp") && !strstr(url, "update_customList.asp") ) {
 		memset(current_page_name, 0, sizeof(current_page_name));
@@ -1305,18 +1260,28 @@ handle_request(void)
 				}
 			}
 			if (handler->auth) {
+#ifdef RTAX82U
+				switch_ledg(LEDG_QIS_FINISH);
+#endif
 				if ((mime_exception&MIME_EXCEPTION_NOAUTH_FIRST)&&!x_Setting) {
 					//skip_auth=1;
 				}
 #ifdef RTCONFIG_WIFI_SON
-				else if((!fromapp && !nvram_match("sw_mode", "1") && (nvram_match("sw_mode", "3") && !nvram_match("cfg_master", "1")) && strcmp(nvram_safe_get("hive_ui"), "") == 0) && nvram_match("wifison_ready","1")){
+				else if(!fromapp && !nvram_match("sw_mode", "1") && (nvram_match("sw_mode", "3") && !nvram_match("cfg_master", "1")) && strcmp(nvram_safe_get("hive_ui"), "") == 0){
 					snprintf(inviteCode, sizeof(inviteCode), "<meta http-equiv=\"refresh\" content=\"0; url=message.htm\">\r\n");
+					send_page( 200, "OK", (char*) 0, inviteCode, 0);
+				}
+#endif
+#if defined(VZWAC1300)
+				else if(!fromapp){
+					snprintf(inviteCode, sizeof(inviteCode), "<script>top.location.href='/message.htm';</script>");
 					send_page( 200, "OK", (char*) 0, inviteCode, 0);
 				}
 #endif
 #ifdef RTCONFIG_AMAS
 				//RD can do firmware upgrade, if re_upgrade set to 1.
-				else if(!fromapp && nvram_match("re_mode", "1") && nvram_get_int("re_upgrade") == 0 && !check_AiMesh_whitelist(file)){
+				else if(!fromapp && (nvram_match("re_mode", "1") || nvram_match("disable_ui", "1")) &&
+					nvram_get_int("re_upgrade") == 0 && !check_AiMesh_whitelist(file)){
 					snprintf(inviteCode, sizeof(inviteCode), "<meta http-equiv=\"refresh\" content=\"0; url=message.htm\">\r\n");
 					send_page( 200, "OK", (char*) 0, inviteCode, 0);
 					return;
@@ -1424,6 +1389,9 @@ handle_request(void)
 					&& !strstr(file,"cert_key.tar")
 #ifdef RTCONFIG_OPENVPN
 					&& !strstr(file, "server_ovpn.cert")
+#endif
+#ifdef RTCONFIG_CAPTCHA
+					&& !strstr(file, "captcha.gif")
 #endif
 #ifdef RTCONFIG_SOFTCENTER
 					&& !strstr(file, "ss_conf")
@@ -1585,7 +1553,7 @@ int is_auth(void)
 
 int is_firsttime(void)
 {
-#if defined(RTAC58U)
+#if defined(RTAC58U) || defined(RTAX58U) || defined(RTAX56U)
 	if (!strncmp(nvram_safe_get("territory_code"), "CX", 2))
 		return 0;
 	else
@@ -1626,9 +1594,9 @@ char *config_model_name(char *source, char *find,  char *rep){
        result_t = (char*)realloc(result, length * sizeof(char));
        if(result_t == NULL){
        	free(result);
-       	return NULL;
-       }else
-       	result = result_t;
+         	return NULL;
+         }else
+         	result = result_t;
        strcat(result, rep);
        gap+=rep_L;
 
@@ -1738,7 +1706,6 @@ load_dictionary (char *lang, pkw_t pkw)
 		strcpy(pkw->buf, dyn_dict_buf_new);
 		free(dyn_dict_buf_new);
 	}
-
 #else
 	pkw->buf = (char *) (q = malloc (dict_size));
 
@@ -2021,6 +1988,12 @@ search_desc (pkw_t pkw, char *name)
 #endif
 #endif //TRANSLATE_ON_FLY
 
+void reapchild()	// 0527 add
+{
+	signal(SIGCHLD, reapchild);
+	wait(NULL);
+}
+
 int main(int argc, char **argv)
 {
 	usockaddr usa;
@@ -2089,12 +2062,12 @@ int main(int argc, char **argv)
 
 	/* Ignore broken pipes */
 	signal(SIGPIPE, SIG_IGN);
-	signal(SIGCHLD, chld_reap);
+	signal(SIGCHLD, reapchild);	// 0527 add
 	signal(SIGUSR1, update_wlan_log);
 
 #ifdef RTCONFIG_HTTPS
 	//if (do_ssl)
-		start_ssl();
+		start_ssl(http_port);
 #endif
 
 	/* Initialize listen socket */
@@ -2139,12 +2112,18 @@ int main(int argc, char **argv)
 	amas_support = getAmasSupportMode();
 #endif
 
+#ifdef RTAX82U
+	if(nvram_match("x_Setting", "0"))
+		switch_ledg(LEDG_QIS_READY);
+#endif
+
 	/* Loop forever handling requests */
 	for (;;) {
-		int max_fd, count;
+		const static struct timeval timeout = { .tv_sec = MAX_CONN_TIMEOUT, .tv_usec = 0 };
 		struct timeval tv;
 		fd_set rfds;
 		conn_item_t *item, *next;
+		int max_fd, count;
 
 		memcpy(&rfds, &active_rfds, sizeof(rfds));
 		max_fd = -1;
@@ -2160,8 +2139,7 @@ int main(int argc, char **argv)
 			max_fd = max(item->fd, max_fd);
 
 		/* Wait for new connection or incoming request */
-		tv.tv_sec = MAX_CONN_TIMEOUT;
-		tv.tv_usec = 0;
+		tv = timeout;
 		while ((count = select(max_fd + 1, &rfds, NULL, NULL, &tv)) < 0 && errno == EINTR)
 			continue;
 		if (count < 0) {
@@ -2191,6 +2169,10 @@ int main(int argc, char **argv)
 				free(item);
 				continue;
 			}
+
+			/* Set receive/send timeouts */
+			setsockopt(item->fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+			setsockopt(item->fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
 			/* Set the KEEPALIVE option to cull dead connections */
 			setsockopt(item->fd, SOL_SOCKET, SO_KEEPALIVE, &int_1, sizeof(int_1));
@@ -2285,20 +2267,30 @@ void erase_cert(void)
 	unlink("/etc/cert.pem");
 	unlink("/etc/key.pem");
 	nvram_unset("https_crt_file");
-	//nvram_unset("https_crt_gen");
 	nvram_set("https_crt_gen", "0");
 }
 
-void start_ssl(void)
+void start_ssl(int http_port)
 {
+	int lock;
 	int ok;
 	int save;
+	int i;
 	int retry;
 	unsigned long long sn;
 	char t[32];
 
-	//fprintf(stderr,"[httpd] start_ssl running!!\n");
-	//nvram_set("https_crt_gen", "1");
+	lock = file_lock("httpd");
+
+	// Avoid collisions if another httpd instance is initializing SSL cert
+	for (i = 1; i < 5; i++) {
+		if (lock < 0) {
+			//logmessage("httpd", "Conflict, waiting %d", i);
+			sleep(i*i);
+		} else {
+			i = 5;
+		}
+	}
 
 	if (nvram_match("https_crt_gen", "1")) {
 		erase_cert();
@@ -2311,7 +2303,7 @@ void start_ssl(void)
 		if ((!f_exists("/etc/cert.pem")) || (!f_exists("/etc/key.pem"))) {
 			ok = 0;
 			if (save) {
-				fprintf(stderr, "Save SSL certificate...\n"); // tmp test
+				logmessage("httpd", "Save SSL certificate...%d", http_port);
 				if (nvram_get_file("https_crt_file", "/tmp/cert.tgz", 8192)) {
 					if (eval("tar", "-xzf", "/tmp/cert.tgz", "-C", "/", "etc/cert.pem", "etc/key.pem") == 0){
 						system("cat /etc/key.pem /etc/cert.pem > /etc/server.pem");
@@ -2328,8 +2320,7 @@ void start_ssl(void)
 			}
 			if (!ok) {
 				erase_cert();
-				syslog(LOG_NOTICE, "Generating SSL certificate...");
-				fprintf(stderr, "Generating SSL certificate...\n"); // tmp test
+				logmessage("httpd", "Generating SSL certificate...%d", http_port);
 				// browsers seems to like this when the ip address moves...	-- zzz
 				f_read("/dev/urandom", &sn, sizeof(sn));
 
@@ -2342,11 +2333,20 @@ void start_ssl(void)
 			save_cert();
 		}
 
-		if (mssl_init("/etc/cert.pem", "/etc/key.pem")) return;
+		if (mssl_init("/etc/cert.pem", "/etc/key.pem")) {
+			logmessage("httpd", "Succeed to init SSL certificate...%d", http_port);
+			file_unlock(lock);
+			return;
+		}
 
+		logmessage("httpd", "Failed to initialize SSL, generating new key/cert...%d", http_port);
 		erase_cert();
 
-		if (!retry) exit(1);
+		if (!retry) {
+			logmessage("httpd", "Unable to start in SSL mode, exiting! %d", http_port);
+			file_unlock(lock);
+			exit(1);
+		}
 		retry = 0;
 	}
 }

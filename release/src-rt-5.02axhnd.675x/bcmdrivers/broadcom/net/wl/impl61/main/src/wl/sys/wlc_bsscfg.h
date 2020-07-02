@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_bsscfg.h 775473 2019-05-31 08:04:47Z $
+ * $Id: wlc_bsscfg.h 779595 2019-10-03 06:26:35Z $
  */
 #ifndef _WLC_BSSCFG_H_
 #define _WLC_BSSCFG_H_
@@ -270,6 +270,16 @@ typedef struct wlc_intfer_params {
 } wlc_intfer_params_t;
 #endif /* WL_TRAFFIC_THRESH */
 
+#ifdef WL11AX
+typedef struct wlc_block_he_mac
+{
+	 struct ether_addr *etheraddr;
+	 uint8 cur_size; /* number of mac address filled */
+	 uint8 index; /* index to  add new mac address */
+	 uint8 block_he_list_size; /* max mac addresses to store */
+} wlc_block_he_mac_t;
+#endif /* WL11AX */
+
 /**
  * Stores information about the relation between the local entity and a BSS. Information about the
  * BSS that is not specific for this local entity is stored in struct wlc_bss_info instead.
@@ -286,8 +296,9 @@ struct wlc_bsscfg {
 	bool		dtim_programmed;
 	uint8		SSID_len;	/**< the length of SSID */
 	uint8		SSID[DOT11_MAX_SSID_LEN];	/**< SSID string */
-	bool		closednet_nobcnssid;	/**< hide ssid info in beacon */
-	bool		closednet_nobcprbresp;	/**< Don't respond to broadcast probe requests */
+	bool		nobcnssid;	/**< hide ssid info in beacon */
+	/* hide ssid info in beacon and don't respond to broadcast probe requests */
+	bool		closednet;
 	uint8		ap_isolate;	/**< ap isolate bitmap 0: disabled, 1: all 2: mulicast */
 	struct scb      *bcmc_scb;      /**< common bcmc_scb to transmit broadcast frames */
 
@@ -462,9 +473,9 @@ struct wlc_bsscfg {
 	uint8 edca_update_count; /* edca update counter, shared between HE muedca and QoS cfg */
 
 	uint32 mem_bytes; /* bytes of memory allocated for this bsscfg */
-
-	uint8 block_as_retry; /* block assoc retry in wlc_watchdog */
-
+#ifdef WL11AX
+	wlc_block_he_mac_t *block_he_list;
+#endif /* WL11AX */
 #ifdef BCMDBG
 	/* ====== LEAVE THESE AT THE END ====== */
 	/* Rapid PM transition */
@@ -524,6 +535,8 @@ struct wlc_bsscfg {
 #define WLC_BSSCFG_FL2_AKM_REQUIRES_MFP 0x10000  /* current AKM forces MFP required */
 #define WLC_BSSCFG_FL2_SPLIT_ASSOC_REQ	0x20000	/* The BSS split assoc req into two parts */
 #define WLC_BSSCFG_FL2_SPLIT_ASSOC_RESP	0x40000	/* The BSS split assoc resp into two parts */
+#define WLC_BSSCFG_FL2_BLOCK_HE		0x80000 /* The block he station to this bsscfg */
+#define WLC_BSSCFG_FL2_BLOCK_HE_MAC	0x100000 /* add block he mac list */
 
 #define BSSCFG_HAS_PSINFO(cfg)	(((cfg)->flags & WLC_BSSCFG_PSINFO) != 0)
 #define BSSCFG_SET_PSINFO(cfg)	((cfg)->flags |= WLC_BSSCFG_PSINFO)
@@ -553,6 +566,19 @@ struct wlc_bsscfg {
 #define BSSCFG_IS_ASSOC_RECREATED(cfg)	(((cfg)->flags & WLC_BSSCFG_ASSOC_RECR) != 0)
 #define BSSCFG_SET_ASSOC_RECREATED(cfg)	((cfg)->flags |= WLC_BSSCFG_ASSOC_RECR)
 
+#ifdef WL11AX
+#define BSSCFG_IS_BLOCK_HE(cfg)	        (((cfg)->flags2 & WLC_BSSCFG_FL2_BLOCK_HE) != 0)
+#define BSSCFG_SET_BLOCK_HE(cfg)	((cfg)->flags2 |= WLC_BSSCFG_FL2_BLOCK_HE)
+#define BSSCFG_CLEAR_BLOCK_HE(cfg)	((cfg)->flags2 &= ~WLC_BSSCFG_FL2_BLOCK_HE)
+
+#define BSSCFG_IS_BLOCK_HE_MAC(cfg)	(((cfg)->flags2 & WLC_BSSCFG_FL2_BLOCK_HE_MAC) != 0)
+#define BSSCFG_SET_BLOCK_HE_MAC(cfg)	((cfg)->flags2 |= WLC_BSSCFG_FL2_BLOCK_HE_MAC)
+#define BSSCFG_CLEAR_BLOCK_HE_MAC(cfg)	((cfg)->flags2 &= ~WLC_BSSCFG_FL2_BLOCK_HE_MAC)
+
+#define BSSCFG_BLOCK_HE_ENABLED(cfg)    (((cfg)->flags2 \
+			& (WLC_BSSCFG_FL2_BLOCK_HE | WLC_BSSCFG_FL2_BLOCK_HE_MAC)) != 0)
+
+#endif /* WL11AX */
 #ifdef WLTDLS
 #define BSSCFG_IS_TDLS(cfg)	((cfg)->type ==  BSSCFG_TYPE_TDLS)
 #else
@@ -1110,8 +1136,6 @@ extern bool wlc_bsscfg_is_mbo_enabled(wlc_info_t *wlc, wlc_bsscfg_t *cfg);
 #define BSS_MBO_ENAB(wlc, bsscfg)	0
 #endif /* MBO_AP */
 
-#define BLOCK_AS_RESET 1
-
 extern chanspec_t wlc_get_home_chanspec(struct wlc_bsscfg *cfg);
 extern wlc_bss_info_t *wlc_get_current_bss(struct wlc_bsscfg *cfg);
 
@@ -1188,4 +1212,10 @@ extern void wlc_bsscfg_update_rclass(wlc_info_t* wlc, wlc_bsscfg_t* bsscfg);
 extern bool wlc_cur_opclass_global(wlc_info_t* wlc, wlc_bsscfg_t* bsscfg);
 #endif /* WL_GLOBAL_RCLASS */
 bool wlc_is_ap_interface_up(wlc_info_t *wlc);
+#ifdef WL11AX
+void wlc_addto_heblocklist(wlc_bsscfg_t *cfg, struct ether_addr *ea);
+int wlc_isblocked_hemac(wlc_bsscfg_t *cfg, struct ether_addr *ea);
+void wlc_bsscfg_mfree_block_he(wlc_info_t *wlc, wlc_bsscfg_t *cfg);
+#endif /* WL11AX */
+extern bool wlc_bsscfg_none_bss_active(wlc_info_t *wlc);
 #endif	/* _WLC_BSSCFG_H_ */

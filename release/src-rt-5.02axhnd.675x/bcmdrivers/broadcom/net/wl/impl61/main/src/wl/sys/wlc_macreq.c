@@ -117,12 +117,13 @@ typedef enum
 typedef enum
 {
 	// keep the three together
-	C_MRFLAG_VLD_NBIT  = 0,  // set by host
-	C_MRFLAG_DONE_NBIT = 1,  // done
-	C_MRFLAG_PEND_NBIT = 2,  // see request, WIP
+	C_MRFLAG_VLD_NBIT    = 0,  // set by host
+	C_MRFLAG_DONE_NBIT   = 1,  // done
+	C_MRFLAG_PEND_NBIT   = 2,  // see request, WIP
+	C_MRFLAG_CLRSTS_NBIT = 3,  // set by host, clear txbf stats
 	// gap
-	C_MRFLAG_PSMR_NBIT = 4,  // informative: issued to psm-r
-	C_MRFLAG_PSMX_NBIT = 5,  // informative: issued to psm-x
+	C_MRFLAG_PSMR_NBIT   = 4,  // informative: issued to psm-r
+	C_MRFLAG_PSMX_NBIT   = 5,  // informative: issued to psm-x
 } eMacReqFlagBitDefinitions;
 
 // enum for C_MREQ_TYPE value
@@ -431,13 +432,13 @@ _wlc_macreq_add_del_lmem(wlc_info_t *wlc, wl_macreq_params_t *mreq, bool blockin
 		}
 	}
 
-	WL_MAC(("wl%d val: %04x type:%04x flag:%04x len:%04x\n",
+	WL_MUTX(("wl%d val:%04x type:%04x flag:%04x len:%04x ",
 		wlc->pub->unit, val, mreq->type, mreq->flag, mreq->len));
-	WL_MAC(("msg:"));
+	WL_MUTX(("msg:"));
 	for (i = 0; i < mreq->len; i++) {
-		WL_MAC(("%04x ", mreq->lidx_list[i]));
+		WL_MUTX(("%04x ", mreq->lidx_list[i]));
 	}
-	WL_MAC(("\n"));
+	WL_MUTX(("\n"));
 
 	return BCME_OK;
 }
@@ -503,13 +504,13 @@ _wlc_macreq_add_del_mtxv(wlc_info_t *wlc, wl_macreq_params_t *mreq, bool blockin
 		}
 	}
 
-	WL_MAC(("wl%d val: %04x type:%04x flag:%04x len:%04x\n",
+	WL_MUTX(("wl%d val:%04x type:%04x flag:%04x len:%04x ",
 		wlc->pub->unit, val, mreq->type, mreq->flag, mreq->len));
-	WL_MAC(("msg:"));
+	WL_MUTX(("msg:"));
 	for (i = 0; i < mreq->len; i++) {
-		WL_MAC(("%04x ", mreq->lidx_list[i]));
+		WL_MUTX(("%04x ", mreq->lidx_list[i]));
 	}
-	WL_MAC(("\n"));
+	WL_MUTX(("\n"));
 
 	return BCME_OK;
 }
@@ -553,13 +554,13 @@ _wlc_macreq_ld_mutimer(wlc_info_t *wlc, wl_macreq_params_t *mreq, bool blocking)
 		}
 	}
 
-	WL_MAC(("val: %04x type:%04x flag:%04x len:%04x\n",
+	WL_MUTX(("val:%04x type:%04x flag:%04x len:%04x ",
 		val, mreq->type, mreq->flag, mreq->len));
-	WL_MAC(("msg: "));
+	WL_MUTX(("msg: "));
 	for (i = 0; i < mreq->len; i++) {
-		WL_MAC(("%04x ", mreq->lidx_list[i]));
+		WL_MUTX(("%04x ", mreq->lidx_list[i]));
 	}
-	WL_MAC(("\n"));
+	WL_MUTX(("\n"));
 
 	return BCME_OK;
 }
@@ -575,13 +576,13 @@ wlc_macreq_upd_bfi(wlc_info_t *wlc, scb_t *scb, uint16 fifogrp_idx, bool add)
 	}
 
 	if (wlc_txbf_autotxvcfg_get(wlc->txbf, add)) {
-		WL_MAC(("wl%d: %s auto txv add/del is active\n", wlc->pub->unit, __FUNCTION__));
+		WL_MUTX(("wl%d: %s auto txv add/del is active\n", wlc->pub->unit, __FUNCTION__));
 		return BCME_OK;
 	}
 
 	memset(&mreq, 0x00, sizeof(wl_macreq_params_t));
 
-	mreq.flag = 1; /* valid */
+	mreq.flag = 1 << C_MRFLAG_VLD_NBIT;
 
 	if (add) {
 		mreq.type = C_MREQ_ADD_MTXV;
@@ -592,7 +593,7 @@ wlc_macreq_upd_bfi(wlc_info_t *wlc, scb_t *scb, uint16 fifogrp_idx, bool add)
 	mreq.len = 1;
 	lidx = wlc_ratelinkmem_get_scb_link_index(wlc, scb);
 	if (lidx == D11_RATE_LINK_MEM_IDX_INVALID) {
-		WL_MAC(("wl%d: %s lidx (%04x) invalid, fifogrp_idx %04x, mreq.type %04x, add %d\n",
+		WL_MUTX(("wl%d: %s lidx (%04x) invalid, fifogrp_idx %04x, mreq.type %04x, add %d\n",
 			wlc->pub->unit, __FUNCTION__, lidx, fifogrp_idx, mreq.type, add));
 		return BCME_ERROR;
 	}
@@ -603,7 +604,7 @@ wlc_macreq_upd_bfi(wlc_info_t *wlc, scb_t *scb, uint16 fifogrp_idx, bool add)
 }
 
 int
-wlc_macreq_upd_lmem(wlc_info_t *wlc, uint16 lmem_idx, bool add)
+wlc_macreq_upd_lmem(wlc_info_t *wlc, uint16 lmem_idx, bool add, bool clr_txbf_stats)
 {
 	wl_macreq_params_t mreq;
 
@@ -617,7 +618,7 @@ wlc_macreq_upd_lmem(wlc_info_t *wlc, uint16 lmem_idx, bool add)
 
 	memset(&mreq, 0x00, sizeof(wl_macreq_params_t));
 
-	mreq.flag = 1; /* valid */
+	mreq.flag = (1 << C_MRFLAG_VLD_NBIT | clr_txbf_stats << C_MRFLAG_CLRSTS_NBIT);
 
 	if (add) {
 		mreq.type = C_MREQ_UPD_LMEM;
@@ -642,7 +643,7 @@ wlc_macreq_txbf_mutimer(wlc_info_t *wlc, uint16 mutimer_val)
 
 	memset(&mreq, 0x00, sizeof(wl_macreq_params_t));
 
-	mreq.flag = 1; /* valid */
+	mreq.flag = 1 << C_MRFLAG_VLD_NBIT;
 	mreq.type = C_MREQ_LD_MTMR;
 	mreq.len = 1;
 	mreq.lidx_list[0] = mutimer_val;

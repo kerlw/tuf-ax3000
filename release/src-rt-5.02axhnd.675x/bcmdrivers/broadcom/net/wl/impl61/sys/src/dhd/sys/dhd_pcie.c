@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: dhd_pcie.c 776578 2019-07-02 18:49:21Z $
+ * $Id: dhd_pcie.c 779944 2019-10-10 17:53:52Z $
  */
 
 /* include files */
@@ -98,6 +98,10 @@
 #if defined(SUPPORT_MULTIPLE_BOARD_REV)
 	extern unsigned int system_rev;
 #endif /* SUPPORT_MULTIPLE_BOARD_REV */
+
+#ifdef BCA_HNDROUTER
+extern int is_reboot;
+#endif // endif
 
 int dhd_dongle_memsize;
 int dhd_dongle_ramsize;
@@ -6506,7 +6510,12 @@ dhdpcie_handle_mb_data(dhd_bus_t *bus)
 			dhd_os_d3ack_wake(bus->dhd);
 		}
 	}
-	if ((d2h_mb_data & PCIE_IPC_D2HMB_DEV_FWHALT))  {
+	if ((d2h_mb_data & PCIE_IPC_D2HMB_DEV_FWHALT) &&
+#ifdef BCA_HNDROUTER
+		(!is_reboot) &&
+#endif // endif
+		TRUE) {
+
 		uint32 tr_type;
 
 		DHD_ERROR(("FW trap has happened\n"));

@@ -84,6 +84,10 @@ const int allowed_local_icmpv6[] =
 	  148, 149, 151, 152, 153 };
 #endif
 
+#ifdef RTCONFIG_VPN_FUSION
+extern int write_vpn_fusion(FILE *fp, const char* lan_ip);
+#endif
+
 char *mac_conv(char *mac_name, int idx, char *buf);	// oleg patch
 
 void write_porttrigger(FILE *fp, char *wan_if, int is_nat);
@@ -1531,6 +1535,9 @@ void write_port_forwarding(FILE *fp, char *config, char *lan_ip, char *lan_if)
 		}
 	}
 #endif	/* RTCONFIG_MULTIWAN_CFG */
+#if defined(RTAX56_XD4)
+	write_extra_port_forwarding(fp, lan_ip);
+#endif
 }
 
 void nat_setting(char *wan_if, char *wan_ip, char *wanx_if, char *wanx_ip, char *lan_if, char *lan_ip, char *logaccept, char *logdrop)	// oleg patch
@@ -1585,6 +1592,10 @@ void nat_setting(char *wan_if, char *wan_ip, char *wanx_if, char *wanx_ip, char 
 		fprintf(fp,
 			":CLIENT_TO_INTERNET - [0:0]\n");
 	}
+#endif
+#ifdef RTCONFIG_VPN_FUSION
+	fprintf(fp,
+		":VPN_FUSION - [0:0]\n");
 #endif
 
 	ip2class(lan_ip, nvram_safe_get("lan_netmask"), lan_class);
@@ -1674,6 +1685,10 @@ void nat_setting(char *wan_if, char *wan_ip, char *wanx_if, char *wanx_ip, char 
 			free(nv);
 		}
 	}
+#endif
+
+#ifdef RTCONFIG_VPN_FUSION
+        write_vpn_fusion(fp, lan_ip);
 #endif
 
 #ifdef RTCONFIG_YANDEXDNS
@@ -1832,7 +1847,7 @@ void nat_setting(char *wan_if, char *wan_ip, char *wanx_if, char *wanx_ip, char 
 	symlink(name, NAT_RULES);
 
 	wan_unit = wan_ifunit(wan_if);
-	if(is_phy_connect(wan_unit)){
+	if(is_phy_connect2(wan_unit)){
 		/* force nat update */
 		nvram_set_int("nat_state", NAT_STATE_UPDATE);
 _dprintf("nat_rule: start_nat_rules 1.\n");
@@ -1872,7 +1887,7 @@ void nat_setting2(char *lan_if, char *lan_ip, char *logaccept, char *logdrop)	//
 #endif
 
 
-	ip2class(lan_ip, nvram_safe_get("lan_netmask"), lan_class);
+ 	ip2class(lan_ip, nvram_safe_get("lan_netmask"), lan_class);
 
 #ifdef RTCONFIG_MULTICAST_IPTV
 	if (nvram_get_int("switch_stb_x") > 6)
@@ -2322,6 +2337,9 @@ void redirect_setting(void)
 		"-I YADNS 1 -p udp -j DNAT --to-destination %s:18018\n", lan_ipaddr_t);
 #endif
 
+#if defined(RTAX56_XD4)
+	write_extra_port_forwarding(redirect_fp, lan_ipaddr_t);
+#endif
 	fprintf(redirect_fp, "COMMIT\n");
 
 	fclose(redirect_fp);
@@ -2483,7 +2501,7 @@ start_default_filter(int lanunit)
 
 #ifdef RTCONFIG_AMAS_WGN
 	wgn_filter_input(fp);
-#endif	
+#endif
 
 	if (nvram_match("enable_acc_restriction", "1"))
 	{
@@ -2794,7 +2812,7 @@ void write_UrlFilter(char *chain, char *lan_if, char *lan_ip, char *logdrop, FIL
 						continue;
 					}
 
-					snprintf(list2, sizeof(list2), "%s|%02d|%s", list, strlen(p), p);
+					snprintf(list2, sizeof(list2), "%s|%02x|%s", list, strlen(p), p);
 					strlcpy(list, list2, sizeof(list));
 				}
 
@@ -2828,7 +2846,7 @@ void write_UrlFilter(char *chain, char *lan_if, char *lan_ip, char *logdrop, FIL
 							continue;
 						}
 
-						snprintf(list2, sizeof(list2), "%s|%02d|%s", list, strlen(p), p);
+						snprintf(list2, sizeof(list2), "%s|%02x|%s", list, strlen(p), p);
 						strlcpy(list, list2, sizeof(list));
 					}
 
@@ -3175,6 +3193,14 @@ TRACE_PT("writing Parental Control\n");
 #endif
 
 	if (nvram_match("fw_enable_x", "1")) {
+
+#if defined(RTCONFIG_TR069)
+            if(nvram_match("tr_enable", "1")){
+                /*add _cassie_*/
+                fprintf(fp, "-I INPUT -p tcp -m tcp --dport %s -j %s\n", nvram_safe_get("tr_conn_port"), logaccept);
+                fprintf(fp, "-I INPUT -p udp -m udp --dport %s -j %s\n", nvram_safe_get("tr_conn_port"), logaccept);
+            }
+#endif
 		/* Drop ICMP before ESTABLISHED state */
 		if (!nvram_get_int("misc_ping_x")) {
 #ifdef RTCONFIG_IPV6
@@ -4568,7 +4594,7 @@ TRACE_PT("writing Parental Control\n");
 
 #ifdef RTCONFIG_AMAS_WGN
 	wgn_filter_forward(fp);
-#endif	
+#endif
 // ~ oleg patch
 		/* Filter out invalid WAN->WAN connections */
 		fprintf(fp, "-A FORWARD -o %s ! -i %s -j %s\n", wan_if, lan_if, logdrop);
@@ -5245,7 +5271,7 @@ mangle_setting(char *wan_if, char *wan_ip, char *lan_if, char *lan_ip, char *log
 	}
 #endif
 
-#if defined(RTAC58U) || defined(RTAC88U) || defined(RTAX58U)
+#if defined(RTAC58U) || defined(RTAC88U) || defined(RTAX58U) || defined(RTAX56U)
 	if (nvram_match("switch_wantag", "stuff_fibre")) {
 		eval("iptables", "-t", "mangle", "-A", "POSTROUTING", "-p", "udp", "--dport", "53", "-j", "CLASSIFY", "--set-class", "0:3");
 		eval("iptables", "-t", "mangle", "-A", "POSTROUTING", "-d", "27.111.14.67", "-j", "CLASSIFY", "--set-class", "0:3");

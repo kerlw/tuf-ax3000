@@ -631,10 +631,10 @@ static int rctest_main(int argc, char *argv[])
 }
 #endif
 
-#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RTCONFIG_LANTIQ) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q)
+#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RTCONFIG_LANTIQ) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX55)
 /* download firmware */
 #ifndef FIRMWARE_DIR
-#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q)
+#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55)
 #define FIRMWARE_DIR	"/lib/firmware"
 #else
 #define FIRMWARE_DIR	"/tmp"
@@ -749,7 +749,7 @@ static int hotplug_main(int argc, char *argv[])
 			return coma_uevent();
 #endif /* LINUX_2_6_36 */
 #endif
-#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RTCONFIG_LANTIQ) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q)
+#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RTCONFIG_LANTIQ) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55)
 		else if(!strcmp(argv[1], "firmware")) {
 			hotplug_firmware();
 		}
@@ -792,6 +792,7 @@ static const applets_t applets[] = {
 #ifdef RTCONFIG_OPENVPN
 	{ "ovpn-up",			ovpn_up_main				},
 	{ "ovpn-down",			ovpn_down_main			},
+	{ "ovpn-route-up",		ovpn_route_up_main				},
 #endif
 #ifdef RTCONFIG_EAPOL
 	{ "wpa_cli",			wpacli_main			},
@@ -882,7 +883,7 @@ static const applets_t applets[] = {
 #ifdef RTCONFIG_NETOOL
 	{ "netool", 			netool_main			},
 #endif
-#if defined(RTCONFIG_RALINK) || defined(RTCONFIG_EXT_RTL8365MB) || defined(RTCONFIG_EXT_RTL8370MB)
+#if defined(RTCONFIG_RALINK) || defined(RTCONFIG_EXT_RTL8365MB) || defined(RTCONFIG_EXT_RTL8370MB) || defined(RTAX55)
 	{ "rtkswitch",			config_rtkswitch		},
 #if defined(RTAC53) || defined(RTAC51UP)
 	{ "mtkswitch",			config_mtkswitch		},
@@ -929,6 +930,9 @@ static const applets_t applets[] = {
 #ifdef RTAC68U
 	{ "firmware_enc_crc",		firmware_enc_crc_main		},
 	{ "fw_check",			fw_check_main			},
+#endif
+#ifdef RTAX82U
+	{ "ledg",			ledg_main			},
 #endif
 #ifdef BUILD_READMEM
 	{ "readmem",			readmem_main			},
@@ -1411,6 +1415,12 @@ int main(int argc, char **argv)
 		restart_wireless();
 		return 0;
 	}
+#if defined(RTCONFIG_BCMWL6) && defined(RTCONFIG_PROXYSTA)
+	else if (!strcmp(base, "sendarp")) {
+		send_arpreq();
+		return 0;
+	}
+#endif
 #ifdef RTCONFIG_BCM_7114
 	else if (!strcmp(base, "stop_wl")) {
 		stop_wl_bcm();
@@ -1863,15 +1873,24 @@ int main(int argc, char **argv)
 		}
 	}
 	else if (!strcmp(base, "hnd-write")) {
-		if (argc >= 2) {
-			return bca_sys_upgrade(argv[1]);
-		} else {
-			_dprintf("%s@%d *** Error argc=%d\n", __FUNCTION__, __LINE__, argc);
-			return EINVAL;
-		}
+                int ret = -1;
+
+                nvram_set_int("hndwr", -100);
+                if (argc >= 2) {
+                        ret = bca_sys_upgrade(argv[1]);
+                } else {
+                        _dprintf("%s@%d *** Error argc=%d\n", __FUNCTION__, __LINE__, argc);
+                        ret = EINVAL;
+                }
+
+                nvram_set_int("hndwr", ret);
+                return ret;
 	}
 	else if (!strcmp(base, "mtd_erase_image_update")) {
 		return mtd_erase_image_update();
+	}
+	else if (!strcmp(base, "mtd_erase_misc2")) {
+		return mtd_erase_misc2();
 	}
 #else
 	else if (!strcmp(base, "nvram_erase")) {
@@ -2088,6 +2107,59 @@ int main(int argc, char **argv)
 		if (!IS_ATE_FACTORY_MODE())
 			return 0;
 		dump_txbftable();
+		return 0;
+	}
+#endif
+#ifdef RTCONFIG_EXTPHY_BCM84880
+	else if (!strcmp(base, "extphy_bit_op")) {
+		unsigned int reg, val, start_bit, end_bit, wait_ms;
+		int wr, ret;
+
+		if(argc < 2 || (strcmp(argv[1], "rd") && strcmp(argv[1], "wr")))
+			return 0;
+
+		if(argc < 3)
+			return 0;
+
+		reg = strtol(argv[2], 0, 16);
+
+		if(!strcmp(argv[1], "wr")){
+			wr = 1;
+			start_bit = wait_ms = 0;
+			end_bit = 15;
+
+			if(argc >= 4 && argc <= 7){
+				if(argc >= 4)
+					val = strtol(argv[3], 0, 16);
+				if(argc >= 5)
+					start_bit = strtol(argv[4], 0, 10);
+				if(argc >= 6)
+					end_bit = strtol(argv[5], 0, 10);
+				if(argc == 7)
+					wait_ms = strtol(argv[6], 0, 10);
+			}
+			else
+				return 0;
+		}
+		else{ // !strcmp(argv[1], "rd")
+			wr = 0;
+			val = start_bit = wait_ms = 0;
+			end_bit = 15;
+
+			if(argc >= 3 && argc <= 5){
+				if(argc >= 4)
+					start_bit = strtol(argv[3], 0, 10);
+				if(argc == 5)
+					end_bit = strtol(argv[4], 0, 10);
+			}
+			else
+				return 0;
+		}
+
+		ret = extphy_bit_op(reg, val, wr, start_bit, end_bit, wait_ms);
+
+		_dprintf("addr=0x%02x, reg=0x%06x, val=0x%04x\n", EXTPHY_ADDR, reg, ret);
+
 		return 0;
 	}
 #endif

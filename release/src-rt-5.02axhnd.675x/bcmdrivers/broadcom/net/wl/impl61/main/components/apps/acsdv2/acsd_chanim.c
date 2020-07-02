@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: acsd_chanim.c 777524 2019-08-05 08:28:05Z $
+ * $Id: acsd_chanim.c 779763 2019-10-07 08:51:14Z $
  */
 
 #include "acsd_svr.h"
@@ -376,7 +376,7 @@ chanim_chk_lockout(chanim_info_t *ch_info)
 
 /* update the chanim state machine */
 static int
-chanim_upd_state(acs_chaninfo_t * c_info, uint8 version)
+chanim_upd_state(acs_chaninfo_t * c_info, uint8 version, uint ticks)
 {
 	int ret = 0;
 	chanim_info_t * ch_info = c_info->chanim_info;
@@ -460,7 +460,7 @@ chanim_upd_state(acs_chaninfo_t * c_info, uint8 version)
 		}
 
 		/* taking action */
-		if (acs_allow_scan(c_info, ACS_SCAN_TYPE_CS)) {
+		if (acs_allow_scan(c_info, ACS_SCAN_TYPE_CS, ticks)) {
 			c_info->last_scan_type = ACS_SCAN_TYPE_CS;
 			ret = acs_run_cs_scan(c_info);
 			if (ret < 0)
@@ -589,7 +589,7 @@ acsd_update_chanim(acs_chaninfo_t * c_info, wl_chanim_stats_t * chanim_stats, ui
 			}
 		}
 		else {
-			chanim_upd_state(c_info, chanim_stats->version);
+			chanim_upd_state(c_info, chanim_stats->version, ticks);
 		}
 		c_info->cur_timestamp = tmp.timestamp;
 		c_info->txop_score = stats_v3->ccastats[CCASTATS_TXOP] +
@@ -636,7 +636,7 @@ acsd_update_chanim(acs_chaninfo_t * c_info, wl_chanim_stats_t * chanim_stats, ui
 			}
 		}
 		else {
-			chanim_upd_state(c_info, chanim_stats->version);
+			chanim_upd_state(c_info, chanim_stats->version, ticks);
 		}
 		c_info->cur_timestamp = tmp.timestamp;
 		c_info->txop_score = stats_v2->ccastats[CCASTATS_TXOP] +

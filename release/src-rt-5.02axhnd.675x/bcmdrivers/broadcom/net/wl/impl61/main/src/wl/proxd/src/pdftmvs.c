@@ -1240,6 +1240,7 @@ int vs_prep_mf_buf(uint8 *body, uint body_max, uint len, pdburst_session_info_t 
 	len += mf_len;
 
 #ifdef BCMDBG
+	if (WL_ERROR_ON())
 	prhex("mf-buf Frm body", body, len);
 #endif // endif
 

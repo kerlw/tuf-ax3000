@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_stamon.c 774132 2019-04-11 08:56:34Z $
+ * $Id: wlc_stamon.c 779055 2019-09-18 05:08:10Z $
  */
 
 /**
@@ -1203,9 +1203,7 @@ wlc_offchan_timer_delete(wlc_stamon_info_t *ctxt)
 	/* Make sure AP is back in home channel when deleting timer */
 	if (ctxt->chspec_return) {
 		wlc_bmac_suspend_mac_and_wait(wlc->hw);
-		wlc_bmac_set_chanspec(wlc->hw, ctxt->chspec_return,
-			(wlc_quiet_chanspec(wlc->cmi, ctxt->chspec_return) != 0),
-			NULL, NULL, NULL);
+		wlc_channel_set_chanspec(wlc->cmi, ctxt->chspec_return);
 		wlc_bmac_enable_mac(wlc->hw);
 		ctxt->chspec_return = 0;
 	}
@@ -1221,9 +1219,7 @@ wlc_stamon_offchan_timer(void *arg)
 	/* chspec_return is set when AP goes off channel. Go back to home channel if it is set */
 	if (ctxt->chspec_return) {
 		wlc_bmac_suspend_mac_and_wait(wlc->hw);
-		wlc_bmac_set_chanspec(wlc->hw, ctxt->chspec_return,
-			(wlc_quiet_chanspec(wlc->cmi, ctxt->chspec_return) != 0),
-			NULL, NULL, NULL);
+		wlc_channel_set_chanspec(wlc->cmi, ctxt->chspec_return);
 		wlc_bmac_enable_mac(wlc->hw);
 
 		/* Stay in home channel for at leaset ONCHAN_TIME, before next off channel */
@@ -1256,8 +1252,7 @@ wlc_stamon_offchan_timer(void *arg)
 			ctxt->chspec_return = WLC_BAND_PI_RADIO_CHANSPEC;
 
 			wlc_bmac_suspend_mac_and_wait(wlc->hw);
-			wlc_bmac_set_chanspec(wlc->hw, ctxt->stacfg[i].chanspec, 1,
-				NULL, NULL, NULL);
+			wlc_channel_set_chanspec(wlc->cmi, ctxt->stacfg[i].chanspec);
 			wlc_bmac_enable_mac(wlc->hw);
 
 			/* Start off channel timer */

@@ -716,7 +716,8 @@ qualify:
 		BSD_STEERING_POLICY_FLAG_VHT | BSD_STEERING_POLICY_FLAG_NON_VHT |
 		BSD_STEERING_POLICY_FLAG_NEXT_RF |
 		BSD_STEERING_POLICY_FLAG_PHYRATE |
-		BSD_STEERING_POLICY_FLAG_LOAD_BAL)) {
+		BSD_STEERING_POLICY_FLAG_LOAD_BAL |
+		BSD_STEERING_POLICY_FLAG_STA_NUM_BAL)) {
 		qualify = TRUE;
 	}
 
@@ -979,36 +980,50 @@ static void bsd_update_sta_balance(bsd_info_t *info)
 	for (idx = 0; idx < info->max_ifnum; idx++) {
 		intf_info = &(info->intf_info[idx]);
 
+		if (!(intf_info->steering_cfg.flags & (BSD_STEERING_POLICY_FLAG_LOAD_BAL |
+				BSD_STEERING_POLICY_FLAG_STA_NUM_BAL))) {
+			continue;
+		}
 		BSD_MULTI_RF("For [idx=%d] steering_flags=0x%x\n",
 			idx, intf_info->steering_flags);
-		if (intf_info->steering_cfg.flags & BSD_STEERING_POLICY_FLAG_LOAD_BAL) {
-			bssidx = bsd_get_steerable_bss(info, intf_info);
-			if (bssidx == -1) {
-				BSD_MULTI_RF("[%d] bssidx == -1 skip\n", idx);
-				continue;
-			}
-			bssinfo = &(intf_info->bsd_bssinfo[bssidx]);
-			BSD_MULTI_RF("idx=%d bssidx=%d ifname=%s assoc_cnt=%d\n",
+		bssidx = bsd_get_steerable_bss(info, intf_info);
+		if (bssidx == -1) {
+			BSD_MULTI_RF("[%d] bssidx == -1 skip\n", idx);
+			continue;
+		}
+		bssinfo = &(intf_info->bsd_bssinfo[bssidx]);
+		BSD_MULTI_RF("idx=%d bssidx=%d ifname=%s assoc_cnt=%d\n",
 				idx, bssidx, bssinfo->ifnames, bssinfo->assoc_cnt);
 
-			to_ifidx = bsd_get_preferred_if(info, idx);
-			if (to_ifidx == -1) {
-				BSD_MULTI_RF("[%d] to_ifidx == -1 skip\n", idx);
-				continue;
+		to_ifidx = bsd_get_preferred_if(info, idx);
+		if (to_ifidx == -1) {
+			BSD_MULTI_RF("[%d] to_ifidx == -1 skip\n", idx);
+			continue;
+		}
+
+		BSD_MULTI_RF("idx=%d to_ifidx=%d\n", idx, to_ifidx);
+		to_intf_info = &(info->intf_info[to_ifidx]);
+
+		to_bssidx = bsd_get_steerable_bss(info, to_intf_info);
+
+		if (to_bssidx == -1) {
+			BSD_MULTI_RF("[%d] to_bssidx == -1 skip\n", idx);
+			continue;
+		}
+		to_bssinfo = &(to_intf_info->bsd_bssinfo[to_bssidx]);
+
+		if ((intf_info->steering_cfg.flags & BSD_STEERING_POLICY_FLAG_STA_NUM_BAL) &&
+			(to_intf_info->steering_cfg.flags & BSD_STEERING_POLICY_FLAG_STA_NUM_BAL)) {
+
+			BSD_MULTI_RF("bssinfo->assoc_cnt[%d] to_bssinfo->assoc_cnt[%d] \n",
+				bssinfo->assoc_cnt, to_bssinfo->assoc_cnt);
+			if ((bssinfo->assoc_cnt - to_bssinfo->assoc_cnt) > 1) {
+				intf_info->steering_flags = BSD_STEERING_POLICY_FLAG_STA_NUM_BAL;
 			}
+		}
 
-			BSD_MULTI_RF("idx=%d to_ifidx=%d\n", idx, to_ifidx);
-			to_intf_info = &(info->intf_info[to_ifidx]);
+		if (intf_info->steering_cfg.flags & BSD_STEERING_POLICY_FLAG_LOAD_BAL) {
 			if (to_intf_info->steering_cfg.flags & BSD_STEERING_POLICY_FLAG_LOAD_BAL) {
-
-				to_bssidx = bsd_get_steerable_bss(info, to_intf_info);
-
-				if (to_bssidx == -1) {
-					BSD_MULTI_RF("[%d] to_bssidx == -1 skip\n", idx);
-					continue;
-				}
-				to_bssinfo = &(to_intf_info->bsd_bssinfo[to_bssidx]);
-
 				/* set BSD_STEERING_POLICY_FLAG_LOAD_BAL to intf_info */
 				if ((bssinfo->assoc_cnt > 1) && (to_bssinfo->assoc_cnt == 0)) {
 					intf_info->steering_flags |=
@@ -1293,6 +1308,12 @@ bsd_sta_info_t *bsd_sta_select_policy(bsd_info_t *info, int ifidx, int to_ifidx)
 		if (bsd_if_qualify_sta(info, to_ifidx, sta) == FALSE) {
 			BSD_STEER("Skip sta[%p] not qualify for to_ifidx:%d.\n", sta, to_ifidx);
 			goto next;
+		}
+
+		/* Policy based on sta num balance pre-empt all other rules */
+		if (intf_info->steering_flags & BSD_STEERING_POLICY_FLAG_STA_NUM_BAL) {
+			BSD_STEER("Candidate STA [%p]: STA_NUM_BAL\n", sta);
+			goto scoring;
 		}
 
 		/* sta balance pre-empt all other policy rules */

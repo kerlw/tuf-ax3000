@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: acsd_cmd.c 777835 2019-08-13 06:26:04Z $
+ * $Id: acsd_cmd.c 779767 2019-10-07 09:36:34Z $
  */
 
 #include "acsd_svr.h"
@@ -229,8 +229,7 @@ acsd_dfs_cmd(acs_chaninfo_t *c_info, char *buf, char *param, char *val, uint *r_
 	if (move) {
 		c_info->selected_chspec = chspec;
 		acs_set_chspec(c_info, FALSE, WL_CHAN_REASON_DFS_AP_MOVE_START);
-		chanim_upd_acs_record(c_info->chanim_info, c_info->selected_chspec,
-				APCS_DFS_REENTRY);
+		c_info->switch_reason_type = APCS_DFS_REENTRY;
 	} else { /* preclear */
 		c_info->acs_bgdfs->next_scan_chan = chspec;
 		ret = acs_bgdfs_ahead_trigger_scan(c_info);
@@ -710,6 +709,16 @@ acsd_proc_cmd(acsd_wksp_t* d_info, char* buf, uint rcount, uint* r_size)
 
 		if (!strcmp(param, "acs_ci_scan_timer")) {
 			*r_size = sprintf(buf, "%d sec", c_info->acs_ci_scan_timer);
+			goto done;
+		}
+
+		if (!strcmp(param, "bw_upgradable")) {
+			*r_size = sprintf(buf, "%d", c_info->bw_upgradable);
+			goto done;
+		}
+
+		if (!strcmp(param, "fallback_to_primary")) {
+			*r_size = sprintf(buf, "%d", c_info->fallback_to_primary);
 			goto done;
 		}
 

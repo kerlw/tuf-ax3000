@@ -195,6 +195,7 @@ wlc_tso_parse_d11(wlc_info_t *wlc, d11ac_tso_t* tso, void* pt, void* p, struct s
 	}
 
 #ifdef DEBUG_TSO
+	if (WL_ERROR_ON())
 	prhex("d11 hdr dump:", (uint8 *)h, phylen);
 #endif // endif
 
@@ -234,6 +235,7 @@ wlc_tso_parse_eth(wlc_info_t *wlc, void* pt, void* p, uint offset)
 	}
 
 #ifdef DEBUG_TSO_ETH
+	if (WL_ERROR_ON())
 	prhex("eth hdr dump:", (uint8 *)pt, ((len > 0)? len : SNAP_HDR_LEN));
 #endif // endif
 	return len;
@@ -328,6 +330,7 @@ wlc_tso_parse_ip(wlc_info_t *wlc, d11ac_tso_t *tso, void* pt, void* p, uint offs
 #ifdef DEBUG_TSO_AMSDU
 	WL_TSO(("wl%d: %s: ipl: %d IP ihl: %d\n",
 		wlc->pub->unit, __FUNCTION__, ipl, ihl));
+	if (WL_ERROR_ON())
 	prhex("ip header dump:", (uint8 *)iph, ihl);
 #endif // endif
 
@@ -359,6 +362,7 @@ wlc_tso_parse_ip(wlc_info_t *wlc, d11ac_tso_t *tso, void* pt, void* p, uint offs
 #ifdef DEBUG_TSO_AMSDU
 		WL_TSO(("wl%d: %s: TCP: hdrlen: %x  tcphl: %d payload_len: %d\n",
 			wlc->pub->unit, __FUNCTION__, *hdrlen, tcphl, payload_len));
+		if (WL_ERROR_ON())
 		prhex("tcp header dump:", (uint8 *)pt, (tcphl < 20)? 20 : tcphl);
 #endif // endif
 	}
@@ -384,6 +388,7 @@ wlc_tso_parse_ip(wlc_info_t *wlc, d11ac_tso_t *tso, void* pt, void* p, uint offs
 #ifdef DEBUG_TSO_IP
 		WL_TSO(("wl%d: %s: UDP: hdrlen: %d payload_len: %d udph->len: 0x%x\n",
 			wlc->pub->unit, __FUNCTION__, udphl, payload_len, udph->len));
+		if (WL_ERROR_ON())
 		prhex("udp header dump:", (uint8 *)pt, UDP_HDR_LEN);
 #endif // endif
 	}
@@ -458,6 +463,7 @@ wlc_tso_parse_amsdu(wlc_info_t *wlc, d11ac_tso_t *tso, void* pt, void* p, uint o
 
 		WL_TSO(("wl%d: %s: num_sf: %d\n", wlc->pub->unit, __FUNCTION__, num_sf));
 #ifdef DEBUG_TSO_AMSDU
+		if (WL_ERROR_ON())
 		prhex("amsdu dump:", (uint8 *)pt, PKTLEN(wlc->osh, newpkt));
 #endif // endif
 		newpkt0 = newpkt;
@@ -569,6 +575,7 @@ wlc_tso_parse_amsdu(wlc_info_t *wlc, d11ac_tso_t *tso, void* pt, void* p, uint o
 #ifdef DEBUG_TSO_AMSDU
 			WL_TSO(("wl%d: %s: subframe: %d csum_needed: %d passthrough: %d\n",
 			wlc->pub->unit, __FUNCTION__, num_sf, csum_needed, passthrough));
+			if (WL_ERROR_ON())
 			prhex("TSO header dump:", (uint8 *)tso, len_new);
 #endif // endif
 		}
@@ -614,11 +621,13 @@ wlc_tso_parse_amsdu(wlc_info_t *wlc, d11ac_tso_t *tso, void* pt, void* p, uint o
 				WL_TSO(("wl%d: %s: subframe: %d csum_needed: %d passthrough: %d\n",
 					wlc->pub->unit, __FUNCTION__, num_sf, csum_needed,
 					passthrough));
+				if (WL_ERROR_ON())
 				prhex("TSO header dump:", (uint8 *)&tso_new, len_new);
 #endif // endif
 				tsohdr = (d11ac_tso_t*)PKTPUSH(wlc->osh, newpkt0, len_new);
 				bcopy(&tso_new, tsohdr, len_new);
 #ifdef DEBUG_TSO_AMSDU
+				if (WL_ERROR_ON())
 				prhex("TSO header dump:", (uint8 *)tsohdr, len_new + ETHER_HDR_LEN);
 #endif // endif
 			}
@@ -923,6 +932,7 @@ wlc_toe_add_hdr(wlc_info_t *wlc, void *p, struct scb *scb, const wlc_key_info_t 
 	len = wlc_tso_hdr_length(&tso);
 
 #ifdef DEBUG_TSO
+	if (WL_ERROR_ON())
 	prhex("TSO header dump:", (uint8 *)&tso, len);
 #endif // endif
 #else

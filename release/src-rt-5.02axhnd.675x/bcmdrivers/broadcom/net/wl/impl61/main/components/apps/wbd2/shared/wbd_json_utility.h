@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_json_utility.h 771813 2019-02-08 06:08:00Z $
+ * $Id: wbd_json_utility.h 779283 2019-09-24 08:30:26Z $
  */
 
 #ifndef _WBD_JSON_UTILITY_H_
@@ -117,6 +117,7 @@
 #define JSON_TAG_RX_TOT_PKTS		"RxTotPkts"
 #define JSON_TAG_RX_TOT_BYTES		"RxTotBytes"
 #define JSON_TAG_MSGLEVEL		"MsgLevel"
+#define JSON_TAG_DISABLE		"Disable"
 /* ------------------------------ HEALPER FUNCTIONS ------------------------------------- */
 
 /* Get the command ID from the json data */

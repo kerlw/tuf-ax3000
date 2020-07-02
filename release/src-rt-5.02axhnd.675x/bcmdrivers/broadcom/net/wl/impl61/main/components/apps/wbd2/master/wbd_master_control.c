@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_master_control.c 774667 2019-05-02 05:27:14Z $
+ * $Id: wbd_master_control.c 779287 2019-09-24 08:34:16Z $
  */
 
 #define TYPEDEF_FLOAT_T
@@ -1847,6 +1847,14 @@ wbd_master_identify_target_bss_timer_cb(bcm_usched_handle *hdl, void *arg)
 	/* For backhaul STA is_dual_band should be FALSE so that it wont steer across the bands */
 	if (I5_CLIENT_IS_BSTA(sta)) {
 		map_flags = IEEE1905_MAP_FLAG_BACKHAUL;
+		if (!WBD_BKT_BH_OPT_ENAB(master_info->parent->flags)) {
+			wbd_ds_remove_sta_fm_peer_devices_monitorlist(
+				(struct ether_addr*)&sbss->BSSID,
+				(struct ether_addr*)&sta->mac, map_flags);
+			WBD_INFO("Backhaul Optimization is disabled. Flags[0x%08x]. Skipping "
+				"backhaul optimization\n", master_info->parent->flags);
+			goto end;
+		}
 	} else {
 		parent_ifr = (i5_dm_interface_type*)WBD_I5LL_PARENT(sbss);
 
@@ -2208,12 +2216,14 @@ wbd_master_start_bh_opt(unsigned char *sta_mac)
 	wbd_sta_bounce_detect_t *bounce_sta_entry;
 	wbd_blanket_master_t *wbd_master;
 	uint32 dwell_time;
+	bool is_bh_opt_in_progress = 0;
 	WBD_ENTER();
 
 	WBD_SAFE_GET_MASTER_INFO(wbd_get_ginfo(), WBD_BKT_ID_BR0, master_info, &ret);
 	wbd_master = master_info->parent;
 
 	WBD_DEBUG("Start Backhaul Optimization\n");
+	blanket_nvram_prefix_set(NULL, WBD_NVRAM_BH_OPT_COMPLETE, "0");
 
 	if (!WBD_BKT_BH_OPT_ENAB(wbd_master->flags)) {
 		WBD_INFO("Backhaul Optimization is disabled. Flags[0x%08x]\n",
@@ -2225,6 +2235,7 @@ wbd_master_start_bh_opt(unsigned char *sta_mac)
 	 * start the backhaul optimization once the backhaul steering is done
 	 */
 	if (wbd_master_is_tbss_created_for_bsta()) {
+		is_bh_opt_in_progress = 1;
 		master_info->flags |= WBD_FLAGS_MASTER_BH_OPT_PENDING;
 		goto end;
 	}
@@ -2308,6 +2319,7 @@ find_next_sta:
 
 	WBD_INFO("BH STA["MACDBG"] found for backhaul optimization. Send link metric req\n",
 		MAC2STRDBG(i5_sta->mac));
+	is_bh_opt_in_progress = 1;
 	assoc_sta->bh_opt_count = 0;
 	assoc_sta->flags |= WBD_FLAGS_ASSOC_ITEM_BH_OPT;
 	master_info->flags |= WBD_FLAGS_MASTER_BH_OPT_RUNNING;
@@ -2319,6 +2331,10 @@ find_next_sta:
 	}
 
 end:
+	if (!is_bh_opt_in_progress) {
+		WBD_INFO("Backhaul optimization complete!\n");
+		blanket_nvram_prefix_set(NULL, WBD_NVRAM_BH_OPT_COMPLETE, "1");
+	}
 	WBD_EXIT();
 }
 
@@ -2362,8 +2378,10 @@ wbd_master_create_bh_opt_timer(i5_dm_clients_type *i5_sta)
 	if (!WBD_BKT_BH_OPT_ENAB(wbd_get_ginfo()->wbd_master->flags)) {
 		WBD_INFO("Backhaul Optimization is disabled. Flags[0x%08x]\n",
 			wbd_get_ginfo()->wbd_master->flags);
+		blanket_nvram_prefix_set(NULL, WBD_NVRAM_BH_OPT_COMPLETE, "1");
 		goto end;
 	}
+	blanket_nvram_prefix_set(NULL, WBD_NVRAM_BH_OPT_COMPLETE, "0");
 
 	WBD_SAFE_GET_MASTER_INFO(wbd_get_ginfo(), WBD_BKT_ID_BR0, master_info, &ret);
 
@@ -2397,6 +2415,7 @@ wbd_master_create_bh_opt_timer(i5_dm_clients_type *i5_sta)
 	if (ret != WBDE_OK) {
 		WBD_WARNING("BKTNAME[%s] Interval[%d] Failed to create Backhaul Optimization timer\n",
 			master_info->bkt_name, WBD_TM_BH_OPT);
+		blanket_nvram_prefix_set(NULL, WBD_NVRAM_BH_OPT_COMPLETE, "1");
 	} else {
 		master_info->flags |= WBD_FLAGS_MASTER_BH_OPT_TIMER;
 	}

@@ -471,7 +471,7 @@ EXPORT_SYMBOL(wfd_dev_by_id_get);
 #ifdef CONFIG_BCM_WFD_RATE_LIMITER
 int wfd_is_radio_valid(uint32_t radio_id)
 {
-    return wfd_objects[radio_id].isValid;
+     return wfd_objects[radio_id].isValid;
 }
 
 struct net_device *wfd_dev_by_name_get(char *name, uint32_t *radio_idx, uint32_t *if_idx)
@@ -1000,6 +1000,7 @@ int wfd_bind(struct net_device *wl_dev_p,
     else
 #endif
     {
+
 #if defined(CONFIG_BCM_WLAN_DPDCTL)
         /* Use radio_idx as wfd idx as well */
         tmp_idx = wl_radio_idx;

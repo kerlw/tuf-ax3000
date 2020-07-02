@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_noise.c 778021 2019-08-20 11:08:01Z $
+ * $Id: phy_ac_noise.c 778953 2019-09-16 05:25:08Z $
  */
 
 #include <phy_cfg.h>
@@ -474,11 +474,11 @@ BCMATTACHFN(phy_ac_noise_attach_modes)(phy_info_t *pi)
 				| ACPHY_HWACI_MITIGATION;
 		}
 	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
-		/* enable glitched based desense and preemption */
+		/* enable glitched based desense, preemption, mclip aci */
 		pi->sh->interference_mode_2G |= ACPHY_ACI_GLITCHBASED_DESENSE
-				| ACPHY_ACI_PREEMPTION;
+				| ACPHY_ACI_PREEMPTION | ACPHY_MCLIP_ACI_MIT;
 		pi->sh->interference_mode_5G |= ACPHY_ACI_GLITCHBASED_DESENSE
-				| ACPHY_ACI_PREEMPTION;
+				| ACPHY_ACI_PREEMPTION | ACPHY_MCLIP_ACI_MIT;
 	} else if (ACMAJORREV_47(pi->pubpi->phy_rev) && ACMINORREV_GE(pi, 1)) {
 		/* No premption for 43684A0/B0 */
 		pi->sh->interference_mode_2G |= ACPHY_ACI_GLITCHBASED_DESENSE;
@@ -895,6 +895,9 @@ phy_ac_noise_set_mode(phy_type_noise_ctx_t *ctx, int wanted_mode, bool init)
 			phy_ac_noise_preempt(noise_info, TRUE, FALSE);
 		if ((wanted_mode & ACPHY_HWOBSS_MITIGATION) != 0) {
 			phy_ac_chanmgr_hwobss(pi->u.pi_acphy->chanmgri, TRUE);
+		}
+		if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+			wlc_phy_mclip_aci_mitigation(pi, mclip_aci_en);
 		}
 	}
 }
@@ -4471,8 +4474,8 @@ wlc_phy_mclip_aci_mitigation(phy_info_t *pi, bool desense_en)
 	uint16 table_id_core;
 	uint16 start_off_core;
 	/* These are MCLIP ACI Mitigation settings (to be written to ACI tables) */
-	uint8 lna1_gainlim_2g_aci_r51[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
-	uint8 lna1_gainlim_5g_aci_r51[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+	uint8 lna1_gainlim_2g_aci[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+	uint8 lna1_gainlim_5g_aci[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
 	bool suspend;
 	uint8 stall_val;
@@ -4488,21 +4491,27 @@ wlc_phy_mclip_aci_mitigation(phy_info_t *pi, bool desense_en)
 	if (stall_val == 0)
 		ACPHY_DISABLE_STALL(pi);
 
-	if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
-		if (desense_en) {
-			lna1_gainlim_5g_aci_r51[4] = 0x64;
-			lna1_gainlim_5g_aci_r51[5] = 0x64;
+	if (desense_en) {
+		if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+			lna1_gainlim_5g_aci[4] = 0x64;
+			lna1_gainlim_5g_aci[5] = 0x64;
+		} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+			lna1_gainlim_5g_aci[4] = 0x64;
+			lna1_gainlim_5g_aci[5] = 0x64;
 		}
+	}
+
+	if (ACPHY_MCLIP_ACI_MITIGATION(pi)) {
 		FOREACH_CORE(pi, core) {
 			/* LNA1 settings */
 			table_id_core = ACPHY_TBL_ID_GAINLIMITACI0 + 32 * core;
 			start_off_core =  8;
 			if (CHSPEC_IS2G(pi->radio_chanspec)) {
 				wlc_phy_hwaci_write_table_acphy(pi, table_id_core,
-					start_off_core, lna1_gainlim_2g_aci_r51, 0);
+					start_off_core, lna1_gainlim_2g_aci, 0);
 			} else {
 				wlc_phy_hwaci_write_table_acphy(pi, table_id_core,
-					start_off_core, lna1_gainlim_5g_aci_r51, 0);
+					start_off_core, lna1_gainlim_5g_aci, 0);
 			}
 		}
 	}
@@ -4820,7 +4829,7 @@ static aci_tbl_list_entry_at_init g_aci_tbl_list_acphy_3x3 [ ] =
 static aci_tbl_list_entry_at_init *
 BCMRAMFN(phy_ac_noise_get_aci_tbl_list)(phy_info_t *pi)
 {
-	if (ACMAJORREV_51(pi->pubpi->phy_rev))
+	if (ACMAJORREV_51(pi->pubpi->phy_rev) || ACMAJORREV_128(pi->pubpi->phy_rev))
 		return g_aci_tbl_list_acphy_2x2;
 	else if (ACMAJORREV_129(pi->pubpi->phy_rev))
 		return g_aci_tbl_list_acphy_3x3;

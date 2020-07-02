@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_macdbg.c 777507 2019-08-04 04:45:11Z $
+ * $Id: wlc_macdbg.c 779372 2019-09-26 08:16:26Z $
  */
 
 /*
@@ -4454,7 +4454,7 @@ wlc_dump_psmx_fatal(wlc_info_t *wlc, uint reason)
 	osl_t *osh;
 	wlc_pub_t *pub;
 	uint32 val32[4];
-	uint16 val16;
+	uint16 val16[5];
 	uint16 k;
 	const char reason_str[][20] = {
 		"any failure",
@@ -4496,6 +4496,21 @@ wlc_dump_psmx_fatal(wlc_info_t *wlc, uint reason)
 		  wlc_read_macregx(wlc, 0x4d8),
 		  wlc_read_shmx(wlc, M_UCODE_DBGST(wlc))));
 
+	wlc_bmac_mctrlx(wlc->hw, MCTL_EN_PSMDBG, MCTL_EN_PSMDBG);
+
+	val16[0] = wlc_read_macregx(wlc, 0x818); /* D11_PSM_BRWK_0 */
+	val16[1] = wlc_read_macregx(wlc, 0x81a); /* D11_PSM_BRWK_1 */
+	val16[2] = wlc_read_macregx(wlc, 0x81c); /* D11_PSM_BRWK_2 */
+	val16[3] = wlc_read_macregx(wlc, 0x81e); /* D11_PSM_BRWK_3 */
+	/* D11_PSM_BRWK_4 */
+	val16[4] = D11REV_GE(pub->corerev, 129) ? wlc_read_macregx(wlc, 0x83a) : 0;
+
+	wlc_bmac_mctrlx(wlc->hw, MCTL_EN_PSMDBG, 0);
+
+	WL_PRINT(("brwk_0 0x%04x brwk_1 0x%04x "
+		"brwk_2 0x%04x brwk_3 0x%04x brwk_4 0x%04x\n",
+		val16[0], val16[1], val16[2], val16[3], val16[4]));
+
 	if ((wlc->macdbg->log_done & (1 << PSM_FATAL_PSMXWD)) != 0) {
 		WL_PRINT(("%s: log_done %#x\n", __FUNCTION__, wlc->macdbg->log_done));
 		return;
@@ -4519,20 +4534,20 @@ wlc_dump_psmx_fatal(wlc_info_t *wlc, uint reason)
 		WL_PRINT(("0x%-8x 0x%-8x 0x%-8x 0x%-8x\n",
 			val32[0], val32[1], val32[2], val32[3]));
 	}
-	val16 = wlc_read_macregx(wlc, 0x4d0); /* psm_srs_status */
-	WL_PRINT(("psmx stack_status : 0x%x\n", val16));
+	val16[0] = wlc_read_macregx(wlc, 0x4d0); /* psm_srs_status */
+	WL_PRINT(("psmx stack_status : 0x%x\n", val16[0]));
 	WL_PRINT(("psmx stack_entries:\n"));
 	for (k = 0; k < 8; k++) {
 		wlc_write_macregx(wlc, 0x4d2, k); /* psm_srs_ptr */
-		val16 = wlc_read_macregx(wlc, 0x4d4); /* psm_srs_entry */
-		WL_PRINT(("0x%04x\n", val16));
+		val16[0] = wlc_read_macregx(wlc, 0x4d4); /* psm_srs_entry */
+		WL_PRINT(("0x%04x\n", val16[0]));
 	}
 
 #ifdef WLVASIP
 	/* bit5 of txe_vasip_intsts indicates vasip watchdog is triggered */
-	val16 = wlc_read_macregx(wlc, 0x870);
-	WL_PRINT(("txe_vasip_intsts %#x\n", val16));
-	if (val16 & (1 << 5)) {
+	val16[0] = wlc_read_macregx(wlc, 0x870);
+	WL_PRINT(("txe_vasip_intsts %#x\n", val16[0]));
+	if (val16[0] & (1 << 5)) {
 		wlc_dump_vasip_fatal(wlc);
 	}
 #endif	/* WLVASIP */

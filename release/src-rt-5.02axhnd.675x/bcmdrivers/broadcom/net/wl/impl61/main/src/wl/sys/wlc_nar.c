@@ -530,7 +530,7 @@ wlc_nar_reset_release_state(nar_scb_cubby_t *cubby)
 #endif // endif
 }
 
-static void
+void
 wlc_nar_flush_scb_queues(wlc_nar_info_t * nit, struct scb *scb)
 {
 	nar_scb_cubby_t *cubby;

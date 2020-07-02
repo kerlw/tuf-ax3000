@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlu.c 777731 2019-08-07 19:37:44Z $
+ * $Id: wlu.c 779909 2019-10-09 21:49:41Z $
  */
 
 #include <typedefs.h>
@@ -2317,6 +2317,11 @@ cmd_t wl_cmds[] = {
 	"  wl sr_config help - print this help message\n"},
 	{"dtrace_ea", wl_iov_mac, WLC_GET_VAR, WLC_SET_VAR,
 	"Get/set the dtrace mac address for whitelist filter"},
+	{ "block_he", wl_varint, WLC_GET_VAR, WLC_SET_VAR,
+	"block he clients\n"
+	"\t0 - disable\n"
+	"\t1 - enable blocking he clients based on he field in the request\n"
+	"\t2 - enable blocking he clients based on he field in the request and block mac list\n" },
 	{ NULL, NULL, 0, 0, NULL }
 };
 

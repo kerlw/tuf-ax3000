@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_calmgr.c 690566 2017-03-16 23:31:01Z $
+ * $Id: phy_calmgr.c 778740 2019-09-09 20:44:13Z $
  */
 
 #include <phy_cfg.h>
@@ -526,6 +526,7 @@ phy_calmgr_timer_cb(void *ctx)
 	phy_calmgr_info_t *ci = (phy_calmgr_info_t *)ctx;
 	phy_info_t *pi = ci->pi;
 	uint delay_val = pi->phy_cal_delay;
+	bool edcrs = FALSE;
 #if defined(PHYCAL_CACHING)
 	ch_calcache_t *chanctx = NULL;
 	chanctx = wlc_phy_get_chanctx(pi, pi->radio_chanspec);
@@ -552,6 +553,8 @@ phy_calmgr_timer_cb(void *ctx)
 			return;
 		}
 
+		edcrs = wlc_phy_is_edcrs_high(pi);
+
 		if (SCAN_RM_IN_PROGRESS(pi) || PLT_INPROG_PHY(pi) || PHY_MUTED(pi)) {
 			/* delay percal until scan completed */
 			PHY_CAL(("phy_calmgr_timer_cb: scan in progress, delay 1 sec\n"));
@@ -561,6 +564,9 @@ phy_calmgr_timer_cb(void *ctx)
 			if (!chanctx)
 #endif // endif
 				phy_calmgr_mphase_restart(pi->calmgri);
+		} else if (edcrs) {
+			PHY_CAL(("phy_calmgr_timer_cb: ed high, delay 1 sec\n"));
+			delay_val = 1000;	/* delay 1 sec */
 		} else {
 			phy_calmgr_cals(pi, PHY_PERICAL_AUTO, pi->cal_info->cal_searchmode);
 		}

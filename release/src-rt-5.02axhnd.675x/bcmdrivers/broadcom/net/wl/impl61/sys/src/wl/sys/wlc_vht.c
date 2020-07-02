@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_vht.c 778019 2019-08-20 10:59:07Z $
+ * $Id: wlc_vht.c 778367 2019-08-29 12:43:32Z $
  */
 
 /**

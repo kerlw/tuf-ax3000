@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_papdcal.c 777337 2019-07-29 09:22:40Z $
+ * $Id: phy_ac_papdcal.c 779557 2019-10-02 15:43:59Z $
  */
 #include <phy_cfg.h>
 #include <typedefs.h>
@@ -98,7 +98,7 @@ typedef struct {
 	uint16	delayfilt_gamma_2g;
 	uint16	cal_refdb_2g;
 	uint16  epsilon_offset_2g;
-	uint8   bbmult_2g;
+	uint8   bbmult_2g[PHY_CORE_MAX];
 	uint8   rx_atten_2g;
 	uint8   rx_atten_5g;
 	uint8	tx_atten_2g;
@@ -580,8 +580,10 @@ phy_ac_populate_papd_params(phy_ac_papdcal_info_t *papd_info)
 			rstr_wb_eps_offset, 451)) & PAPD_EPS_OFFSET_2G;
 		papd_params->epsilon_offset_5g = (((uint32)PHY_GETINTVAR_DEFAULT(pi,
 			rstr_wb_eps_offset, 451)) & PAPD_EPS_OFFSET_5G) >> PAPD_EPS_OFFSET_5G_SHIFT;
-		papd_params->bbmult_2g = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
-			rstr_wb_bbmult, 90)) & PAPD_BBMULT_2G;
+		FOREACH_CORE(pi, core) {
+			papd_params->bbmult_2g[core] = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
+				rstr_wb_bbmult, 90)) & PAPD_BBMULT_2G;
+		}
 		papd_params->bbmult_5g = (((uint16)PHY_GETINTVAR_DEFAULT(pi,
 			rstr_wb_bbmult, 90)) & PAPD_BBMULT_5G) >> PAPD_BBMULT_5G_SHIFT;
 		papd_params->rx_atten_2g = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
@@ -655,8 +657,10 @@ phy_ac_populate_papd_params(phy_ac_papdcal_info_t *papd_info)
 			papd_params->epsilon_offset_5g = (((uint32)PHY_GETINTVAR_DEFAULT(pi,
 				rstr_nb_eps_offset, 451)) & PAPD_EPS_OFFSET_5G) >>
 				PAPD_EPS_OFFSET_5G_SHIFT;
-			papd_params->bbmult_2g = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
-				rstr_nb_bbmult, 90)) & PAPD_BBMULT_2G;
+			FOREACH_CORE(pi, core) {
+				papd_params->bbmult_2g[core] = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
+					rstr_nb_bbmult, 90)) & PAPD_BBMULT_2G;
+			}
 			papd_params->bbmult_5g = (((uint16)PHY_GETINTVAR_DEFAULT(pi,
 				rstr_nb_bbmult, 90)) & PAPD_BBMULT_5G) >> PAPD_BBMULT_5G_SHIFT;
 			papd_params->tia_mode_2g = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
@@ -675,7 +679,7 @@ phy_ac_populate_papd_params(phy_ac_papdcal_info_t *papd_info)
 		papd_params->tx_atten_2g = 0x3;
 		papd_params->papd_calidx_2g = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
 				rstr_nb_papd_calidx, PHY_EPAPD(pi) ? 48: 26)) & PAPD_CAL_IDX_2G;
-		papd_params->papd_iter = 128;
+		papd_params->papd_iter = 64;
 		papd_params->tia_mode_2g = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
 				rstr_nb_tia_gain_mode, 0x2)) & TIA_GAIN_MODE_2G;
 		papd_params->epsilon_offset_2g = ((uint32)PHY_GETINTVAR_DEFAULT(pi,
@@ -794,8 +798,10 @@ phy_ac_populate_papd_params(phy_ac_papdcal_info_t *papd_info)
 		papd_params->epsilon_offset_5g = (((uint32)PHY_GETINTVAR_DEFAULT(pi,
 				rstr_nb_eps_offset, 0)) & PAPD_EPS_OFFSET_5G) >>
 				PAPD_EPS_OFFSET_5G_SHIFT;
-		papd_params->bbmult_2g = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
+		FOREACH_CORE(pi, core) {
+			papd_params->bbmult_2g[core] = ((uint16)PHY_GETINTVAR_DEFAULT(pi,
 				rstr_nb_bbmult, 90)) & PAPD_BBMULT_2G;
+		}
 		papd_params->bbmult_5g = (((uint16)PHY_GETINTVAR_DEFAULT(pi,
 				rstr_nb_bbmult, 90)) & PAPD_BBMULT_5G) >> PAPD_BBMULT_5G_SHIFT;
 		FOREACH_CORE(pi, core) {
@@ -1315,15 +1321,16 @@ phy_ac_papd_gain_ctrl_28nm(phy_info_t *pi, uint8 core, uint16 yrefindex,
 	uint8 epsilon_table_ids[] = {ACPHY_TBL_ID_EPSILON0, ACPHY_TBL_ID_EPSILON1,
 		ACPHY_TBL_ID_EPSILON2};
 	acphy_papdCalParams_t calParams = {core, stopindex, stopindex,	yrefindex,
-		epsilon_table_ids[core], num_iter};
+		epsilon_table_ids[core], num_iter, 3, 128};
 	uint8 calmode = 0;
 	bool disable_table_extension = 1;
 	if (ACMAJORREV_GE47(pi->pubpi->phy_rev) && !ACMAJORREV_128(pi->pubpi->phy_rev)) {
 		disable_table_extension = READ_PHYREGFLDCE(pi, papdEpsilonTable, core,
 			epsilon_tbl_extend_dis);
 	}
-	if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
-		num_iter = 64;
+	if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+		/* Speeding up gain control */
+		calParams.num_iter = 32;
 	}
 	eps_ref <<= !disable_table_extension;
 
@@ -2838,16 +2845,17 @@ phy_ac_papd_radio_lpbk_setup_20709(phy_info_t *pi, bool epapd_flag)
 	/* Initially save the registers */
 	phy_ac_reg_cache_save(aci, RADIOREGS_PAPDCAL);
 
-	if (pi->sh->boardtype == 0x08d4) {
-		/* # 68781REF board has a kink in AMAM when calling thru maingm */
+	if (RADIOREV(pi->pubpi->radiorev) == 0) {
+		/* A0 chip does not have AUXGM bypass */
 		papd_loopback_mode = AUXGM;
 		papd_bypass_mode   = 0;
-	} else if (pi->sh->boardtype == 0x08d5) {
-		/* # 68782RFDVT using auxgm with bypass on */
+	} else if (pi->sh->did == BCM6878_D11AC2G_ID) {
+		/* 15x15 A1 and above use auxgm without bypass */
 		papd_loopback_mode = AUXGM;
-		papd_bypass_mode   = 1;
+		papd_bypass_mode   = 0;
 	} else {
-		papd_loopback_mode = MAINGM;
+		/* 21x21 A1 and above using auxgm with bypass */
+		papd_loopback_mode = AUXGM;
 		papd_bypass_mode   = 1;
 	}
 
@@ -4098,7 +4106,7 @@ wlc_phy_papd_set_rfpwrlut_tiny(phy_info_t *pi)
 	phy_ac_papdcal_info_t *papdcal_info = aci->papdcali;
 	int16 radiogainqdb;
 	uint8 idx;
-	uint16 txgain[1], bbmult;
+	uint16 txgain[3], bbmult;
 	int16 temp, temp1, temp2, qQ, qQ1, qQ2, shift;
 	int16 _2xidx, _27minus2xidx, _5timestemp, _offset_for_round, _80logbbmultdiv64;
 	uint8 scale_factor = 1;
@@ -4316,7 +4324,7 @@ phy_ac_papd_cal(phy_info_t *pi, uint16 num_iter, uint8 core, uint16 startindex,
 	uint8 epsilon_table_ids[] = { ACPHY_TBL_ID_EPSILON0, ACPHY_TBL_ID_EPSILON1,
 		ACPHY_TBL_ID_EPSILON2};
 	acphy_papdCalParams_t calParams = {core, startindex, stopindex, yrefindex,
-			epsilon_table_ids[core], num_iter};
+			epsilon_table_ids[core], num_iter, 4, 256};
 	phy_ac_papdcal_info_t *papdcali = (phy_ac_papdcal_info_t *)pi->u.pi_acphy->papdcali;
 	phy_ac_papdcal_params_t *params	= papdcali->papd_params;
 	uint8 papdmode = papdcali->papdmode, calmode = 0;
@@ -4915,6 +4923,15 @@ wlc_phy_txpwr_papd_cal_run_tiny(phy_info_t *pi,	uint8 tx_pre_cal_pwr_ctrl_state)
 
 	/* Disable CRS */
 	phy_rxgcrs_stay_in_carriersearch(pi->rxgcrsi, TRUE);
+
+	/* Due to heat issues, do gain control ahead of actual cal */
+	if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+		FOREACH_CORE(pi, core) {
+			wlc_phy_txpwr_by_index_acphy(pi, 1 << core, params->papd_calidx_2g);
+			params->bbmult_2g[core] = phy_ac_papd_gain_ctrl_28nm(pi, core, 10, 63);
+		}
+	}
+
 	FOREACH_CORE(pi, core) {
 
 		phy_ac_papd_cal(pi, numiter, core, start, yref, 63);
@@ -5502,8 +5519,21 @@ phy_ac_papd_cal_mode0_1(phy_info_t *pi, acphy_papdCalParams_t *calParams,  uint8
 			MOD_PHYREG(pi, PapdCalYrefEpsilon, papdYrefAddr, 5);
 			MOD_PHYREGCEE(pi, EpsilonTableAdjust, core, epsilonScalar, 0x8);
 			MOD_PHYREGCE(pi, EpsilonOverrideI_, core, epsilonFixedPoint, 0x1);
-		} else if (ACMAJORREV_51_129(pi->pubpi->phy_rev) ||
-				ACMAJORREV_128(pi->pubpi->phy_rev)) {
+		} else if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+			MOD_PHYREG(pi, PapdEpsilonUpdateIterations,
+				epsilonUpdateIterations, num_iter);
+			MOD_PHYREG(pi, PapdCalSettle, papd_calSettleTime, 0x20);
+			WRITE_PHYREG(pi, PapdCalCorrelate, calParams->corr_time);
+			MOD_PHYREGCEE(pi, PapdCalShifts, core, papdCorrShift,
+				calParams->corr_shift);
+			/* Continuous PAPD PAoff = 0smps, in BW20 1smp = 25ns */
+			MOD_PHYREG(pi, PapdIpaOffCorr, papd_calIpaOffCorr, 0x0);
+			MOD_PHYREGCEE(pi, PapdCalShifts, core, papdLambda_I, 0xa);
+			MOD_PHYREGCEE(pi, PapdCalShifts, core, papdLambda_Q, 0xa);
+			MOD_PHYREGCEE(pi, EpsilonTableAdjust, core, epsilonScalar, 0x8);
+			phy_ac_papd_phy_core_setup_majorrev51_128_129(pi, core);
+		} else if (ACMAJORREV_128(pi->pubpi->phy_rev) ||
+				ACMAJORREV_129(pi->pubpi->phy_rev)) {
 			MOD_PHYREG(pi, PapdEpsilonUpdateIterations,
 				epsilonUpdateIterations, num_iter);
 			MOD_PHYREG(pi, PapdCalSettle, papd_calSettleTime, 0x80);
@@ -5693,7 +5723,7 @@ phy_ac_wbcal_run(phy_info_t *pi, uint8 core)
 	uint8 scale_stop_hi  = (uint8)((params->wbcal_scale_end >> 16) & 0x3F);
 	uint8 scale_hi = ((scale_start_hi <<4) | (scale_stop_hi));
 	uint16 bbmult = CHSPEC_IS2G(pi->radio_chanspec) ?
-			params->bbmult_2g : params->bbmult_5g;
+			params->bbmult_2g[core] : params->bbmult_5g;
 	uint16 epsilon_offset = CHSPEC_IS2G(pi->radio_chanspec) ?
 			params->epsilon_offset_2g : params->epsilon_offset_5g;
 	uint16 ref_dB = CHSPEC_IS2G(pi->radio_chanspec) ?
@@ -6536,7 +6566,7 @@ phy_ac_papd_cal_set_tx_gain(phy_info_t *pi, uint8 core, int8 *bbmult, uint8 *cal
 		phy_ac_papdcal_params_t *params	= pi->u.pi_acphy->papdcali->papd_params;
 		*calmode = 0;
 		*bbmult = (CHSPEC_IS2G(pi->radio_chanspec)) ?
-			(int8)params->bbmult_2g: (int8) params->bbmult_5g;
+			(int8)params->bbmult_2g[core] : (int8) params->bbmult_5g;
 
 		/* Currently not reading tx index from NVRAM for PHY Major rev 36 */
 		tx_idx = (CHSPEC_IS2G(pi->radio_chanspec)) ? params->papd_calidx_2g :
@@ -6572,10 +6602,11 @@ phy_ac_papd_cal_set_tx_gain(phy_info_t *pi, uint8 core, int8 *bbmult, uint8 *cal
 		/* Optimize BB Mult setting */
 		coremask = pi->pubpi->phy_coremask; /* all cores (active + inactive) */
 		if (ACMAJORREV_51(pi->pubpi->phy_rev))
-			*bbmult  = phy_ac_papd_gain_ctrl_28nm(pi, core, 10, 63);
+			*bbmult = (int8)params->bbmult_2g[core];
 		else if (ACMAJORREV_128(pi->pubpi->phy_rev))
 			*bbmult = (CHSPEC_IS2G(pi->radio_chanspec)) ?
-				(int8)params->bbmult_2g: (int8) params->bbmult_5g;
+				(int8)params->bbmult_2g[core] :
+				(int8)params->bbmult_5g;
 		else if (ACMAJORREV_129(pi->pubpi->phy_rev))
 			*bbmult  = phy_ac_papd_gain_ctrl_28nm(pi, core, 0, 63);
 	} else if (TINY_RADIO(pi))  {

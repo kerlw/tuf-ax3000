@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ht.c 775477 2019-05-31 16:45:57Z $
+ * $Id: wlc_ht.c 779864 2019-10-09 06:46:15Z $
  */
 
 /** 802.11n (High Throughput) */
@@ -274,6 +274,7 @@ typedef struct wlc_ht_scb_info_priv {
 	uint16		amsdu_ht_mtu_pref;	/* preferred HT AMSDU mtu in bytes */
 	uint16		ht_capabilities;	/* current advertised capability set */
 	uint8		ht_ampdu_params;	/* current adverised AMPDU config */
+	uint8		ht_supp_mcs[MCSSET_LEN]; /* HT supported mcs */
 #if defined(BCMDBG) || defined(DONGLEBUILD)
 	uint8		rclen;			/* regulatory class length */
 	uint8		rclist[MAXRCLISTSIZE];	/* regulatory class list */
@@ -354,6 +355,7 @@ enum {
 	IOV_HTFEATURES = 45, /* Broadcom proprietary 11n rates. */
 	IOV_BSS_NMODE = 46,
 	IOV_FBTXOPTHRESH = 47,	/* maximum txop limit for frameburst in usec */
+	IOV_FBPERAC = 48,
 	IOV_HTLAST
 };
 
@@ -442,6 +444,7 @@ static const bcm_iovar_t ht_iovars[] = {
 	{"ht_features", IOV_HTFEATURES, IOVF_SET_DOWN | IOVF_OPEN_ALLOW, 0, IOVT_UINT32, 0},
 	{"bssnmode", IOV_BSS_NMODE, (0), 0, IOVT_BOOL, 0},
 	{"frameburst_txop", IOV_FBTXOPTHRESH, (IOVF_SET_UP), 0, IOVT_UINT16, 0},
+	{"frameburst_per_ac", IOV_FBPERAC, (0), 0, IOVT_UINT32, 0},
 	{NULL, 0, 0, 0, 0, 0}
 };
 
@@ -564,6 +567,11 @@ wlc_ht_up(void *ctx)
 	/* ensure country specific frameburst txop limits are honored */
 	wlc_ht_frameburst_limit(pub);
 
+	if (hti->wlc->is_edcrs_eu) {
+		pub->frameburst_per_ac = (1 << AC_BE) | (1 << AC_BK);
+	} else {
+		pub->frameburst_per_ac = AC_BITMAP_ALL;
+	}
 	return BCME_OK;
 }
 
@@ -1002,7 +1010,8 @@ wlc_ht_get_mcs(wlc_info_t *wlc, wlc_bsscfg_t *cfg, uint16 ft, wlc_iem_ft_cbparm_
 	switch (ft) {
 	case FC_ASSOC_REQ:
 	case FC_REASSOC_REQ:
-		mcs = ftcbparm->assocreq.target->rateset.mcs;
+		/* MCS of Assoc req has to be ours */
+		mcs = wlc->band->hw_rateset.mcs;
 		break;
 	case FC_ASSOC_RESP:
 	case FC_REASSOC_RESP:
@@ -2019,6 +2028,14 @@ wlc_ht_doiovar(void *context, uint32 actionid,
 		}
 		wlc_ht_frameburst_limit(pub);
 		break;
+
+	case IOV_GVAL(IOV_FBPERAC):
+		*ret_int_ptr = (int32)pub->frameburst_per_ac;
+		break;
+
+	case IOV_SVAL(IOV_FBPERAC):
+		pub->frameburst_per_ac = ((uint)int_val) & AC_BITMAP_ALL;
+		break;
 	}
 
 	return err;
@@ -2678,14 +2695,14 @@ wlc_ht_update_scbstate(wlc_ht_info_t *pub, struct scb *scb,
 			SCB_HT_PROP_RATES_CAP_SET(scb);
 
 #ifdef WL_BEAMFORMING
-			if (TXBF_ENAB(wlc->pub)) {
-				if (TXBF_N_SUPPORTED_BFR(cap_ie->txbf_cap))
-					scb->flags3 |= SCB3_HT_BEAMFORMER;
-				if (TXBF_N_SUPPORTED_BFE(cap_ie->txbf_cap))
-					scb->flags3 |= SCB3_HT_BEAMFORMEE;
-				wlc_txbf_scb_state_upd(wlc->txbf, scb, (uint8 *) &cap_ie->txbf_cap,
-					sizeof(cap_ie->txbf_cap), TXBF_CAP_TYPE_HT);
-			}
+		if (TXBF_ENAB(wlc->pub)) {
+			if (TXBF_N_SUPPORTED_BFR(cap_ie->txbf_cap))
+				scb->flags3 |= SCB3_HT_BEAMFORMER;
+			if (TXBF_N_SUPPORTED_BFE(cap_ie->txbf_cap))
+				scb->flags3 |= SCB3_HT_BEAMFORMEE;
+			wlc_txbf_scb_state_upd(wlc->txbf, scb, (uint8 *) &cap_ie->txbf_cap,
+				sizeof(cap_ie->txbf_cap), TXBF_CAP_TYPE_HT);
+		}
 #endif /* WL_BEAMFORMING */
 
 #ifdef WLAMPDU
@@ -2836,6 +2853,9 @@ wlc_ht_update_scbstate(wlc_ht_info_t *pub, struct scb *scb,
 	*/
 	if (cap_ie) {
 		bcopy(&cap_ie->supp_mcs[0], &new_rateset.mcs[0], MCSSET_LEN);
+		/* Store SCB's original HT mcs from HT Cap */
+		bcopy(cap_ie->supp_mcs, cubby->ht_supp_mcs, MCSSET_LEN);
+
 		wlc_rateset_filter(&new_rateset, &new_rateset, FALSE, WLC_RATES_CCK_OFDM,
 		                   RATE_MASK_FULL, wlc_get_mcsallow(wlc, wlc->cfg));
 	}
@@ -3199,6 +3219,12 @@ wlc_dump_htcap(wlc_ht_info_t *pub, struct bcmstrbuf *b)
 		bcm_bprintf(b, "LSIG-TXOP ");
 	wlc_dump_mcsset("\nhw_mcsset ", &wlc->band->hw_rateset.mcs[0], b);
 	bcm_bprintf(b, "\n");
+
+	bcm_bprintf(b, "frameburst %d per_ac 0x%1x txop %d txburst_lim_ovr %d\n",
+		pub->frameburst, pub->frameburst_per_ac, wlc_ht_frameburst_txop_get(pub),
+		pub->txburst_limit_override);
+	bcm_bprintf(b, "\n");
+
 	return 0;
 }
 #endif // endif
@@ -3679,6 +3705,7 @@ wlc_ht_build_cap_ie(wlc_bsscfg_t *cfg, ht_cap_ie_t *cap_ie, uint8 *supp_mcs, boo
 	 * - chanspec was forced to 20MHz for AP/IBSS
 	 */
 	if ((wlc_channel_locale_flags(wlc->cmi) & WLC_NO_40MHZ) ||
+		(!WL_BW_CAP_40MHZ(wlc->band->bw_cap)) ||
 		((
 #ifdef WLTDLS
 		(cfg && (!BSSCFG_IS_TDLS(cfg) || !wlc_tdls_cert_test_enabled(wlc))) ||
@@ -4258,6 +4285,46 @@ void wlc_ht_set_mimops_ActionRetry(wlc_info_t *wlc, wlc_bsscfg_t *cfg, uint8 act
 	return;
 }
 
+/* Update the HT mcs maps */
+void
+wlc_ht_upd_scb_rateset_mcs(wlc_ht_info_t *hti, struct scb *scb, uint8 link_bw)
+{
+	wlc_ht_priv_info_t *htpi = WLC_HT_INFO_PRIV(hti);
+	wlc_info_t *wlc =  htpi->wlc;
+	wlc_ht_scb_info_priv_t *cubby = SCB_HT_INFO_PRIV(hti, scb);
+	wlc_bsscfg_t *cfg = SCB_BSSCFG(scb);
+	uint8 mcs[MCSSET_LEN];
+	int i, nstreams;
+
+	if (!BSSCFG_AP(cfg)) {
+		return;
+	}
+
+	if (!cfg->oper_mode_enabled) {
+		return;
+	}
+
+	nstreams = wlc->stf->op_txstreams;
+	bcopy(cubby->ht_supp_mcs, mcs, MCSSET_LEN);
+
+	/* Intersect our MCS with that of SCB's */
+	for (i = 0; i < MCSSET_LEN; i++) {
+		mcs[i] = mcs[i] & cfg->current_bss->rateset.mcs[i];
+	}
+	/* MCS to be limited based on op_txstreams */
+	for (i = nstreams; i <= WLC_HT_MCS_MAX_NSS; i++) {
+		mcs[i] = 0;
+	}
+
+	bcopy(mcs, scb->rateset.mcs, MCSSET_LEN);
+
+	WL_RATE(("wl%d: %s nstreams %d HT MCS:\n", wlc->pub->unit, __FUNCTION__, nstreams));
+	for (i = 0; i < MCSSET_LEN; i++) {
+		WL_RATE(("MCS[%d] 0x%x  ", i, mcs[i]));
+	}
+	WL_RATE(("\n"));
+}
+
 #endif /* WL11N */
 
 /* Given the band and the HT additional IE construct the chanspec */
@@ -4314,10 +4381,4 @@ wlc_ht_rts_minlen_set(wlc_ht_info_t *pub)
 	} else {
 		wlc_write_shm(wlc, M_RTS_MINLEN_H(wlc), 0);
 	}
-}
-
-bool
-wlc_ht_get_frameburst(wlc_ht_info_t *hti)
-{
-	return hti->frameburst;
 }

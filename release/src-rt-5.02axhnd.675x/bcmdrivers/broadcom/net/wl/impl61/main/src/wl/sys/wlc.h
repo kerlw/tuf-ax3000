@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc.h 777731 2019-08-07 19:37:44Z $
+ * $Id: wlc.h 779842 2019-10-08 19:41:58Z $
  */
 
 #ifndef _wlc_h_

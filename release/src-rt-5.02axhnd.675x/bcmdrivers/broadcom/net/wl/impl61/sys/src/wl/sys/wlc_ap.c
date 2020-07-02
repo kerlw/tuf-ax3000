@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ap.c 778114 2019-08-22 19:38:37Z $
+ * $Id: wlc_ap.c 779752 2019-10-07 04:53:43Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -200,6 +200,7 @@
 #if defined(WL_MBO) && defined(MBO_AP)
 #include <wlc_mbo.h>
 #endif /* WL_MBO && MBO_AP */
+#include <wlc_hw_priv.h>
 
 /* Default pre tbtt time for non mbss case */
 #define	PRE_TBTT_DEFAULT_us		2
@@ -367,6 +368,9 @@ typedef struct
 	uint32	txbytes;
 } data_snapshot_t;
 
+/* threshold of continuous DMA pktpool buffer empty, to trigger big hammer */
+#define DMA_PKTPOOL_EMPTY_CNT	5
+
 /** Private AP data structure */
 typedef struct
 {
@@ -378,6 +382,7 @@ typedef struct
 	uint16		txbcn_inactivity;	/**< txbcn inactivity counter */
 	uint16		txbcn_snapshot;		/**< snapshot of txbcnfrm register */
 	uint16		txbcn_timeout;		/**< txbcn inactivity timeout */
+	uint16          txbcn_edcrs_timeout;    /**< txbcn inactivity timeout with edcrs */
 	uint16		pre_tbtt_us;		/**< Current pre-TBTT us value */
 	int		cfgh;			/**< ap bsscfg cubby handle */
 	bool		ap_sta_onradar;		/**< local AP and STA are on overlapping
@@ -401,6 +406,7 @@ typedef struct
 	int		scb_assoc_oui_handle;	/* To get oui list of the station */
 	uint32		recheck_160_80;		/* relative sec to pub.now to recheck 160/80 mode */
 	data_snapshot_t	snapshot;               /**< snapshot for interface traffic */
+	uint16		dma_pktpool_empty_cnt;	/* cnt of continuous DMA pktpool empty */
 } wlc_ap_info_pvt_t;
 
 /* assoc scb cubby */
@@ -512,6 +518,7 @@ enum wlc_ap_iov {
 	IOV_BCNPRS_TXPWR_OFFSET = 51,	/**< Specify additional txpwr backoff for bcn/prs in dB. */
 	IOV_TXBCN_TIMEOUT = 52, /**< interval to trigger tx beacon loss */
 	IOV_SCB_IDLE_POLL_THRESH = 53,  /**< Send BlockAckRequest to idle SCBs */
+	IOV_TXBCN_EDCRS_TIMEOUT = 54,
 	IOV_LAST,		/**< In case of a need to check max ID number */
 };
 
@@ -649,6 +656,7 @@ static const bcm_iovar_t wlc_ap_iovars[] = {
 	{"scb_markdel_time", IOV_SCB_MARK_DEL_TIMEOUT, 0, 0,  IOVT_UINT8, 0},
 	{"bcnprs_txpwr_offset", IOV_BCNPRS_TXPWR_OFFSET, 0, 0, IOVT_UINT8, 0},
 	{"txbcn_timeout", IOV_TXBCN_TIMEOUT, 0, 0, IOVT_UINT32, 0},
+	{"txbcn_edcrs_timeout", IOV_TXBCN_EDCRS_TIMEOUT, 0, 0, IOVT_UINT32, 0},
 	{NULL, 0, 0, 0, 0, 0 }
 };
 
@@ -751,7 +759,7 @@ static int wlc_assoc_parse_psta_ie(void *ctx, wlc_iem_parse_data_t *data);
 static bool wlc_ap_on_radarchan(wlc_ap_info_t *ap);
 #endif // endif
 static int wlc_force_bcn_rspec_upd(wlc_info_t *wlc, wlc_bsscfg_t *cfg, wlc_ap_info_t *ap,
-	ratespec_t rspec);
+	uint8 rate);
 
 static int wlc_ap_pre_sendauth_cb(wlc_info_t *wlc, wlc_bsscfg_t *cfg, void *scb, void *pkt);
 static void wlc_ap_auth_tx_complete(wlc_info_t *wlc, uint txstatus, void *arg);
@@ -1492,6 +1500,7 @@ BCMATTACHFN(wlc_ap_attach)(wlc_info_t *wlc)
 	}
 #endif /* WL_GLOBAL_RCLASS */
 	appvt->txbcn_timeout = WLC_AP_TXBCN_TIMEOUT;
+	appvt->txbcn_edcrs_timeout = WLC_AP_TXBCN_EDCRS_TIMEOUT;
 
 	/* Add callback function for AP interface creation */
 	if (wlc_bsscfg_iface_register(wlc, WL_INTERFACE_TYPE_AP, wlc_ap_iface_create,
@@ -2195,6 +2204,16 @@ wlc_ap_authresp(wlc_ap_info_t *ap, wlc_bsscfg_t *bsscfg,
 		}
 	}
 #endif /* WLAUTHRESP_MAC_FILTER */
+
+#ifdef WL11AX
+	if (BSSCFG_IS_BLOCK_HE_MAC(bsscfg)) {
+		if (wlc_isblocked_hemac(bsscfg, &hdr->sa)) {
+			WL_ASSOC((" wl%d.%d: auth response blocked \n",
+					wlc->pub->unit, WLC_BSSCFG_IDX(bsscfg)));
+			return;
+		}
+	}
+#endif /* WL11AX */
 
 	ASSERT(BSSCFG_AP(bsscfg));
 
@@ -2953,6 +2972,19 @@ wlc_ap_process_assocreq(wlc_ap_info_t *ap, wlc_bsscfg_t *bsscfg,
 		status = DOT11_SC_FAILURE;
 		goto exit;
 	}
+
+#ifdef WL11AX
+	if (BSSCFG_BLOCK_HE_ENABLED(bsscfg)) {
+		if (bcm_parse_tlvs_ext(tlvs, tlvs_len, 255, EXT_MNG_HE_CAP_ID) != NULL) {
+			if (BSSCFG_IS_BLOCK_HE_MAC(bsscfg)) {
+				wlc_addto_heblocklist(bsscfg, &hdr->sa);
+			}
+			WL_ASSOC((" wl%d.%d: assoc response blocked \n",
+				wlc->pub->unit, WLC_BSSCFG_IDX(bsscfg)));
+			goto exit;
+		}
+	}
+#endif /* WL11AX */
 
 	bzero(&assoc_oui, sizeof(wlc_assoc_oui_t));
 	/* prepare IE mgmt parse calls */
@@ -4316,9 +4348,6 @@ wlc_restart_ap(wlc_ap_info_t *ap)
 #endif /* RADAR */
 
 	appvt->pre_tbtt_us = (MBSS_ENAB(wlc->pub)) ? MBSS_PRE_TBTT_DEFAULT_us : PRE_TBTT_DEFAULT_us;
-	/* Reset to re-configure TSF registers for beaconing */
-	wlc->aps_associated = 0;
-
 	/* Bring up any enabled AP configs which aren't up yet */
 	FOREACH_AP(wlc, i, bsscfg) {
 		if (bsscfg->enable) {
@@ -5145,6 +5174,7 @@ wlc_ap_watchdog(void *arg)
 	bool done = 0;
 #endif // endif
 	int idx;
+	bool edcrs = FALSE;
 	wlc_bsscfg_t *cfg;
 
 	/* part 1 */
@@ -5195,20 +5225,26 @@ wlc_ap_watchdog(void *arg)
 			 * then some thing has gone bad, do the big-hammer.
 			 */
 			if (txbcn_snapshot == appvt->txbcn_snapshot) {
-				if (++appvt->txbcn_inactivity >= appvt->txbcn_timeout) {
+				appvt->txbcn_inactivity++;
+				edcrs = wlc_phy_is_edcrs_high((phy_info_t *) WLC_PI(wlc));
+				if (((appvt->txbcn_inactivity >= appvt->txbcn_timeout) && !edcrs) ||
+					((appvt->txbcn_inactivity >= appvt->txbcn_edcrs_timeout))) {
 
 					WL_ERROR(("wl%d: bcn inactivity detected\n",
 					          wlc->pub->unit));
 					WL_ERROR(("wl%d: txbcnfrm %d prev txbcnfrm %d "
-					          "txbcn inactivity %d timeout %d macctrl 0x%x\n",
+					          "txbcn inactivity %d timeout %d edcrs_timeout %d "
+					          "macctrl 0x%x\n",
 					          wlc->pub->unit, txbcn_snapshot,
 					          appvt->txbcn_snapshot,
 					          appvt->txbcn_inactivity,
 					          appvt->txbcn_timeout,
+					          appvt->txbcn_edcrs_timeout,
 					          R_REG(wlc->osh, D11_MACCONTROL(wlc))));
 					appvt->txbcn_inactivity = 0;
 					appvt->txbcn_snapshot = 0;
 #if !defined(DONGLEBUILD) || !(defined(BCMDBG) || defined(WL_MACDBG))
+					wlc->hw->need_reinit = WL_REINIT_RC_AP_BEACON;
 					wlc_fatal_error(wlc);
 #endif /* !defined(DONGLEBUILD) || !(defined(BCMDBG) || defined(WL_MACDBG)) */
 					return;
@@ -5218,6 +5254,19 @@ wlc_ap_watchdog(void *arg)
 
 			/* save the txbcn counter */
 			appvt->txbcn_snapshot = txbcn_snapshot;
+		}
+
+		/* if DMA pktpool empty for contibnuous 5 sec, call big hammer */
+		if (wlc_bmac_pktpool_empty(wlc))
+			appvt->dma_pktpool_empty_cnt += 1;
+		else
+			appvt->dma_pktpool_empty_cnt = 0;
+
+		if (appvt->dma_pktpool_empty_cnt >= DMA_PKTPOOL_EMPTY_CNT) {
+			WL_ERROR(("wl%d: dma pktpool empty detected\n", wlc->pub->unit));
+			appvt->dma_pktpool_empty_cnt = 0;
+			wlc_fatal_error(wlc);
+			return;
 		}
 
 		/* deauth rate limiting - enable sending one deauth every second */
@@ -5631,15 +5680,14 @@ wlc_ap_doiovar(void *hdl, uint32 actionid,
 		break;
 
 	case IOV_GVAL(IOV_CLOSEDNET):
-		*ret_int_ptr = (bsscfg->closednet_nobcnssid & bsscfg->closednet_nobcprbresp);
+		*ret_int_ptr = bsscfg->closednet;
 		break;
 
 	case IOV_SVAL(IOV_CLOSEDNET):
 		/* "closednet" control two functionalities: hide ssid in bcns
 		 * and don't respond to broadcast probe requests
 		 */
-		bsscfg->closednet_nobcnssid = bool_val;
-		bsscfg->closednet_nobcprbresp = bool_val;
+		bsscfg->closednet = bool_val;
 		if (BSSCFG_AP(bsscfg) && bsscfg->up) {
 			wlc_bss_update_beacon(wlc, bsscfg);
 #if defined(MBSS)
@@ -5647,8 +5695,13 @@ wlc_ap_doiovar(void *hdl, uint32 actionid,
 				wlc_mbss16_upd_closednet(wlc, bsscfg);
 			else
 #endif // endif
-				wlc_mctrl(wlc, MCTL_CLOSED_NETWORK,
-				(bool_val ? MCTL_CLOSED_NETWORK : 0));
+				if (D11REV_LT(wlc->pub->corerev, 128)) {
+					wlc_mctrl(wlc, MCTL_CLOSED_NETWORK,
+						(bool_val ? MCTL_CLOSED_NETWORK : 0));
+				} else {
+					wlc_mhf(wlc, MHF4, MHF4_CLOSED_NETWORK,
+						bool_val ? MHF4_CLOSED_NETWORK : 0, WLC_BAND_ALL);
+				}
 		}
 		break;
 
@@ -6189,13 +6242,13 @@ wlc_ap_doiovar(void *hdl, uint32 actionid,
 		break;
 
 	case IOV_SVAL(IOV_FORCE_BCN_RSPEC): {
-		ratespec_t rspec = (ratespec_t)(int_val & RATE_MASK);
+		uint8 rate = (uint8)(int_val & RATE_MASK);
 
 		/* escape if new value identical to current value */
-		if ((rspec & RATE_MASK) == (appvt->force_bcn_rspec & RATE_MASK))
+		if (rate == (appvt->force_bcn_rspec & RATE_MASK))
 			break;
 
-		err = wlc_force_bcn_rspec_upd(wlc, bsscfg, ap, rspec);
+		err = wlc_force_bcn_rspec_upd(wlc, bsscfg, ap, rate);
 		break;
 
 	}
@@ -6603,6 +6656,18 @@ wlc_ap_doiovar(void *hdl, uint32 actionid,
 
 	case IOV_SVAL(IOV_TXBCN_TIMEOUT):
 		appvt->txbcn_timeout = int_val;
+		if (appvt->txbcn_timeout > appvt->txbcn_edcrs_timeout)
+			appvt->txbcn_edcrs_timeout = appvt->txbcn_timeout;
+		break;
+
+	case IOV_GVAL(IOV_TXBCN_EDCRS_TIMEOUT):
+		*ret_int_ptr = appvt->txbcn_edcrs_timeout;
+		break;
+
+	case IOV_SVAL(IOV_TXBCN_EDCRS_TIMEOUT):
+		appvt->txbcn_edcrs_timeout = int_val;
+		if (appvt->txbcn_timeout > appvt->txbcn_edcrs_timeout)
+			appvt->txbcn_edcrs_timeout = appvt->txbcn_timeout;
 		break;
 
 	default:
@@ -7795,8 +7860,15 @@ wlc_assoc_parse_ssid_ie(void *ctx, wlc_iem_parse_data_t *data)
 #if defined(BCMDBG) || defined(WLMSG_ASSOC)
 	char eabuf[ETHER_ADDR_STR_LEN];
 #endif // endif
+	/* special case handling where some IoT devices send reassoc req with empty ssid. */
+	if (data->ie_len == TLV_BODY_OFF) {
+		WL_ASSOC(("wl%d: %s association with empty SSID\n",
+		          wlc->pub->unit, bcm_ether_ntoa(&ftpparm->assocreq.scb->ea, eabuf)));
+		ftpparm->assocreq.status = DOT11_SC_SUCCESS;
+		return BCME_OK;
+	}
 
-	if (data->ie == NULL || data->ie_len <= TLV_BODY_OFF) {
+	if (data->ie == NULL || data->ie_len < TLV_BODY_OFF) {
 		WL_ASSOC(("wl%d: %s attempted association with no SSID\n",
 		          wlc->pub->unit, bcm_ether_ntoa(&ftpparm->assocreq.scb->ea, eabuf)));
 		ftpparm->assocreq.status = DOT11_SC_FAILURE;
@@ -8022,12 +8094,13 @@ wlc_set_force_bcn_rspec(wlc_info_t *wlc, ratespec_t rspec)
 }
 
 static int
-wlc_force_bcn_rspec_upd(wlc_info_t *wlc, wlc_bsscfg_t *cfg, wlc_ap_info_t *ap, ratespec_t rspec)
+wlc_force_bcn_rspec_upd(wlc_info_t *wlc, wlc_bsscfg_t *cfg, wlc_ap_info_t *ap, uint8 rate)
 {
 	wlc_ap_info_pvt_t *appvt = (wlc_ap_info_pvt_t *) ap;
+	ratespec_t rspec = LEGACY_RSPEC(rate);
 
-	/* new bcn rspec requested */
-	if (rspec) {
+	/* new bcn rate is specificed */
+	if (rate) {
 		uint i;
 		/* check rspec is valid */
 		if (!wlc_valid_rate(wlc, rspec, CHSPEC_IS2G(cfg->current_bss->chanspec) ?
@@ -8038,7 +8111,7 @@ wlc_force_bcn_rspec_upd(wlc_info_t *wlc, wlc_bsscfg_t *cfg, wlc_ap_info_t *ap, r
 		/* check rspec is basic rate */
 		for (i = 0; i < cfg->current_bss->rateset.count; i++) {
 			if ((cfg->current_bss->rateset.rates[i] & WLC_RATE_FLAG) &&
-			    (cfg->current_bss->rateset.rates[i] & RATE_MASK) == rspec) {
+			    (cfg->current_bss->rateset.rates[i] & RATE_MASK) == rate) {
 #ifdef WL11N
 				wlc_rspec_txexp_upd(wlc, &rspec);
 #endif /* WL11N */

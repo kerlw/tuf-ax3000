@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_wnm.c 777999 2019-08-20 06:39:01Z $
+ * $Id: wlc_wnm.c 779762 2019-10-07 07:12:37Z $
  */
 
 /**
@@ -1486,8 +1486,8 @@ wlc_wnm_bsstrans_query_send(wlc_wnm_info_t *wnm, wlc_bsscfg_t *bsscfg, wlc_bss_l
 static void
 wlc_wnm_bsstrans_query_scancb(void *arg, int status, wlc_bsscfg_t *bsscfg)
 {
-	wlc_wnm_info_t *wnm = (wlc_wnm_info_t *)arg;
-	wlc_info_t *wlc = wnm->wlc;
+	wlc_info_t *wlc = (wlc_info_t*)arg;
+	wlc_wnm_info_t *wnm = (wlc_wnm_info_t *)wlc->wnm_info;
 	uint i;
 
 	if (status != WLC_E_STATUS_SUCCESS) {
@@ -4222,7 +4222,7 @@ wlc_wnm_doiovar(void *hdl, uint32 actionid,
 
 			wlc_scan_request(wlc, DOT11_BSSTYPE_INFRASTRUCTURE, &ether_bcast, 1, &ssid,
 				DOT11_SCANTYPE_ACTIVE, -1, -1, -1, -1, NULL, 0, FALSE,
-				wlc_wnm_bsstrans_query_scancb, wnm);
+				wlc_wnm_bsstrans_query_scancb, wlc);
 		}
 		else {
 			wlc_wnm_bsstrans_query_send(wnm, bsscfg, NULL);

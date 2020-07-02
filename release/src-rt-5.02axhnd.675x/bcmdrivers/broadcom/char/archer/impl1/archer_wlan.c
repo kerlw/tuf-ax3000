@@ -544,8 +544,6 @@ static void archer_wlan_socket_miss_write(void *skb_p, int ingress_port)
 
         bcm_async_queue_entry_enqueue(&miss_p->queue);
 
-        archer_wlan_socket_miss_notify();
-
         ARCHER_WLAN_STATS_UPDATE(miss_p->queue.stats.writes);
     }
     else
@@ -554,6 +552,8 @@ static void archer_wlan_socket_miss_write(void *skb_p, int ingress_port)
 
         ARCHER_WLAN_STATS_UPDATE(miss_p->queue.stats.discards);
     }
+
+	archer_wlan_socket_miss_notify();
 }
 
 /************************** Socket Initialization *************************/
@@ -693,6 +693,8 @@ static inline struct sk_buff *archer_wlan_fkb_to_skb(archer_wlan_radio_t *radio_
 
         skb_p = (struct sk_buff *)
             ((uintptr_t)fkb_p - BLOG_OFFSETOF(sk_buff, fkbInSkb));
+
+        DECODE_WLAN_PRIORITY_MARK(skb_p->wl.ucast.nic.wl_prio, skb_p->mark);
     }
     else
     {

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_papdcal.h 773574 2019-03-25 20:46:34Z $
+ * $Id: phy_ac_papdcal.h 779475 2019-09-30 22:28:24Z $
  */
 
 #ifndef _phy_ac_papdcal_h_
@@ -117,6 +117,8 @@ typedef struct _acphy_papdCalParams {
 	uint16 yrefindex;
 	uint8 epsilon_table_id;
 	uint16 num_iter;
+	uint8 corr_shift;
+	uint16 corr_time;
 } acphy_papdCalParams_t;
 
 #define ACPHY_PAPD_EPS_TBL_SIZE		64

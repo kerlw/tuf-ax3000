@@ -935,6 +935,7 @@ wlc_mbo_process_scb_np_chan_list(wlc_mbo_info_t* mbo, wlc_mbo_scb_cubby_t *mbo_s
 	}
 #ifdef BCMDBG
 	/* Include ID and len of element for debug */
+	if (WL_ERROR_ON())
 	prhex(" MBO Non preferred element data  ==>", ibuf, (ibuf[MBO_ATTRIBUTE_LEN_OFFSET] + 2));
 #endif	/* BCMDBG */
 
@@ -1619,6 +1620,7 @@ wlc_mbo_gas_parse_query_list(uint8 *data, int body_len, uint8 *flag)
 	 */
 
 #ifdef BCMDBG
+	if (WL_ERROR_ON())
 	prhex("ANQP data: ", (uchar*)data, body_len);
 #endif /* BCMDBG */
 

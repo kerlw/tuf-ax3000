@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wlif_utils.c 778090 2019-08-22 08:41:00Z $
+ * $Id: wlif_utils.c 778128 2019-08-23 04:08:44Z $
  */
 
 #include <typedefs.h>
@@ -1709,7 +1709,8 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 
 	// ssid
 	snprintf(nv_name, sizeof(nv_name), "%s_ssid", prefix);
-	if (!nvram_match(nv_name, creds->ssid)) {
+	//if (!nvram_match(nv_name, creds->ssid))
+	{
 		nvram_set(nv_name, creds->ssid);
 		if (!wps_configured)
 		for (i = 0; i < wlif_num; i++) {
@@ -1760,7 +1761,8 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 			val = "psk psk2";
 		break;
 	}
-	if (!nvram_match(nv_name, val)) {
+	//if (!nvram_match(nv_name, val))
+	{
 		nvram_set(nv_name, val);
 		if (!wps_configured)
 		for (i = 0; i < wlif_num; i++) {
@@ -1884,7 +1886,8 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 			val = "tkip+aes";
 		break;
 	}
-	if (!nvram_match(nv_name, val)) {
+	//if (!nvram_match(nv_name, val))
+	{
 		nvram_set(nv_name, val);
 		if (!wps_configured)
 		for (i = 0; i < wlif_num; i++) {
@@ -1908,7 +1911,8 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 	}
 
 	snprintf(nv_name, sizeof(nv_name), "%s_wpa_psk", prefix);
-	if (!nvram_match(nv_name, creds->nw_key)) {
+	//if (!nvram_match(nv_name, creds->nw_key))
+	{
 		nvram_set(nv_name, creds->nw_key);
 		if (!wps_configured)
 		for (i = 0; i < wlif_num; i++) {
@@ -1930,13 +1934,17 @@ wl_wlif_apply_creds(wlif_bss_t *bss, wlif_wps_nw_creds_t *creds)
 	if (!ret) {
 		if (!wps_configured) {
 			nvram_set("w_Setting", "1");
-			if (nvram_get_int("amesh_wps_enr")) {
-				if (nvram_get_int("wps_enr_hw") == 1)
-					nvram_set("x_Setting", "1");
-#ifdef RTCONFIG_AMAS
-				nvram_set("obd_Setting", "1");
+		}
+
+#ifdef RTCONFIG_HND_ROUTER_AX
+		if (nvram_get_int("amesh_wps_enr"))
 #endif
-			}
+		{
+			if (nvram_get_int("wps_enr_hw") == 1)
+				nvram_set("x_Setting", "1");
+#ifdef RTCONFIG_AMAS
+			nvram_set("obd_Setting", "1");
+#endif
 		}
 		nvram_commit();
 	}
@@ -2151,6 +2159,7 @@ wl_wlif_wps_pbc_hdlr(char *wps_ifname, char *bh_ifname)
 	char cmd[WLIF_MAX_BUF];
 	char mode[WLIF_MIN_BUF] = {0};
 	char nvifname[IFNAMSIZ] = {0};
+	wlif_wps_ui_status_code_id_t status_code;
 	int ret = -1;
 
 	if (!wps_ifname) {
@@ -2180,9 +2189,11 @@ wl_wlif_wps_pbc_hdlr(char *wps_ifname, char *bh_ifname)
 	if (nvram_match(mode, "ap")) {
 		snprintf(cmd, sizeof(cmd), "hostapd_cli -p %s -i %s wps_pbc",
 			WLIF_HAPD_DIR, wps_ifname);
+		status_code = WLIF_WPS_UI_FINDING_PBC_STA;
 	} else {
 		snprintf(cmd, sizeof(cmd), "%s -p /var/run/"
 			"%s_wpa_supplicant -i %s wps_pbc", WPA_CLI_APP, nvifname, wps_ifname);
+		status_code = WLIF_WPS_UI_FIND_PBC_AP;
 	}
 
 	if ((ret = system(cmd)) != 0) {
@@ -2190,6 +2201,7 @@ wl_wlif_wps_pbc_hdlr(char *wps_ifname, char *bh_ifname)
 			cmd, wps_ifname, nvram_safe_get(mode));
 	}
 
+	wl_wlif_update_wps_ui(status_code);
 end:
 	return ret;
 }
@@ -2227,7 +2239,7 @@ wl_wlif_wps_stop_session(char *wps_ifname)
 		dprintf("Info: shared %s cli cmd %s failed for interface %s ret = %d\n", __func__,
 			cmd, wps_ifname, ret);
 	}
-
+	wl_wlif_update_wps_ui(WLIF_WPS_UI_INIT);
 end:
 	return ret;
 }

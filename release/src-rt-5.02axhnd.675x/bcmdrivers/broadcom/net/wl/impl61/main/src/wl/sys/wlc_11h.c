@@ -1177,6 +1177,9 @@ wlc_print_measure_req_rep(wlc_info_t *wlc, struct dot11_management_header *hdr,
 
 	BCM_REFERENCE(wlc);
 
+	if (!WL_ERROR_ON())
+		return;
+
 	printf("Action Frame: DA %s SA %s BSSID %s\n",
 	       bcm_ether_ntoa(&hdr->da, da), bcm_ether_ntoa(&hdr->sa, sa),
 	       bcm_ether_ntoa(&hdr->bssid, bssid));

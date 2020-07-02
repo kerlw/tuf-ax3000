@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_cfg.h 777286 2019-07-25 19:43:30Z $
+ * $Id: wlc_cfg.h 778376 2019-08-29 13:25:29Z $
  */
 
 #ifndef _wlc_cfg_h_
@@ -1661,7 +1661,7 @@ static const int acphy_hecap_rev[] = {
 #define WL_NUMCHANSPECS_5G_5	WL_NUMCHANSPECS_5G_20
 #define WL_NUMCHANSPECS_5G_10	WL_NUMCHANSPECS_5G_20
 #ifdef WL11N
-#define WL_NUMCHANSPECS_5G_40	24
+#define WL_NUMCHANSPECS_5G_40	26
 #else
 #define WL_NUMCHANSPECS_5G_40	0
 #endif /* WL11N */

@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scan.c 777984 2019-08-20 01:04:28Z $
+ * $Id: wlc_scan.c 779762 2019-10-07 07:12:37Z $
  */
 
 /* XXX
@@ -6681,6 +6681,30 @@ wlc_scan_start_unregister(wlc_info_t *wlc, scan_start_fn_t fn, void *arg)
 	bcm_notif_h hdl = scan_info->scan_start_h;
 
 	return bcm_notif_remove_interest(hdl, (bcm_notif_client_callback)fn, arg);
+}
+
+void
+wlc_scan_set_request_ex_cb(wlc_scan_info_t *wlc_scan_info, scancb_fn_t fn)
+{
+	scan_info_t *scan_info = (scan_info_t *) wlc_scan_info->scan_priv;
+	scan_info->scan_ex_cb = fn;
+}
+
+void wlc_scan_request_ex_cb(void *arg, int status, wlc_bsscfg_t *cfg)
+{
+	wlc_info_t *wlc = (wlc_info_t*)arg;
+	scan_info_t *scan_info = (scan_info_t *) wlc->scan->scan_priv;
+
+	if (scan_info->scan_ex_cb != NULL)
+		(scan_info->scan_ex_cb)(arg, status, cfg);
+
+#ifdef WL_SCAN_DFS_HOME
+	/* On scan completion, get into ISM state if home channel is DFS */
+	if (WL11H_AP_ENAB(wlc) &&
+			wlc_radar_chanspec(wlc->cmi, wlc->home_chanspec)) {
+		wlc_set_dfs_cacstate(wlc->dfs, ON, cfg);
+	}
+#endif /* WL_SCAN_DFS_HOME */
 }
 
 #ifdef WL_OCE

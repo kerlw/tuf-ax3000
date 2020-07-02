@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_bmac.c 778114 2019-08-22 19:38:37Z $
+ * $Id: wlc_bmac.c 780059 2019-10-15 02:58:47Z $
  */
 
 /**
@@ -1491,6 +1491,7 @@ wlc_print_ge128_phy_rxhdr(wlc_info_t *wlc, d11rxhdr_ge128_t *ge128_rxh)
 		len = ge128_rxh->PhyRxStatusLen;
 	}
 
+	if (WL_ERROR_ON())
 	prhex("PHY RX Status", (uchar *)ptr, len);
 }
 
@@ -7068,13 +7069,26 @@ void
 BCMINITFN(wlc_bmac_reset)(wlc_hw_info_t *wlc_hw)
 {
 	bool dev_gone;
+	uint32 tsf_l;
+	uint32 tsf_h;
 
 	WLCNTINCR(wlc_hw->wlc->pub->_cnt->reset);
 
 	dev_gone = DEVICEREMOVED(wlc_hw->wlc);
 	/* reset the core */
-	if (!dev_gone)
+	if (!dev_gone) {
+		/* When the D11 core rset is executeda as part of big hammer then the TSF should
+		 * be preserved. since TSF gets initialized in a later stage, it is safe to
+		 * resad TSF, reset D11 and restore TSF.
+		 */
+		tsf_l = R_REG(wlc_hw->osh, D11_TSFTimerLow(wlc_hw));
+		tsf_h = R_REG(wlc_hw->osh, D11_TSFTimerHigh(wlc_hw));
+
 		wlc_bmac_corereset(wlc_hw, WLC_USE_COREFLAGS);
+
+		W_REG(wlc_hw->osh, D11_TSFTimerLow(wlc_hw), tsf_l);
+		W_REG(wlc_hw->osh, D11_TSFTimerHigh(wlc_hw), tsf_h);
+	}
 
 	/* purge the pio queues or dma rings */
 	wlc_hw->reinit = TRUE;
@@ -7786,7 +7800,6 @@ BCMUCODEFN(wlc_mxhfdef)(wlc_hw_info_t *wlc_hw, uint16 *mhfs)
 {
 	/* Psmx host flags starts from MXHF0 */
 	bzero(&mhfs[MXHF0], sizeof(uint16) * MXHFMAX);
-	bzero(&mhfs[MXHF1], sizeof(uint16) * MXHFMAX);
 
 	mhfs[MXHF0] = (MXHF0_CHKFID | MXHF0_DYNSND | MXHF0_MUAGGOPT);
 
@@ -9177,7 +9190,8 @@ wlc_bmac_phy_reset(wlc_hw_info_t *wlc_hw)
 
 	phy_bw_clkbits = wlc_bmac_clk_bwbits(wlc_hw);
 
-	if (WLCISNPHY(wlc_hw->band)) {
+	if (WLCISNPHY(wlc_hw->band) && NREV_GE(wlc_hw->band->phyrev, 3) &&
+		NREV_LE(wlc_hw->band->phyrev, 4)) {
 		/* Set the PHY bandwidth */
 		si_core_cflags(wlc_hw->sih, SICF_BWMASK, phy_bw_clkbits);
 
@@ -9269,8 +9283,9 @@ wlc_bmac_phy_reset(wlc_hw_info_t *wlc_hw)
 	 * wlc_init(). This can lead to a possible sync loss in BW, hence setting pi->bw here to
 	 * avoid such issues.
 	 */
-	phy_utils_set_bwstate((phy_info_t *)wlc_hw->band->pi, CHSPEC_BW(wlc_hw->chanspec));
-
+	if (wlc_hw->band->phyrev != 17) {
+		phy_utils_set_bwstate((phy_info_t *)wlc_hw->band->pi, CHSPEC_BW(wlc_hw->chanspec));
+	}
 	/* XXX: ??? moving this to phy init caused a calibration failure, even after
 	 *	I added 10 ms delay after turning on the analog core tx/rx
 	 */
@@ -11926,6 +11941,14 @@ wlc_bmac_antsel_type_set(wlc_hw_info_t *wlc_hw, uint8 antsel_type)
 	phy_antdiv_antsel_type_set(wlc_hw->band->pi, antsel_type);
 }
 
+bool
+wlc_bmac_pktpool_empty(wlc_info_t *wlc)
+{
+	if (POOL_ENAB(wlc->pub->pktpool))
+		return (pktpool_avail(wlc->pub->pktpool) == 0);
+	return FALSE;
+}
+
 void
 wlc_bmac_fifoerrors(wlc_hw_info_t *wlc_hw)
 {
@@ -13689,7 +13712,7 @@ wlc_bmac_txstatus(wlc_hw_info_t *wlc_hw, bool bound, bool *fatal)
 		wlc_txs_pkg16_t pkg;
 		/* pkg 1 */
 		uint32 v_s1 = 0, v_s2 = 0, v_s3 = 0, v_s4 = 0;
-#if defined(WLC_TSYNC) || defined(WL_PROXDETECT)
+#if defined(WLC_TSYNC)
 		/* pkg 3 */
 		uint32 v_s9, v_s10, v_s11;
 #endif // endif
@@ -13777,7 +13800,7 @@ wlc_bmac_txstatus(wlc_hw_info_t *wlc_hw, bool bound, bool *fatal)
 				txs.status.frag_tx_cnt = TX_STATUS40_TXCNT(v_s3, v_s4);
 			}
 
-#if defined(WLC_TSYNC) || defined(WL_PROXDETECT)
+#if defined(WLC_TSYNC)
 			if (TSYNC_ENAB(wlc->pub) || PROXD_ENAB_UCODE_TSYNC(wlc->pub)) {
 				v_s9 = R_REG(osh, D11_FrmTxStatus(wlc_hw));
 				v_s10 = R_REG(osh, D11_FrmTxStatus2(wlc_hw));
@@ -13798,7 +13821,7 @@ wlc_bmac_txstatus(wlc_hw_info_t *wlc_hw, bool bound, bool *fatal)
 				txs.status.s10 = v_s10;
 				txs.status.s11 = v_s11;
 			}
-#endif /* WLC_TSYNC || WL_PROXDETECT */
+#endif /* WLC_TSYNC */
 
 			*fatal = wlc_bmac_dotxstatus(wlc_hw, &txs, v_s2);
 
@@ -18850,9 +18873,6 @@ static const bmc_params_t bmc_params_131 = {
 	 0}								  /* 24, rx fifo1, unused */
 };
 
-static uint16 bmc_maxbufs;
-static uint16 bmc_nbufs = D11MAC_BMC_MAXBUFS;
-
 #if defined(SAVERESTORE) && defined(SR_ESSENTIALS)
 extern CONST uint sr_source_codesz_61_main;
 extern CONST uint sr_source_codesz_61_aux;
@@ -19130,11 +19150,12 @@ BCMINITFN(wlc_bmac_bmc_init)(wlc_hw_info_t *wlc_hw)
 	}
 
 	/* Account for bmc_startaddr which is specified in units of bufsize(256B or 512B) */
-	bmc_maxbufs = (fifo_sz - (bmc_startaddr << 8)) >> (8 + bufsize);
+	wlc_hw->bmc_maxbufs = (fifo_sz - (bmc_startaddr << 8)) >> (8 + bufsize);
 
 	WL_MAC(("wl%d: %s bmc_size 0x%x bufsize %d maxbufs %d start_addr 0x%04x\n",
 		wlc_hw->unit, __FUNCTION__,
-		fifo_sz, 1 << (8 + bufsize), bmc_maxbufs, (bmc_startaddr << 8)));
+		fifo_sz, 1 << (8 + bufsize), wlc_hw->bmc_maxbufs,
+			(bmc_startaddr << 8)));
 
 	if (wlc_hw->bmc_params->rxq_in_bm) { /* TRUE for rev(65,66), FALSE for rev>=128 */
 		rxq0buf = wlc_hw->bmc_params->rxq0_buf;
@@ -19193,11 +19214,13 @@ BCMINITFN(wlc_bmac_bmc_init)(wlc_hw_info_t *wlc_hw)
 	}
 
 	/* init the total number for now */
-	bmc_nbufs = bmc_maxbufs;
+	wlc_hw->bmc_nbufs = wlc_hw->bmc_maxbufs;
 	if (D11REV_GE(wlc_hw->corerev, 128))
-		W_REG(osh, D11_TXE_BMC_CONFIG1_ALTBASE(regs, wlc_hw->regoffsets), bmc_nbufs);
+		W_REG(osh, D11_TXE_BMC_CONFIG1_ALTBASE(regs, wlc_hw->regoffsets),
+		      wlc_hw->bmc_nbufs);
 	else
-		W_REG(osh, D11_BMCConfig_ALTBASE(regs, wlc_hw->regoffsets), bmc_nbufs);
+		W_REG(osh, D11_BMCConfig_ALTBASE(regs, wlc_hw->regoffsets),
+		      wlc_hw->bmc_nbufs);
 	bmc_ctl = (loopback << BMCCTL_LOOPBACK_SHIFT)	|
 	        (bufsize << BMCCTL_TXBUFSIZE_SHIFT)	|
 	        (reset_stats << BMCCTL_RESETSTATS_SHIFT)|
@@ -19303,7 +19326,7 @@ BCMINITFN(wlc_bmac_bmc_init)(wlc_hw_info_t *wlc_hw)
 						fifo | (bqseltype <<
 						BMCCmd_BQSelType_SHIFT_Rev128));
 				}
-				maxbufs = bmc_nbufs - tplbuf;
+				maxbufs = wlc_hw->bmc_nbufs - tplbuf;
 				minbufs = wlc_hw->bmc_params->minbufs[fifo] << doublebufsize;
 			}
 
@@ -20824,7 +20847,7 @@ wlc_bmac_bmc_dyn_reinit(wlc_hw_info_t *wlc_hw, uint8 bufsize_in_256_blocks)
 	fifo_sz = wlc_bmac_get_txfifo_size_kb(wlc_hw) * 1024; /* fifo_sz in [bytes] */
 
 	/* Account for bmc_startaddr which is specified in units of 256B */
-	bmc_maxbufs = (fifo_sz - (bmc_startaddr << 8)) >> (8 + bufsize);
+	wlc_hw->bmc_maxbufs = (fifo_sz - (bmc_startaddr << 8)) >> (8 + bufsize);
 
 	/* Calc:   448k(total) - (2* tplpercore + SR) - (rxq0 + rxq1) - 10(extra)= X
 	 * each rx fifo requires 3 additional fifos which makes to 6 with additional

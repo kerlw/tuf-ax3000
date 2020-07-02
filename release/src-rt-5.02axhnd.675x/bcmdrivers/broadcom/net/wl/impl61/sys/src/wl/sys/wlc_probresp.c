@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_probresp.c 774197 2019-04-15 16:12:43Z $
+ * $Id: wlc_probresp.c 779595 2019-10-03 06:26:35Z $
  */
 
 #include <wlc_cfg.h>
@@ -379,7 +379,7 @@ wlc_probresp_filter_and_reply(wlc_probresp_info_t *mprobresp, wlc_bsscfg_t *cfg,
 	 * our ssid (hidden ssid probe response). CLOSED_NET configuration in line with ucode
 	 * handling.
 	 */
-	if (cfg->closednet_nobcprbresp)	{
+	if (cfg->closednet)	{
 		bcm_tlv_t *ssid;
 
 		/* Check for existence of SSID tlv */
@@ -414,6 +414,29 @@ wlc_probresp_filter_and_reply(wlc_probresp_info_t *mprobresp, wlc_bsscfg_t *cfg,
 	if (!sendProbeResp) {
 		return;
 	}
+#ifdef WL11AX
+	if (BSSCFG_IS_BLOCK_HE_MAC(cfg)) {
+		if (wlc_isblocked_hemac(cfg, &hdr->sa)) {
+			WL_INFORM((" wl%d.%d: probe response blocked \n",
+					mprobresp->wlc->pub->unit, WLC_BSSCFG_IDX(cfg)));
+			return;
+		}
+	}
+#endif /* WL11AX */
+#ifdef WL11AX
+	if (BSSCFG_BLOCK_HE_ENABLED(cfg)) {
+		if (bcm_parse_tlvs_ext(body, body_len, 255,
+				EXT_MNG_HE_CAP_ID) != NULL) {
+			if (BSSCFG_IS_BLOCK_HE_MAC(cfg)) {
+				wlc_addto_heblocklist(cfg, &hdr->sa);
+			}
+			WL_INFORM(("wl%d.%d: probe response blocked \n",
+					mprobresp->wlc->pub->unit,
+					WLC_BSSCFG_IDX(cfg)));
+			return;
+		}
+	}
+#endif /* WL11AX */
 
 #ifdef WL_OCE
 	if (OCE_ENAB(cfg->wlc->pub) && wlc_oce_find_cap_ind_attr(body, body_len)) {

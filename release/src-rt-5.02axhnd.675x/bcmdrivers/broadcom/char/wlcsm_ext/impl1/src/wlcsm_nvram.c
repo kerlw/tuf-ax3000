@@ -417,6 +417,7 @@ static char *large_nvram_list[] = {
 	"wl0_chansps",
 	"wl1_chansps",
 	"wl2_chansps",
+	"wl0.2_gn_wbl_rule",
 	NULL
 };
 

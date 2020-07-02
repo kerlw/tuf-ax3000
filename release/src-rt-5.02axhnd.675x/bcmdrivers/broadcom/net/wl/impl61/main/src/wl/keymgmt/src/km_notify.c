@@ -43,7 +43,7 @@
  *
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
- * $Id: km_notify.c 756573 2018-04-09 21:44:16Z $
+ * $Id: km_notify.c 778732 2019-09-09 16:26:04Z $
  */
 
 #include "km_pvt.h"
@@ -287,8 +287,10 @@ km_handle_key_update(keymgmt_t *km, wlc_key_t *key, wlc_key_info_t *key_info)
 				wlc_ratelinkmem_update_link_entry(km->wlc, scb);
 			}
 			/* update bsscfg scb linkmem entry */
-			wlc_ratelinkmem_update_link_entry(km->wlc,
-				WLC_RLM_BSSCFG_LINK_SCB(km->wlc, bsscfg));
+			scb = WLC_RLM_BSSCFG_LINK_SCB(km->wlc, bsscfg);
+			if (scb) {
+				wlc_ratelinkmem_update_link_entry(km->wlc, scb);
+			}
 		}
 	}
 

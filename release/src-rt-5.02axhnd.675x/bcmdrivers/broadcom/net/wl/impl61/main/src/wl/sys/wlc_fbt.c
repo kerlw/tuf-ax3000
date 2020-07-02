@@ -4142,6 +4142,9 @@ wlc_fbt_scb_dump(void *context, struct scb *scb, struct bcmstrbuf *b)
 	char eabuf[ETHER_ADDR_STR_LEN];
 	wlc_fbt_scb_t *fbt_scb = FBT_SCB(fbt_info, scb);
 
+	if (!WL_ERROR_ON())
+		return;
+
 	if (fbt_scb == NULL)
 		return;
 
@@ -4216,6 +4219,7 @@ wlc_fbtap_process_auth_resp(wlc_info_t *wlc, wlc_fbt_info_t *fbt_info,
 	bcopy(&(fbt_auth_resp->gtk), &(fbt_scb->gtk), sizeof(wpa_gtk_t));
 #if defined(BCMDBG)
 	if (fbt_scb && fbt_scb->auth_resp_ies) {
+		if (WL_ERROR_ON()) {
 		prhex("FBT AUTH RESP ies", fbt_scb->auth_resp_ies, fbt_auth_resp->ie_len);
 		prhex("pmk r1 name in iov", fbt_scb->pmk_r1_name, 16);
 		prhex("pmk ptk kck iov", fbt_scb->ptk.kck, 16);
@@ -4223,6 +4227,7 @@ wlc_fbtap_process_auth_resp(wlc_info_t *wlc, wlc_fbt_info_t *fbt_info,
 		prhex("pmk ptk tk1 iov", fbt_scb->ptk.tk1, 16);
 		prhex("pmk ptk tk2 iov", fbt_scb->ptk.tk2, 16);
 		prhex("pmk gtk in iov", fbt_scb->gtk.key, 32);
+		}
 	}
 #endif // endif
 	fbt_scb->status = fbt_auth_resp->status;
@@ -6210,6 +6215,7 @@ wlc_fbtap_process_action_resp(wlc_info_t *wlc, wlc_fbt_info_t *fbt_info,
 	memcpy(pbody, &fbt_action_resp->data[0], fbt_action_resp->data_len);
 
 #if defined(BCMDBG)
+	if (WL_ERROR_ON())
 	prhex("fbt_resp", pbody, plen);
 #endif /* defined(BCMDBG) */
 

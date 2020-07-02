@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_tx.h 775993 2019-06-17 13:17:38Z $
+ * $Id: wlc_tx.h 779338 2019-09-25 15:26:15Z $
  *
  */
 #ifndef _wlc_tx_h_
@@ -772,7 +772,7 @@ extern uint32 wlc_scb_dot11hdrsize(struct scb *scb);
 #define IS_COMMON_QUEUE(q) FALSE
 #endif // endif
 
-extern void BCMFASTPATH wlc_txq_enq_pkt(wlc_info_t *wlc, struct scb *scb, void *sdu, uint prec);
+extern int BCMFASTPATH wlc_txq_enq_pkt(wlc_info_t *wlc, struct scb *scb, void *sdu, uint prec);
 extern void BCMFASTPATH wlc_txq_enq_flowcontrol_ampdu(wlc_info_t *wlc, struct scb *scb, int prio);
 
 #if defined(WL_PRQ_RAND_SEQ)

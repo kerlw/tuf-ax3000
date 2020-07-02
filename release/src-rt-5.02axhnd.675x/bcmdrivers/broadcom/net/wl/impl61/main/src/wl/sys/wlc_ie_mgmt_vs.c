@@ -214,12 +214,17 @@ wlc_iem_vs_get_id(uint8 *ie)
 }
 
 #if defined(BCMDBG)
+extern uint32 wl_msg_level;
+
 int
 wlc_iem_vs_dump(void *ctx, struct bcmstrbuf *b)
 {
 	uint i;
 
 	BCM_REFERENCE(ctx);
+
+	if (!(wl_msg_level & WL_ERROR_VAL))
+		return BCME_OK;
 
 	for (i = 0; i < ARRAYSIZE(cdi482id); i ++) {
 		bcm_bprintf(b, "%u: ", cdi482id[i].id);

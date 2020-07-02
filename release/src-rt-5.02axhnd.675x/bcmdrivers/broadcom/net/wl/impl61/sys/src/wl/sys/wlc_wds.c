@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_wds.c 774494 2019-04-26 08:41:34Z $
+ * $Id: wlc_wds.c 778700 2019-09-09 04:39:46Z $
  */
 
 /**
@@ -1037,6 +1037,18 @@ wlc_ap_wds_probe_complete(wlc_info_t *wlc, uint txstatus, struct scb *scb)
 			__FUNCTION__, wlc->pub->now - scb->used, bcm_ether_ntoa(&scb->ea, eabuf)));
 		return;
 	}
+
+#ifdef PSPRETEND
+	if (SCB_PS_PRETEND(scb)) {
+		/* We need to come out of PsPretend before marking link down */
+		if (!(wlc->block_datafifo & DATA_BLOCK_PS)) {
+			wlc_apps_scb_ps_off(wlc, scb, FALSE);
+		} else {
+			/* Don't mark link down yet */
+			return;
+		}
+	}
+#endif /* PSPRETEND */
 
 	scb->flags &= ~SCB_WDS_LINKUP;
 

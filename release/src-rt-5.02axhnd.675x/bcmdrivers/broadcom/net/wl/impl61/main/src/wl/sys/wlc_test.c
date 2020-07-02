@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_test.c 774848 2019-05-08 20:46:22Z $
+ * $Id: wlc_test.c 778731 2019-09-09 16:16:04Z $
  */
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
  * get their feature flags thru this file.
@@ -578,6 +578,29 @@ wlc_sim_pm_timer(void *arg)
 }
 #endif // endif
 
+static int
+wlc_test_down(void *ctx)
+{
+#if (defined(WLTEST) && !defined(WLTEST_DISABLED)) || defined(WLPKTENG)
+	wlc_test_info_t *test = ctx;
+	int i;
+
+	if (test->pkteng_info != NULL) {
+		/* del sta (SCB) */
+		for (i = 0; i < WLC_TEST_PKTENG_MAXUSR; i++) {
+			(void) wlc_test_pkteng_delsta(test, i);
+		}
+		/* Reset num of stas that effectively resets sta list */
+		test->pkteng_info->nusrs = 0;
+		/* Reset flags */
+		test->pkteng_info->flags = WLC_TEST_PKTENGCMD_FLAG_RESET;
+		/* Reset mode */
+		test->pkteng_info->mode = 0;
+	}
+#endif // endif
+	return BCME_OK;
+}
+
 /* attach/detach */
 wlc_test_info_t *
 BCMATTACHFN(wlc_test_attach)(wlc_info_t *wlc)
@@ -627,7 +650,7 @@ BCMATTACHFN(wlc_test_attach)(wlc_info_t *wlc)
 
 	/* register module up/down, watchdog, and iovar callbacks */
 	if (wlc_module_register(wlc->pub, test_iovars, "wltest", test, wlc_test_doiovar,
-			NULL, NULL, NULL) != BCME_OK) {
+			NULL, NULL, wlc_test_down) != BCME_OK) {
 		WL_ERROR(("wl%d: %s: wlc_module_register() failed\n",
 		          wlc->pub->unit, __FUNCTION__));
 		goto fail;
@@ -3358,7 +3381,8 @@ wlc_test_pkteng_set_shmx_block(wlc_test_info_t *test)
 		mcs = (usr->rspec & WL_RSPEC_HE_MCS_MASK);
 
 		ruidx = usr->ruidx;
-#ifdef TESTBED_AP_11AX
+
+#ifdef WL11AX
 		/* if station is not capable of 242 tone in 20 mhz then it cant use
 		 * ru-idx 61, 62, 63, or 63. They will need to be remapped to 104 tone
 		 * ru index. This is necessary for some WFA testbed STAs
@@ -3370,7 +3394,7 @@ wlc_test_pkteng_set_shmx_block(wlc_test_info_t *test)
 				ruidx += 54; /* 106 tone base */
 			}
 		}
-#endif /* TESTBED_AP_11AX */
+#endif /* WL11AX */
 
 		val16 = (ldpc << 15) | (nss << 12) | (mcs << 8) | ruidx;
 

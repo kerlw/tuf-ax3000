@@ -73,7 +73,7 @@
 #include <wlioctl_airiq.h>
 
 #ifdef __AIRIQ_DBG
-#define SCAN_DBG(...) printk(__VA_ARGS__)
+#define SCAN_DBG(...) WL_PRINT((__VA_ARGS__))
 #else
 #define SCAN_DBG(...)
 #endif // endif
@@ -209,7 +209,6 @@ struct _airiq_scan_config {
 	uint32 capture_count[MAXCHANNEL];
 	uint8 core_config[MAXCHANNEL]; /* which core to use */
 	uint32 timestamp_us; /* timestamp of the scan */
-	bool bandlocked_save; /* used for 4x4 mode */
 	/* array of chanspec_t's specified by user in IOVAR */
 	chanspec_t user_chanspec_list[MAXCHANNEL];
 	/* Number of channels in the current scan specified by user in IOVAR */
@@ -282,7 +281,6 @@ struct airiq_info {
 	uint32 scanmute;
 	uint32 core;
 	uint16 phy_mode;
-	uint16 bw_3x3;
 #define AIRIQ_DESENS_CNT 16
 	uint32 desens_lut_24ghz[AIRIQ_DESENS_CNT]; /* stores gain codes, steps of 2 db */
 	int16 gain_lut_24ghz[AIRIQ_DESENS_CNT]; /* stores gain */
@@ -383,10 +381,6 @@ int wlc_airiq_scan_abort(airiq_info_t * airiqh, bool upgrade);
 
 int wlc_airiq_update(airiq_info_t * airiqh,
 	int dwell_time_ms, int scan_mode, int spectrum_analysis);
-
-#ifdef BCMDBG
-extern int wlc_airiq_dump(airiq_info_t * airiqh, struct bcmstrbuf *b);
-#endif /* BCMDBG */
 
 chanspec_t wlc_airiq_get_current_scan_chanspec(wlc_info_t * wlc);
 

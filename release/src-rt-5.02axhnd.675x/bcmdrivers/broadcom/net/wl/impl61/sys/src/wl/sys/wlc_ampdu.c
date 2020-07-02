@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ampdu.c 777641 2019-08-07 02:27:22Z $
+ * $Id: wlc_ampdu.c 780082 2019-10-15 08:48:44Z $
  */
 
 /**
@@ -2176,7 +2176,8 @@ scb_ampdu_update_config_all(ampdu_tx_info_t *ampdu_tx)
 		}
 	}
 	if (RATELINKMEM_ENAB(wlc->pub)) {
-		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, TRUE, FALSE);
+		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, TRUE,
+			FALSE /* clr_txbf_stats=0 in mreq */);
 	}
 
 	/* The ampdu config affects values that are in the tx headers of outgoing packets.
@@ -3556,7 +3557,8 @@ wlc_ampdu_tx_set_mpdu_density(ampdu_tx_info_t *ampdu_tx, uint8 mpdu_density)
 		}
 	}
 	if (RATELINKMEM_ENAB(wlc->pub)) {
-		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, TRUE, FALSE);
+		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, TRUE,
+			FALSE /* clr_txbf_stats=0 in mreq */);
 	}
 	if (WLC_TXC_ENAB(wlc)) {
 		wlc_txc_inv_all(wlc->txc);
@@ -6078,7 +6080,10 @@ wlc_ampdu_release(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu,
 #endif /* WLATF_DONGLE */
 
 		if (next_fid == TXMOD_TRANSMIT) {
-			wlc_txq_enq_pkt(wlc, scb, p, WLC_PRIO_TO_PREC(tid));
+			if (wlc_txq_enq_pkt(wlc, scb, p, WLC_PRIO_TO_PREC(tid)) != BCME_OK) {
+				/* the packet has been freed by wlc_txq_enq_pkt() */
+				p = NULL;
+			}
 		} else {
 			/* calls apps module (wlc_apps_ps_enq) : */
 			SCB_TX_NEXT(TXMOD_AMPDU, scb, p, WLC_PRIO_TO_PREC(tid));
@@ -6948,7 +6953,8 @@ wlc_sendampdu(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, int pre
 
 	ini = scb_ampdu->ini[tid];
 
-	if (!ini || (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_ON)) {
+	if (!ini || (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_ON) ||
+		(ini->ba_state == AMPDU_TID_STATE_BA_OFF)) {
 		WL_AMPDU(("wlc_sendampdu: bailing out for bad ini (%p)/bastate\n",
 			OSL_OBFUSCATE_BUF(ini)));
 		WLCNTINCR(ampdu_tx->cnt->orphan);
@@ -7195,7 +7201,7 @@ wlc_sendampdu_noaqm(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, i
 			break;
 		}
 
-	BCM_REFERENCE(suppress_pkt);
+		BCM_REFERENCE(suppress_pkt);
 
 #ifdef PROP_TXSTATUS
 		if (GET_DRV_HAS_ASSIGNED_SEQ(WLPKTTAG(p)->seq)) {
@@ -7280,13 +7286,11 @@ wlc_sendampdu_noaqm(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, i
 
 		if (!(WLPKTTAG(p)->flags & WLF_MIMO) ||
 		    (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_OFF) ||
-		    (ini->ba_state == AMPDU_TID_STATE_BA_OFF) ||
 		    SCB_PS(scb)) {
 			/* clear ampdu related settings if going as regular frame */
 			if ((WLPKTTAG(p)->flags & WLF_MIMO) &&
 			    (SCB_PS(scb) ||
-			     (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_OFF) ||
-			     (ini->ba_state == AMPDU_TID_STATE_BA_OFF))) {
+			     (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_OFF))) {
 				WLC_CLR_MIMO_PLCP_AMPDU(plcp);
 				WLC_SET_MIMO_PLCP_LEN(plcp, len);
 			}
@@ -8220,7 +8224,6 @@ wlc_sendampdu_aqm(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, int
 
 		regmpdu_pkt = !(pkttag->flags & WLF_MIMO) ||
 		        (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_OFF) ||
-		        (ini->ba_state == AMPDU_TID_STATE_BA_OFF) ||
 		        SCB_PS(scb) || s_mpdu_pdu;
 
 		/* if no error, populate tx hdr (TSO/ucode header) info and continue */
@@ -8356,6 +8359,12 @@ wlc_sendampdu_aqm(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, int
 			tx_info.MacTxControlLow &= htol16(~D11AC_TXC_AMPDU);
 			/* non-ampdu must have svht bit set */
 			tx_info.MacTxControlHigh |= htol16(D11AC_TXC_SVHT);
+
+			/* clear all MU bits in case of SVHT/S-MPDU due to limitation in lower MAC
+			 * XXX: we can remove the limitation once we have it fully supported
+			 */
+			tx_info.MacTxControlHigh &= htol16(~(D11AC_TXC_MU |
+				D11REV128_TXC_HEMUMIMO | D11REV128_TXC_HEOFDMA));
 
 			*maclow = tx_info.MacTxControlLow;
 			*machigh = tx_info.MacTxControlHigh;
@@ -10495,7 +10504,11 @@ free_and_next:
 		}
 
 #ifdef PKTQ_LOG
-		if (prec_cnt) {
+		if (prec_cnt ||
+#ifdef SCB_BS_DATA
+			bs_data_counters ||
+#endif // endif
+			actq_cnt) {
 			/* hdrlength should be same across all MPDUs */
 			prec_pktlen = pkttotlen(wlc->osh, p) - hdr_len;
 #ifdef BCMDBG

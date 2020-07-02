@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_tssical.c 775501 2019-06-02 00:18:19Z $
+ * $Id: phy_ac_tssical.c 780101 2019-10-15 14:26:22Z $
  */
 
 #include <phy_cfg.h>
@@ -415,14 +415,19 @@ wlc_phy_txpwrctrl_idle_tssi_meas_acphy(phy_info_t *pi)
 	MOD_PHYREG(pi, RfseqCoreActv2059, DisRx, stf_shdata->hw_phyrxchain);
 
 	FOREACH_ACTV_CORE(pi, stf_shdata->hw_phyrxchain, core) {
-		wlc_phy_poll_samps_WAR_acphy(pi, idle_tssi, TRUE, TRUE, NULL,
-		                             FALSE, TRUE, core, 0);
 		if ((CHSPEC_IS2G(pi->radio_chanspec) && idletssi_disable_2g) ||
 			(CHSPEC_IS5G(pi->radio_chanspec) && idletssi_disable_5g)) {
 			idle_tssi[core]	= -512;
 		} else {
 			wlc_phy_poll_samps_WAR_acphy(pi, idle_tssi, TRUE, TRUE, NULL,
 				FALSE, TRUE, core, 0);
+			if (idle_tssi[core] == 0 && ACMAJORREV_47(pi->pubpi->phy_rev)) {
+				/* 43684 BW80 comes with settling issue
+				 * at first time toggling. redo tssi can solve the issue
+				 */
+				wlc_phy_poll_samps_WAR_acphy(pi, idle_tssi, TRUE, TRUE,
+					NULL, FALSE, TRUE, core, 0);
+			}
 		}
 		tssicali->idle_tssi[core] = idle_tssi[core];
 		wlc_phy_txpwrctrl_set_idle_tssi_acphy(pi, idle_tssi[core], core);
@@ -1557,16 +1562,6 @@ wlc_phy_tssi_radio_setup_acphy_20709(phy_info_t *pi, uint8 for_iqcal)
 					0x0)
 				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_PU_tssi, 0x1)
 			RADIO_REG_LIST_EXECUTE(pi, core);
-		} else if CHSPEC_IS2G(pi->radio_chanspec) {
-			/* 2GHz external TSSI */
-			RADIO_REG_LIST_START
-				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_sel_sw, 0x1)
-				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_sel_ext_tssi,
-					0x1)
-				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_PU_tssi, 0x0)
-				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG4, core, loopback_biasadj,
-					0x0)
-			RADIO_REG_LIST_EXECUTE(pi, core);
 		} else if (CHSPEC_IS5G(pi->radio_chanspec) && PHY_IPA(pi)) {
 			/* 5GHz internal TSSI */
 			RADIO_REG_LIST_START
@@ -1588,9 +1583,9 @@ wlc_phy_tssi_radio_setup_acphy_20709(phy_info_t *pi, uint8 for_iqcal)
 				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_PU_tssi, 0x1)
 			RADIO_REG_LIST_EXECUTE(pi, core);
 		} else {
-			/* 5GHz external TSSI */
+			/* 2GHz and 5GHz external TSSI - core dependent setup */
 			RADIO_REG_LIST_START
-				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_sel_sw, 0x3)
+				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_sel_sw, 0x15)
 				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_sel_ext_tssi,
 					0x1)
 				MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG1, core, iqcal_PU_tssi, 0x0)
@@ -1643,6 +1638,25 @@ wlc_phy_tssi_radio_setup_acphy_20709(phy_info_t *pi, uint8 for_iqcal)
 			MOD_RADIO_REG_20709_ENTRY(pi, IQCAL_CFG6, core, wbpga_bias, 0x14)
 			MOD_RADIO_REG_20709_ENTRY(pi, LPF_REG8, core, lpf_sw_adc_test, 0x0)
 		RADIO_REG_LIST_EXECUTE(pi, core);
+	}
+
+	/* Core independent external TSSI setup */
+	if (!PHY_IPA(pi)) {
+		/* 2GHz and 5GHz external TSSI */
+		RADIO_REG_LIST_START
+			MOD_RADIO_REG_20709_ENTRY(pi, GPAIO_SEL9, 1, gpaio2test1_sel,
+				0x0)
+			MOD_RADIO_REG_20709_ENTRY(pi, GPAIO_SEL9, 1, gpaio2test2_sel,
+				0x0)
+			MOD_RADIO_REG_20709_ENTRY(pi, GPAIO_SEL9, 1, gpaio2test3_sel,
+				0x0)
+			MOD_RADIO_REG_20709_ENTRY(pi, GPAIO_SEL9, 1, gpaio2test4_sel,
+				0x0)
+			MOD_RADIO_REG_20709_ENTRY(pi, GPAIO_SEL9, 1,
+				anatestmux_core3_sel, 0x1)
+			MOD_RADIO_REG_20709_ENTRY(pi, GPAIO_SEL9, 1, toptestmux_pu,
+				0x1)
+		RADIO_REG_LIST_EXECUTE(pi, 1);
 	}
 }
 
@@ -1729,8 +1743,7 @@ wlc_phy_txpwrctrl_set_idle_tssi_acphy(phy_info_t *pi, int16 idle_tssi, uint8 cor
 	} else if (ACMAJORREV_32(pi->pubpi->phy_rev) ||
 	           ACMAJORREV_33(pi->pubpi->phy_rev) ||
 	           ACMAJORREV_37(pi->pubpi->phy_rev) ||
-	           (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-	           !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+	           ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 		switch (core) {
 		case 0:
 			MOD_PHYREG(pi, TxPwrCtrlIdleTssi_second_path0, idleTssi_second0, idle_tssi);

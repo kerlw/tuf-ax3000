@@ -793,7 +793,7 @@ void wbd_slave_prepare_local_channel_preference(i5_dm_interface_type *i5_intf,
 	char *buf;
 	int i;
 	ieee1905_radio_caps_type *RadioCaps = &i5_intf->ApCaps.RadioCaps;
-	int rcaps_rc_count = RadioCaps->List ? RadioCaps->List[0] : 0;
+	int rcaps_rc_count = RadioCaps->List ? RadioCaps->List[0] : 0, rc_allocated;
 	const i5_dm_rc_chan_map_type *rc_chan_map = i5DmGetRegClassChannelMap();
 	uint8 *ptr = RadioCaps->List;
 	uint16 bytes_to_rd, bytes_rd;
@@ -804,7 +804,8 @@ void wbd_slave_prepare_local_channel_preference(i5_dm_interface_type *i5_intf,
 	WBD_ENTER();
 
 	cp->rc_count = 0;
-	buf = wbd_malloc((sizeof(ieee1905_chan_pref_rc_map) * rcaps_rc_count), &ret);
+	rc_allocated = WBD_MAX_CHAN_PREF_RC_COUNT;
+	buf = wbd_malloc((sizeof(ieee1905_chan_pref_rc_map) * rc_allocated), &ret);
 	WBD_ASSERT();
 	cp->rc_map = (ieee1905_chan_pref_rc_map *)buf;
 
@@ -821,13 +822,11 @@ void wbd_slave_prepare_local_channel_preference(i5_dm_interface_type *i5_intf,
 		uint16 chan_bitmap[11] = {0x00};
 		uint32 chanspec;
 		uint bw;
-		bool update_chan_pref_list = FALSE;
 		radio_cap_sub_info_t *radio_sub_info = NULL;
 		ieee1905_chan_pref_rc_map *rc_map = NULL;
 
 		radio_sub_info = (radio_cap_sub_info_t *)ptr;
 
-		rc_map = &cp->rc_map[cp->rc_count];
 		/* consider only rclass supported by agent's interface */
 		for (rclass_cnt = 0; rclass_cnt < REGCLASS_MAX_COUNT; rclass_cnt++) {
 			if (rc_chan_map[rclass_cnt].regclass == radio_sub_info->regclass) {
@@ -889,22 +888,48 @@ void wbd_slave_prepare_local_channel_preference(i5_dm_interface_type *i5_intf,
 				bitmap |= bitmap_sb;
 			}
 			/* get preference and reason */
-			if (bitmap & WL_CHAN_INACTIVE) {
+			if (bitmap & WL_CHAN_RADAR) {
+				/* If memory is not enough for adding regulatory class entry,
+				 * reallocate it. Check for already allocated count against the
+				 * regulatory classes count already stored in the preference list
+				 */
+				if (cp->rc_count >= rc_allocated) {
+					char *tmp;
+
+					WBD_WARNING("Memory is not enough for channel preference "
+						"report, reallocate. Count[%d] Allocated[%d]\n",
+						cp->rc_count, rc_allocated);
+					rc_allocated += 10; /* 10 more regulatory class for now */
+					tmp = (char*)realloc(buf,
+						(sizeof(ieee1905_chan_pref_rc_map) * rc_allocated));
+					if (tmp == NULL) {
+						WBD_ERROR("%s of %d\n",
+							wbderrorstr(WBDE_REALLOC_FL), rc_allocated);
+						goto end;
+					}
+					buf = tmp;
+					cp->rc_map = (ieee1905_chan_pref_rc_map *)buf;
+				}
+				rc_map = &cp->rc_map[cp->rc_count];
 				/* update channnel and count in case prefererence for any channel
 				 * changed due to radar
 				 */
-				update_chan_pref_list = TRUE;
 				rc_map->channel[rc_map->count] =
 					rc_chan_map[rclass_cnt].channel[chan_cnt];
 				rc_map->count++;
-				rc_map->pref = IEEE1905_CHAN_PREF_NON_OP;
-				rc_map->reason = I5_REASON_RADAR;
-			}
+				if (bitmap & (WL_CHAN_INACTIVE | WL_CHAN_RESTRICTED)) {
+					rc_map->pref = IEEE1905_CHAN_PREF_NON_OP;
+					rc_map->reason = (bitmap & WL_CHAN_INACTIVE) ?
+						I5_REASON_RADAR : I5_REASON_UNSPECFIED;
+				} else {
+					rc_map->pref = IEEE1905_CHAN_PREF_14;
+					rc_map->reason = (bitmap & WL_CHAN_PASSIVE) ?
+						I5_REASON_DFS_PASSIVE : I5_REASON_DFS_CAC_COMPLETE;
+				}
 
-		}
-		if (update_chan_pref_list) {
-			rc_map->regclass = radio_sub_info->regclass;
-			cp->rc_count++;
+				rc_map->regclass = radio_sub_info->regclass;
+				cp->rc_count++;
+			}
 		}
 		ptr += sizeof(radio_cap_sub_info_t) + radio_sub_info->n_chan;
 		bytes_rd += sizeof(radio_cap_sub_info_t) + radio_sub_info->n_chan;
@@ -1159,17 +1184,29 @@ void
 wbd_slave_process_bh_steer_request_cb(wbd_info_t *info, char *ifname,
 	ieee1905_backhaul_steer_msg *bh_steer_req)
 {
+	int ret = WBDE_OK;
 	wl_join_params_t *join_params = NULL;
 	uint join_params_size;
 	uint bw = 0;
 	char prefix[IFNAMSIZ] = {0};
 	wbd_bh_steer_check_arg_t *param_cb = NULL;
+	i5_dm_interface_type *i5_ifr;
+	wbd_ifr_item_t *ifr_vndr_data;
 	WBD_ENTER();
 
 	if (!bh_steer_req) {
 		WBD_ERROR("NULL backhaul steer request received\n");
 		goto end;
 	}
+
+	if ((i5_ifr = wbd_ds_get_self_i5_ifr_from_ifname(ifname, NULL)) == NULL) {
+		WBD_WARNING("Self Interface not found for ifname[%s]\n", ifname);
+		goto end;
+	}
+
+	WBD_ASSERT_ARG(i5_ifr->vndr_data, WBDE_INV_ARG);
+	ifr_vndr_data = (wbd_ifr_item_t*)i5_ifr->vndr_data;
+
 	/* Get prefix of the interface from Driver */
 	blanket_get_interface_prefix(ifname, prefix, sizeof(prefix));
 
@@ -1190,6 +1227,26 @@ wbd_slave_process_bh_steer_request_cb(wbd_info_t *info, char *ifname,
 		char cmd[WBD_MAX_BUF_128] = {0};
 		uint start_factor, band, frequency;
 
+		snprintf(cmd, sizeof(cmd), "wpa_cli -p %s/%swpa_supplicant set_network 0 "
+			"bssid "MACDBG"",
+			WBD_HAPD_SUPP_CTRL_DIR, prefix, MAC2STRDBG(bh_steer_req->trgt_bssid));
+		WBD_INFO("%s\n", cmd);
+		system(cmd);
+
+		snprintf(cmd, sizeof(cmd), "wpa_cli -p %s/%swpa_supplicant save_config",
+			WBD_HAPD_SUPP_CTRL_DIR, prefix);
+		WBD_INFO("%s\n", cmd);
+		system(cmd);
+
+		/* If the AP scan is disabled enable it */
+		if (ifr_vndr_data->flags & WBD_FLAGS_IFR_AP_SCAN_DISABLED) {
+			snprintf(cmd, sizeof(cmd), "wpa_cli -p %s/%swpa_supplicant -i%s ap_scan 1",
+				WBD_HAPD_SUPP_CTRL_DIR, prefix, ifname);
+			WBD_INFO("%s\n", cmd);
+			system(cmd);
+			ifr_vndr_data->flags &= ~WBD_FLAGS_IFR_AP_SCAN_DISABLED;
+		}
+
 		/* For scan on particualr channel, for wpa supplicant we should pass frequency.
 		 * For getting the frequency we should pass control channela and start_factor.
 		 * start_factor depends on band. So get the band and from band get start_factor
@@ -1206,17 +1263,6 @@ wbd_slave_process_bh_steer_request_cb(wbd_info_t *info, char *ifname,
 			"bssid="MACDBG"",
 			WBD_HAPD_SUPP_CTRL_DIR, prefix, ifname,
 			frequency, MAC2STRDBG(bh_steer_req->trgt_bssid));
-		WBD_INFO("%s\n", cmd);
-		system(cmd);
-		/* Scan for the BSSID and frequency gets over in 0.25 seconds. After giving some
-		 * buffer making it 0.5 seconds
-		 */
-		usleep(500000);
-
-		/* For wpa_supplicant instead of wl join use roam cli cmd. */
-		snprintf(cmd, sizeof(cmd), "wpa_cli -p %s/%swpa_supplicant -i%s roam "MACDBG"",
-			WBD_HAPD_SUPP_CTRL_DIR, prefix, ifname,
-			MAC2STRDBG(bh_steer_req->trgt_bssid));
 		WBD_INFO("%s\n", cmd);
 		system(cmd);
 	} else {

@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scb_ratesel.c 777844 2019-08-13 07:36:57Z $
+ * $Id: wlc_scb_ratesel.c 780015 2019-10-14 03:16:48Z $
  */
 
 /**
@@ -986,7 +986,8 @@ wlc_scb_ratesel_ppr_filter(wlc_info_t *wlc, ppr_rateset_t *clm_rates,
 static uint8
 wlc_scb_get_bw_from_scb_oper_mode(wlc_vht_info_t *vhti, struct scb *scb)
 {
-	uint8 bw = 0, bw160_8080 = 0;
+	uint8 bw = 1; /* Init bw with default 20Mhz */
+	uint8 bw160_8080 = 0;
 	uint8 mode = 0;
 	mode = wlc_vht_get_scb_opermode(vhti, scb);
 	bw160_8080 = DOT11_OPER_MODE_160_8080(mode);
@@ -1164,6 +1165,12 @@ wlc_scb_ratesel_init(wlc_info_t *wlc, struct scb *scb)
 	}
 
 	rateset = &scb->rateset;
+
+#ifdef WL11N
+	if (SCB_HT_CAP(scb)) {
+		wlc_ht_upd_scb_rateset_mcs(wlc->hti, scb, rs_init.bw);
+	}
+#endif /* WL11N */
 
 #ifdef WL11AC
 	/* Set up the mcsmap in scb->rateset.vht_mcsmap */

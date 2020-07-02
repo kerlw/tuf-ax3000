@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_master.c 776052 2019-06-18 09:04:52Z $
+ * $Id: wbd_master.c 779933 2019-10-10 09:42:10Z $
  */
 
 #include <signal.h>
@@ -198,6 +198,9 @@ wbd_init_master(wbd_info_t *info)
 	ret = wbd_init_master_com_handle(info);
 	WBD_ASSERT_MSG("wbd_init_master_com_handle failed: %d (%s)\n", ret, wbderrorstr(ret));
 
+	/* Reset backhaul optimization complete flag */
+	blanket_nvram_prefix_set(NULL, WBD_NVRAM_BH_OPT_COMPLETE, "0");
+
 	/* Get the igonred MAClist from NVRAM */
 	ret = wbd_retrieve_maclist_from_nvram(WBD_NVRAM_IGNR_MACLST,
 		&info->wbd_master->ignore_maclist);
@@ -222,6 +225,9 @@ wbd_exit_master(wbd_info_t *info)
 
 	BCM_REFERENCE(ret);
 	WBD_ASSERT_ARG(info, WBDE_INV_ARG);
+
+	/* Reset backhaul optimization complete flag */
+	blanket_nvram_prefix_set(NULL, WBD_NVRAM_BH_OPT_COMPLETE, "0");
 
 	/* Deinit IEEE1905 module only if it is initialized. Because, if the WBD is disabled,
 	 * it will not get initialized
@@ -623,6 +629,34 @@ wbd_ieee1905_steering_btm_report_cb(ieee1905_btm_report *btm_report)
 	wbd_ds_add_logs_in_master(g_wbdinfo->wbd_master, logmsg);
 }
 
+/* Callback from IEEE 1905 module to inform the DFS status update on the operating channel of an
+ * interface
+ */
+static void
+wbd_ieee1905_operating_channel_dfs_update_cb(i5_dm_interface_type *i5_ifr, unsigned char old_flags,
+	unsigned char new_flags)
+{
+	int has_bh_bss = 0;
+	i5_dm_bss_type *i5_bss;
+
+	/* Check if it has backhaul BSS or not */
+	foreach_i5glist_item(i5_bss, i5_dm_bss_type, i5_ifr->bss_list) {
+		if (I5_IS_BSS_BACKHAUL(i5_bss->mapFlags)) {
+			has_bh_bss = 1;
+			break;
+		}
+	}
+
+	WBD_INFO("IFR["MACDBG"] DFS status changed old_flags[%x] new_flags[%x] has_bh_bss[%d]\n",
+		MAC2STRDBG(i5_ifr->InterfaceId), old_flags, new_flags, has_bh_bss);
+
+	/* If the CAC is completed, start backhaul optimization */
+	if (has_bh_bss && (I5_IS_IFR_CAC_PENDING(old_flags)) &&
+		!(I5_IS_IFR_CAC_PENDING(new_flags))) {
+		wbd_master_create_bh_opt_timer(NULL);
+	}
+}
+
 /* Register ieee1905 callbacks. */
 static void
 wbd_master_register_ieee1905_callbacks()
@@ -647,6 +681,7 @@ wbd_master_register_ieee1905_callbacks()
 	cbs.get_interface_info = wbd_ieee1905_get_interface_info_cb;
 	cbs.get_vendor_specific_tlv = wbd_ieee1905_get_vendor_specific_tlv_cb;
 	cbs.steering_btm_rpt = wbd_ieee1905_steering_btm_report_cb;
+	cbs.operating_channel_dfs_update = wbd_ieee1905_operating_channel_dfs_update_cb;
 
 	ieee1905_register_callbacks(&cbs);
 	WBD_DEBUG("wbd_master_register_ieee1905_callbacks : %s\n", wbderrorstr(ret));

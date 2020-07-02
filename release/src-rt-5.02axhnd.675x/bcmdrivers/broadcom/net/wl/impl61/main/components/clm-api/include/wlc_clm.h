@@ -1,57 +1,19 @@
 /*
  * API for accessing CLM data
  *
- * Copyright 2019 Broadcom
- *
- * This program is the proprietary software of Broadcom and/or
- * its licensors, and may only be used, duplicated, modified or distributed
- * pursuant to the terms and conditions of a separate, written license
- * agreement executed between you and Broadcom (an "Authorized License").
- * Except as set forth in an Authorized License, Broadcom grants no license
- * (express or implied), right to use, or waiver of any kind with respect to
- * the Software, and Broadcom expressly reserves all rights in and to the
- * Software and all intellectual property rights therein.  IF YOU HAVE NO
- * AUTHORIZED LICENSE, THEN YOU HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY
- * WAY, AND SHOULD IMMEDIATELY NOTIFY BROADCOM AND DISCONTINUE ALL USE OF
- * THE SOFTWARE.
- *
- * Except as expressly set forth in the Authorized License,
- *
- * 1. This program, including its structure, sequence and organization,
- * constitutes the valuable trade secrets of Broadcom, and you shall use
- * all reasonable efforts to protect the confidentiality thereof, and to
- * use this information only in connection with your use of Broadcom
- * integrated circuit products.
- *
- * 2. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED
- * "AS IS" AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES,
- * REPRESENTATIONS OR WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR
- * OTHERWISE, WITH RESPECT TO THE SOFTWARE.  BROADCOM SPECIFICALLY
- * DISCLAIMS ANY AND ALL IMPLIED WARRANTIES OF TITLE, MERCHANTABILITY,
- * NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE, LACK OF VIRUSES,
- * ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION OR
- * CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING
- * OUT OF USE OR PERFORMANCE OF THE SOFTWARE.
- *
- * 3. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL
- * BROADCOM OR ITS LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL,
- * SPECIAL, INDIRECT, OR EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR
- * IN ANY WAY RELATING TO YOUR USE OF OR INABILITY TO USE THE SOFTWARE EVEN
- * IF BROADCOM HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES; OR (ii)
- * ANY AMOUNT IN EXCESS OF THE AMOUNT ACTUALLY PAID FOR THE SOFTWARE ITSELF
- * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
- * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
+ * $ Copyright Broadcom $
  *
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_clm.h 802970 2019-02-05 19:00:18Z $
+ * $Id: wlc_clm.h 821810 2019-05-25 02:05:05Z fs936724 $
  */
 
 #ifndef _WLC_CLM_H_
 #define _WLC_CLM_H_
 
 #include <bcmwifi_rates.h>
+#include <bcmwifi_channels.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -79,6 +41,11 @@ typedef enum clm_band {
 	/** 5GHz band */
 	CLM_BAND_5G,
 
+#ifdef WL_BAND6G
+	/** 6GHz band */
+	CLM_BAND_6G,
+#endif /* WL_BAND6G */
+
 	/** Number of band identifiers */
 	CLM_BAND_NUM
 } clm_band_t;
@@ -90,7 +57,7 @@ typedef enum clm_bandwidth {
 
 	/** 40MHz channel */
 	CLM_BW_40,
-#ifdef WL11AC
+
 	/** 80MHz channel */
 	CLM_BW_80,
 
@@ -99,7 +66,7 @@ typedef enum clm_bandwidth {
 
 	/** 80+80MHz channel */
 	CLM_BW_80_80,
-#endif // endif
+
 	/** Number of channel bandwidth identifiers */
 	CLM_BW_NUM
 } clm_bandwidth_t;
@@ -128,7 +95,7 @@ typedef enum clm_ext_chan {
 	/** Neither of the above (use for 20MHz operation) */
 	CLM_EXT_CHAN_NONE  =  0
 } clm_ext_chan_t;
-#endif // endif
+#endif
 
 /** Flags */
 typedef enum clm_flags {
@@ -144,6 +111,12 @@ typedef enum clm_flags {
 
 	/** TW DFS rules */
 	CLM_FLAG_DFS_TW		= 0x00000003,
+
+	/** UK DFS rules */
+	CLM_FLAG_DFS_UK		= 0x00000080,
+
+	/** JP DFS rules */
+	CLM_FLAG_DFS_JP		= 0x00000081,
 
 	/** Mask of DFS-related flags */
 	CLM_FLAG_DFS_MASK	= 0x00000083,
@@ -163,9 +136,6 @@ typedef enum clm_flags {
 	/** Region is EDCRS-EU-compliant */
 	CLM_FLAG_EDCRS_EU	= 0x00000040,
 
-	/** UK DFS rules */
-	CLM_FLAG_DFS_UK		= 0x00000080,
-
 	/** Limit peak power during PAPD calibration */
 	CLM_FLAG_LO_GAIN_NBCAL	= 0x00000100,
 
@@ -182,6 +152,7 @@ typedef enum clm_flags {
 
 	/** HE limits present */
 	CLM_FLAG_HE = 0x00001000,
+
 
 	/* DEBUGGING FLAGS (ALLOCATED AS TOP BITS) */
 
@@ -217,7 +188,7 @@ typedef enum clm_limits_type {
 
 	/** Limit for U-subchannel (20-in-40, 40-in-80) */
 	CLM_LIMITS_TYPE_SUBCHAN_U,
-#ifdef WL11AC
+
 	/** Limit for LL-subchannel (20-in-80, 40-in-160) */
 	CLM_LIMITS_TYPE_SUBCHAN_LL,
 
@@ -253,7 +224,7 @@ typedef enum clm_limits_type {
 
 	/** Limit for UUU-subchannel (20-in-160) */
 	CLM_LIMITS_TYPE_SUBCHAN_UUU,
-#endif /* WL11AC */
+
 	CLM_LIMITS_TYPE_NUM
 } clm_limits_type_t;
 
@@ -295,6 +266,7 @@ typedef enum clm_string_source {
 	CLM_STRING_SOURCE_NUM
 } clm_string_source_t;
 
+
 /*****************
 * API DATA TYPES *
 ******************
@@ -307,7 +279,8 @@ typedef char ccode_t[2];
 
 /** Channel set */
 typedef struct clm_channels {
-	unsigned char bitvec[25]; /* Bit vector, indexed by channel numbers */
+	/** Bit vector, indexed by channel numbers */
+	unsigned char bitvec[(MAXCHANNEL + 7) / 8];
 } clm_channels_t;
 
 /** Power in quarter of dBm units */
@@ -327,6 +300,7 @@ typedef struct clm_ru_power_limits {
 } clm_ru_power_limits_t;
 #endif /* WL_RU_NUMRATES */
 
+
 /* ITERATORS - TOKENS THAT REPRESENT VARIOUS ITEMS IN THE CLM */
 
 /** Country (region) definition */
@@ -341,19 +315,20 @@ typedef int clm_agg_country_t;
 /** Definition of mapping inside aggregation */
 typedef int clm_agg_map_t;
 
+
 /** Locales (transmission rules) for a country (region) */
 typedef struct clm_country_locales {
-	/** 2.4GHz base locale (802.11b/g SISO) */
-	clm_locale_t locale_2G;
+	/** Pointer to 2.4GHz base locale */
+	const unsigned char *locale_2G;
 
-	/** 5GHz base locale (802.11a SISO) */
-	clm_locale_t locale_5G;
+	/** Pointer to 5GHz base locale */
+	const unsigned char *locale_5G;
 
-	/** 2.4GHz HT locale (802.11n and 802.11b/g MIMO) */
-	clm_locale_t locale_2G_HT;
+	/** Pointer to 2.4GHz HT locale */
+	const unsigned char *locale_2G_HT;
 
-	/** 5GHz HT locale (802.11n and 802.11a MIMO) */
-	clm_locale_t locale_5G_HT;
+	/** Pointer to 5GHz HT locale */
+	const unsigned char *locale_5G_HT;
 
 	/** Flags from country record */
 	unsigned char country_flags;
@@ -363,6 +338,20 @@ typedef struct clm_country_locales {
 
 	/** Second byte of flags from country record */
 	unsigned char country_flags_2;
+
+	/** Bitmask, ordered by CLM_LOC_IDX_... constants, with '1' for
+	 * locales, contained in main (base) data source, '0' in incremental
+	 * data source
+	 */
+	unsigned int main_loc_data_bitmask;
+
+#ifdef WL_BAND6G
+	/** Pointer to 6GHz base locale (802.11a SISO) */
+	const unsigned char *locale_6G;
+
+	/** Pointer to 6GHz HT locale */
+	const unsigned char *locale_6G_HT;
+#endif /* WL_BAND6G */
 } clm_country_locales_t;
 
 /** Parameters that refine clm_limits() output data
@@ -398,10 +387,15 @@ typedef struct clm_channels_params {
 	clm_bandwidth_t bw;
 
 	/** If nonzero - one channel in 80+80 channel pair, in this case
-	* function returns other 80MHz channels that may be used in pair with
-	* it
-	*/
+	 * function returns other 80MHz channels that may be used in pair with
+	 * it
+	 */
 	unsigned int this_80_80;
+
+	/** If nonzero - clm_valid_channels will skip clearing channel vector clm_channels_t
+	 * and adds valid CLM channels for given bandwidth bw
+	 */
+	int add;
 } clm_channels_params_t;
 
 /** Input parameters for clm_psd_limit() */
@@ -410,7 +404,7 @@ typedef struct clm_psd_limit_params {
 	clm_bandwidth_t bw;
 } clm_psd_limit_params_t;
 
-#ifdef WL_RU_NUMRATES
+#if defined(WL_RU_NUMRATES) || defined(WL_NUM_HE_RT)
 /** Result struct for clm_available_he_limits() */
 typedef struct clm_available_he_limits_result {
 	/** Bitmask, corresponded to available members of wl_he_rate_type enum */
@@ -447,12 +441,13 @@ typedef struct clm_he_limit_result {
 	clm_power_t limit;
 } clm_he_limit_result_t;
 
-#endif /* WL_RU_NUMRATES */
+#endif /* defined(WL_RU_NUMRATES) || defined(WL_NUM_HE_RT) */
 
 /* forward declaration for CLM header data structure used in clm_init()
  * struct clm_data_header is defined in clm_data.h
  */
 struct clm_data_header;
+
 
 /***************
 * API ROUTINES *
@@ -559,6 +554,7 @@ extern clm_result_t
 clm_country_flags(const clm_country_locales_t *locales, clm_band_t band,
 	unsigned long *flags);
 
+
 /** Retrieves advertised country code for country (region) pointed by given
  * iterator
  * \param[in] country Iterator that points to country (region) in question
@@ -620,6 +616,16 @@ extern clm_result_t
 clm_ru_limits(const clm_country_locales_t *locales, clm_band_t band,
 	unsigned int channel, int ant_gain, clm_limits_type_t limits_type,
 	const clm_limits_params_t *params, clm_ru_power_limits_t *limits);
+
+/** Returns attributes of given RU rates in form of clm_he_limit_params_t
+ * May be used fo rbridging clm_he_limit()->clm_ru_limits() transition
+ * \param[in] ru_rate Rate go get parameters for
+ * \param[out] params Structure for attributes of given rate
+ * \return CLM_RESULT_OK in case of success, CLM_RESULT_ERR if rate code is out
+ * of range or 'params' is NULL
+ */
+extern clm_result_t
+clm_get_ru_rate_params(clm_ru_rates_t ru_rate, clm_he_limit_params_t *params);
 #endif /* WL_RU_NUMRATES */
 
 /** Retrieves information about channels with valid power limits for locales of
@@ -701,7 +707,7 @@ clm_psd_limit(const clm_country_locales_t *locales, clm_band_t band,
 /* Temporary alias for smoot transition to new signature. Will be removed */
 #define clm_psd_limit_new clm_psd_limit
 
-#ifdef WL_RU_NUMRATES
+#if defined(WL_RU_NUMRATES) || defined(WL_NUM_HE_RT)
 /** Determines what kinds of HE limits available for given channel
  * \param[in] locales Country (region) locales' information
  * \param[in] band Band of requested channel
@@ -749,7 +755,7 @@ clm_he_limit(const clm_country_locales_t *locales, clm_band_t band,
 	clm_bandwidth_t bandwidth, unsigned int channel, int ant_gain,
 	clm_limits_type_t limits_type, const clm_he_limit_params_t *params,
 	clm_he_limit_result_t *result);
-#endif /* WL_RU_NUMRATES */
+#endif /* defined(WL_RU_NUMRATES) || defined(WL_NUM_HE_RT) */
 
 /** Performs one iteration step over set of aggregations. Looks up first/next
  * aggregation
@@ -807,12 +813,14 @@ extern clm_result_t
 clm_agg_country_map_lookup(const clm_agg_country_t agg,
 	const ccode_t target_cc, unsigned int *rev);
 
+
 /** Returns base data app version string
  * \return Pointer to version if it's present and not the vanilla string.
  * NULL if version is not present or unchanged from default.
  */
 extern const char*
 clm_get_base_app_version_string(void);
+
 
 /** Returns incremental data app version string
  * \return Pointer to version if it's present and not the vanilla string.
@@ -831,6 +839,7 @@ clm_get_inc_app_version_string(void);
 extern const char*
 clm_get_string(clm_string_type_t string_type,
 	clm_string_source_t string_source);
+
 
 #ifdef __cplusplus
 }

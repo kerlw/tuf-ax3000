@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_wnm.c 777999 2019-08-20 06:39:01Z $
+ * $Id: wlc_wnm.c 779762 2019-10-07 07:12:37Z $
  */
 
 /**
@@ -1486,8 +1486,8 @@ wlc_wnm_bsstrans_query_send(wlc_wnm_info_t *wnm, wlc_bsscfg_t *bsscfg, wlc_bss_l
 static void
 wlc_wnm_bsstrans_query_scancb(void *arg, int status, wlc_bsscfg_t *bsscfg)
 {
-	wlc_wnm_info_t *wnm = (wlc_wnm_info_t *)arg;
-	wlc_info_t *wlc = wnm->wlc;
+	wlc_info_t *wlc = (wlc_info_t*)arg;
+	wlc_wnm_info_t *wnm = (wlc_wnm_info_t *)wlc->wnm_info;
 	uint i;
 
 	if (status != WLC_E_STATUS_SUCCESS) {
@@ -2985,6 +2985,7 @@ wlc_wnm_recv_process_wnm(wlc_wnm_info_t *wnm, wlc_bsscfg_t *bsscfg,
 		uint8 token;
 		dot11_wnm_notif_req_t* notif_req;
 #ifdef BCMDBG
+		if (WL_ERROR_ON())
 		prhex("Raw WNM-Notification request frame ", (uchar *)body, body_len);
 #endif /* BCMDBG */
 		if (BSS_MBO_ENAB(wlc, bsscfg)) {
@@ -4222,7 +4223,7 @@ wlc_wnm_doiovar(void *hdl, uint32 actionid,
 
 			wlc_scan_request(wlc, DOT11_BSSTYPE_INFRASTRUCTURE, &ether_bcast, 1, &ssid,
 				DOT11_SCANTYPE_ACTIVE, -1, -1, -1, -1, NULL, 0, FALSE,
-				wlc_wnm_bsstrans_query_scancb, wnm);
+				wlc_wnm_bsstrans_query_scancb, wlc);
 		}
 		else {
 			wlc_wnm_bsstrans_query_send(wnm, bsscfg, NULL);
@@ -8085,6 +8086,7 @@ wlc_wnm_send_bsstrans_request(wlc_wnm_info_t *wnm, wlc_bsscfg_t *bsscfg, struct 
 #endif /* WL_MBO && !WL_MBO_DISABLES && MBO_AP */
 
 #ifdef BCMDBG
+	if (WL_ERROR_ON())
 	prhex("Raw BSS Trans Req body", (uchar *)pbody, maxlen);
 #endif /* BCMDBG */
 	if ((bufend - pdata) > 0) {
@@ -9167,6 +9169,7 @@ wlc_wnm_tfs_req_frame_send(wlc_bsscfg_t *bsscfg)
 	body += wlc_wnm_tfs_req_ie_prep(wnm_cfg, body, req->token);
 
 	PKTSETLEN(wlc->osh, p, ((uint)(body - PKTDATA(wlc->osh, p))));
+	if (WL_ERROR_ON())
 	prhex("Raw TFS Req", (uint8*) req, (uint)(body - (uint8*) req));
 
 	scb = wlc_scbfind(wlc, bsscfg, &bsscfg->BSSID);
@@ -9328,6 +9331,7 @@ wlc_wnm_dms_req_frame_send(wlc_bsscfg_t *bsscfg, uint type, uint user_id)
 	body += wlc_wnm_dms_desc_prep(dms_info, body, type, wnm->req_token, user_id);
 
 #ifdef BCMDBG
+	if (WL_ERROR_ON())
 	prhex("DMS-req descr list", body - dms_desc_list_len, dms_desc_list_len);
 #endif /* BCMDBG */
 
@@ -11501,6 +11505,7 @@ wlc_wnm_send_notif_resp_frame(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg, struct scb 
 	resp->token = token;
 	resp->status = status;
 #ifdef BCMDBG
+	if (WL_ERROR_ON())
 	prhex("Raw WNM-Notification Resp Body", (uchar*)pbody, body_len);
 #endif	/* BCMDBG */
 	wlc_sendmgmt(wlc, p, bsscfg->wlcif->qi, scb);

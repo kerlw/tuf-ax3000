@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ie_misc_hndlrs.c 776451 2019-06-28 16:03:26Z $
+ * $Id: wlc_ie_misc_hndlrs.c 779595 2019-10-03 06:26:35Z $
  */
 
 #include <wlc_cfg.h>
@@ -539,7 +539,7 @@ wlc_bcn_write_ssid_ie(void *ctx, wlc_iem_build_data_t *data)
 	BCM_REFERENCE(ctx);
 
 	/* in the closed net case the ssid is faked to be all zero */
-	if ((data->ft == FC_BEACON) && cfg->closednet_nobcnssid) {
+	if ((data->ft == FC_BEACON) && (cfg->closednet || cfg->nobcnssid)) {
 		bzero(ssid, cfg->SSID_len);
 	} else {
 		bcopy(cfg->SSID, ssid, cfg->SSID_len);

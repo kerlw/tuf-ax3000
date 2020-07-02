@@ -114,18 +114,16 @@ void
 wlc_airiq_3p1_downgrade_phy(airiq_info_t *airiqh, chanspec_t scan_chanspec)
 {
 	wlc_info_t *wlc = airiqh->wlc;
-	phy_info_t *pi = (phy_info_t *) WLC_PI(wlc);
 
 	/* disable periodic calibration; so that it doesn't interfere */
-	phy_wd_override(pi, FALSE);
-
-	wlc_mute(wlc, ON, PHY_MUTE_FOR_PREISM);
+	wlc_suspend_mac_and_wait(wlc);
 
 	wlc_airiq_scan_set_chanspec_3p1(airiqh, (phy_info_t*)WLC_PI(wlc),
 		wlc->home_chanspec, scan_chanspec);
 
 	airiqh->upgrade_pending = TRUE;
-	wlc_mute(wlc, OFF, PHY_MUTE_FOR_PREISM);
+
+	wlc_enable_mac(wlc);
 
 	WL_AIRIQ(("wl%d: %s: downgraded phy to 3+1\n", WLCWLUNIT(wlc), __FUNCTION__));
 	ASSERT(airiqh->phy_mode == PHYMODE_3x3_1x1);
@@ -138,14 +136,13 @@ wlc_airiq_3p1_upgrade_phy(airiq_info_t *airiqh)
 	wlc_info_t *wlc = airiqh->wlc;
 	phy_info_t *pi = (phy_info_t *) WLC_PI(wlc);
 
-	wlc_mute(wlc, ON, PHY_MUTE_FOR_PREISM);
+	wlc_suspend_mac_and_wait(wlc);
+
 	phy_ac_chanmgr_set_val_phymode(PHY_AC_CHANMGR(pi), 0);
 
-	airiqh->upgrade_pending = FALSE;
-	wlc_mute(wlc, OFF, PHY_MUTE_FOR_PREISM);
+	wlc_enable_mac(wlc);
 
-	/* enable periodic calibration */
-	phy_wd_override(pi, TRUE);
+	airiqh->upgrade_pending = FALSE;
 
 	WL_AIRIQ(("wl%d: %s: upgraded phy to 4x4\n", WLCWLUNIT(wlc), __FUNCTION__));
 	ASSERT(airiqh->phy_mode == 0);
@@ -304,6 +301,12 @@ wlc_airiq_3p1_upgrade_wlc(wlc_info_t *wlc)
 			/* Try next link if this one's already at max possible chains */
 			if (nss >= max_nss)
 				continue;
+
+			if (wlc->stf->core3_p1c && nss >= 3) {
+				WL_MODE_SWITCH(("wl%d bsscfg:%d: P1C configuration currnss=%d\n",
+					wlc->pub->unit,bsscfg->_idx, nss));
+				continue;
+			}
 			/* Else fall through to announce we're returning the scan chain
 			 * back to the data path
 			 */
@@ -369,6 +372,13 @@ wlc_airiq_3p1_downgrade_wlc(wlc_info_t *wlc)
 			/* Try next link if this one already has free chains */
 			if (nss == (max_nss - 1))
 				continue;
+			WL_MODE_SWITCH(("%s: core3_p1c=%d nss=%d max_nss=%d hw_txchain=%d op_rxstreams=%d\n",
+				__FUNCTION__, wlc->stf->core3_p1c, nss, max_nss, wlc->stf->hw_txchain, wlc->stf->op_rxstreams));
+			if (wlc->stf->core3_p1c && nss >= 3) {
+				WL_MODE_SWITCH(("wl%d bsscfg:%d: P1C configuration currnss=%d\n",
+					wlc->pub->unit,bsscfg->_idx, nss));
+				continue;
+			}
 			/* Else fall through to announce we're taking a chain from
 			 * the data path (for custom scanning)
 			 */

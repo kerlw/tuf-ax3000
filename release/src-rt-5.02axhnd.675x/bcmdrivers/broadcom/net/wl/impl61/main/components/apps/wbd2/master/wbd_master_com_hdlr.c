@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_master_com_hdlr.c 777334 2019-07-29 08:58:01Z $
+ * $Id: wbd_master_com_hdlr.c 779933 2019-10-10 09:42:10Z $
  */
 
 #include "wbd.h"
@@ -171,6 +171,9 @@ wbd_master_process_logs_cli_cmd_data(wbd_info_t *info,
 static void
 wbd_master_process_logs_cli_cmd(wbd_com_handle *hndl, int childfd,
 	void *cmddata, void *arg);
+/* Processes the BH OPT command */
+static void
+wbd_master_process_bh_opt_cli_cmd(wbd_com_handle *hndl, int childfd, void *cmddata, void *arg);
 /* Callback for exception from communication handler for master server */
 static void
 wbd_master_com_server_exception(wbd_com_handle *hndl, void *arg, WBD_COM_STATUS status);
@@ -1869,15 +1872,16 @@ int wbd_master_check_regclass_channel_invalid(uint8 chan,
 		if (regclass != cp->rc_map[i].regclass) {
 			continue;
 		}
-		if (cp->rc_map[i].pref != 0) {
-			break;
-		}
-		if (cp->rc_map[i].count == 0) {
+
+		/* If there is no channels and preference is 0, then its invalid channel */
+		if (cp->rc_map[i].count == 0 && cp->rc_map[i].pref == 0) {
 			return 1;
 		}
+
+		/* search for channel. If the preference is 0 then its invalid channel */
 		for (j = 0; j < cp->rc_map[i].count; j++) {
 			if (chan == cp->rc_map[i].channel[j]) {
-				return 1;
+				return ((cp->rc_map[i].pref == 0) ? 1 : 0);
 			}
 		}
 		break;
@@ -3071,6 +3075,49 @@ wbd_master_process_logs_cli_cmd(wbd_com_handle *hndl, int childfd, void *cmddata
 	return;
 }
 
+/* Processes the BH OPT command */
+static void
+wbd_master_process_bh_opt_cli_cmd(wbd_com_handle *hndl, int childfd, void *cmddata, void *arg)
+{
+	wbd_cli_send_data_t *clidata = (wbd_cli_send_data_t*)cmddata;
+	wbd_info_t *info = (wbd_info_t*)arg;
+	int ret = WBDE_OK;
+	char *outdata = NULL;
+	int outlen = WBD_MAX_BUF_64;
+
+	outdata = (char*)wbd_malloc(outlen, &ret);
+	WBD_ASSERT();
+
+	/* Validate arg */
+	WBD_ASSERT_ARG(info, WBDE_INV_ARG);
+
+	/* Validate Message data */
+	WBD_ASSERT_MSGDATA(clidata, "BH_OPT_CLI");
+
+	if (clidata->disable == 1) {
+		info->wbd_master->flags &= ~WBD_FLAGS_BKT_BH_OPT_ENABLED;
+		WBD_INFO("Disabling backhaul optimizaion\n");
+	} else {
+		info->wbd_master->flags |= WBD_FLAGS_BKT_BH_OPT_ENABLED;
+		WBD_INFO("Enabling backhaul optimizaion\n");
+	}
+
+end:
+	if (outdata) {
+		snprintf(outdata, outlen, "%s. %s\n", wbderrorstr(ret),
+			(WBD_BKT_BH_OPT_ENAB(info->wbd_master->flags) ? "Enabled" : "Disabled"));
+		if (wbd_com_send_cmd(hndl, childfd, outdata, NULL) != WBDE_OK) {
+			WBD_WARNING("BH_OPT CLI : %s\n", wbderrorstr(WBDE_SEND_RESP_FL));
+		}
+		free(outdata);
+	}
+	if (clidata) {
+		free(clidata);
+	}
+
+	return;
+}
+
 /* Gets Master NVRAM settings based on primary prefix */
 static int
 wbd_master_retrieve_prefix_nvram_config(wbd_master_info_t *master, uint8 band)
@@ -3709,6 +3756,9 @@ wbd_master_register_server_command(wbd_info_t *info)
 
 	wbd_com_register_cmd(info->com_cli_hdl, WBD_CMD_CLI_MSGLEVEL,
 		wbd_process_set_msglevel_cli_cmd, info, wbd_json_parse_cli_cmd);
+
+	wbd_com_register_cmd(info->com_cli_hdl, WBD_CMD_CLI_BHOPT,
+		wbd_master_process_bh_opt_cli_cmd, info, wbd_json_parse_cli_cmd);
 
 	return WBDE_OK;
 }

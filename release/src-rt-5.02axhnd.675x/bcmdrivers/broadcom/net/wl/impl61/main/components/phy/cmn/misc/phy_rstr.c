@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_rstr.c 775037 2019-05-16 02:01:47Z $
+ * $Id: phy_rstr.c 778770 2019-09-10 09:50:17Z $
  */
 
 #include <typedefs.h>
@@ -405,6 +405,7 @@ const char BCMATTACHDATA(rstr_sw_rxchain_mask)[] = "sw_rxchain_mask";
 const char BCMATTACHDATA(rstr_pagc5g)[] = "pagc5g";
 const char BCMATTACHDATA(rstr_rpcal2g)[] = "rpcal2g";
 const char BCMATTACHDATA(rstr_rpcal2gcore3)[] = "rpcal2gcore3";
+const char BCMATTACHDATA(rstr_rpcal_phase2g)[] = "rpcal_phase2g";
 const char BCMATTACHDATA(rstr_femctrl)[] = "femctrl";
 const char BCMATTACHDATA(rstr_papdmode)[] = "papdmode";
 const char BCMATTACHDATA(rstr_pdgain2g)[] = "pdgain2g";
@@ -423,6 +424,10 @@ const char BCMATTACHDATA(rstr_rpcal5gb0core3)[] = "rpcal5gb0core3";
 const char BCMATTACHDATA(rstr_rpcal5gb1core3)[] = "rpcal5gb1core3";
 const char BCMATTACHDATA(rstr_rpcal5gb2core3)[] = "rpcal5gb2core3";
 const char BCMATTACHDATA(rstr_rpcal5gb3core3)[] = "rpcal5gb3core3";
+const char BCMATTACHDATA(rstr_rpcal_phase5gb0)[] = "rpcal_phase5gb0";
+const char BCMATTACHDATA(rstr_rpcal_phase5gb1)[] = "rpcal_phase5gb1";
+const char BCMATTACHDATA(rstr_rpcal_phase5gb2)[] = "rpcal_phase5gb2";
+const char BCMATTACHDATA(rstr_rpcal_phase5gb3)[] = "rpcal_phase5gb3";
 const char BCMATTACHDATA(rstr_txidxcap2g)[] = "txidxcap2g";
 const char BCMATTACHDATA(rstr_txidxcap5g)[] = "txidxcap5g";
 const char BCMATTACHDATA(rstr_txidxmincap2g)[] = "txidxmincap2g";

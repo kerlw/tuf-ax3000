@@ -232,6 +232,9 @@
 #include <wlc_mbo.h>
 #endif /* WL_MBO && !WL_MBO_DISABLED ** MBO_AP */
 #include <wlc_mfp.h>
+#ifdef PROP_TXSTATUS
+#include <wlc_wlfc.h>
+#endif /* PROP_TXSTATUS */
 
 /* shared wlc module info */
 typedef struct wlc_assoc_cmn {
@@ -8858,6 +8861,13 @@ wlc_assoc_success(wlc_bsscfg_t *cfg, struct scb *scb)
 		wlc_wnm_scb_assoc(wlc, scb);
 	}
 #endif /* WLWNM */
+#ifdef PROP_TXSTATUS
+	/* open flowring for this scb */
+	if (PROP_TXSTATUS_ENAB(wlc->pub)) {
+		wlc_update_scb_bus_flctl(wlc, scb, WLFC_CTL_TYPE_MAC_OPEN);
+	}
+#endif	/* PROP_TXSTATUS */
+
 } /* wlc_assoc_success */
 
 static void
@@ -11905,6 +11915,7 @@ wlc_deauth_sendcomplete(wlc_info_t *wlc, uint txstatus, void *arg)
 		 * (For example wlc_cfp_scb_state_upd)
 		 */
 		SCB_MARK_DEL(scb);
+		wlc_scb_disassoc_cleanup(wlc, scb);
 		wlc_scb_clearstatebit(wlc, scb, AUTHENTICATED | ASSOCIATED | AUTHORIZED);
 
 	}
@@ -14754,6 +14765,9 @@ wlc_join_pref_dump(void *ctx, wlc_bsscfg_t *cfg, struct bcmstrbuf *b)
 	uint i;
 
 	BCM_REFERENCE(ctx);
+
+	if (!WL_ERROR_ON())
+		return;
 
 	if ((ctx == NULL) || (cfg == NULL) || (cfg->join_pref == NULL)) {
 		return;

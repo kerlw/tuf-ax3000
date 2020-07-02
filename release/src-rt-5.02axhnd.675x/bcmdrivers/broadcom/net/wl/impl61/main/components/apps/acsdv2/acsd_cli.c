@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: acsd_cli.c 776039 2019-06-18 07:31:03Z $
+ * $Id: acsd_cli.c 779763 2019-10-07 08:51:14Z $
  */
 
 #include <stdio.h>
@@ -155,6 +155,8 @@ acsd_variables[] = {	/* Sorted alphabetically for nicer help display */
 	"zdfs_2g_move",		/* use ZDFS_2G and move on success */
 	"zdfs_5g_preclear",	/* use ZDFS_5G but not move - ETSI only */
 	"zdfs_2g_preclear",	/* use ZDFS_2G but not move - ETSI only */
+	"bw_upgradable",
+	"fallback_to_primary",
 	NULL
 };
 

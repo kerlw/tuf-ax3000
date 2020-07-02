@@ -41,7 +41,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: acs.c 776254 2019-06-24 06:20:23Z $
+ * $Id: acs.c 779769 2019-10-07 10:14:09Z $
  */
 
 #include <stdio.h>
@@ -384,7 +384,7 @@ void acs_set_initial_chanspec(acs_chaninfo_t *c_info)
 }
 
 static int
-acs_start(char *name, acs_chaninfo_t *c_info)
+acs_start(char *name, acs_chaninfo_t *c_info, int skip_init_acs)
 {
 	int unit;
 	char prefix[PREFIX_LEN], tmp[100];
@@ -411,6 +411,7 @@ acs_start(char *name, acs_chaninfo_t *c_info)
 
 	rsi = &c_info->rs_info;
 	acs_get_rs_info(c_info, prefix);
+	if (!skip_init_acs)
 	acs_set_initial_chanspec(c_info);
 
 	if (rsi->pref_chspec == 0) {
@@ -476,9 +477,11 @@ acs_start(char *name, acs_chaninfo_t *c_info)
 		acs_update_dyn160_status(c_info);
 	}
 
-	ret = acs_run_cs_scan(c_info);
-	if (ret < 0)
-	ACSD_WARNING("%s: cs scan failed\n", c_info->name);
+	if (!(c_info->wet_enabled && acs_check_assoc_scb(c_info))) {
+		ret = acs_run_cs_scan(c_info);
+		if (ret < 0)
+		ACSD_WARNING("%s: cs scan failed\n", c_info->name);
+	}
 
 	ACS_FREE(c_info->acs_bss_info_q);
 
@@ -731,7 +734,7 @@ acs_adjust_ctrl_chan(acs_chaninfo_t *c_info, chanspec_t chspec)
 	ACSD_INFO("%s: selected sb: %d\n", c_info->name, selected_sb);
 	selected &=  ~(WL_CHANSPEC_CTL_SB_MASK);
 	selected |= (selected_sb << WL_CHANSPEC_CTL_SB_SHIFT);
-	ACSD_INFO("%s: Final selected chanspec: 0x%4x\n", c_info->name, selected);
+	ACSD_INFO("%s: Final selected chanspec: 0x%04x\n", c_info->name, selected);
 	return selected;
 }
 /* return TRUE if ACSD is in AP mode else return FALSE
@@ -913,7 +916,7 @@ acs_init_run(acs_info_t ** acs_info_p)
 		} else {
 			continue;
 		}
-		ret = acs_start(name, c_info);
+		ret = acs_start(name, c_info, skip_init_acs);
 
 		if (ret) {
 			ACSD_ERROR("acs_start failed for ifname: %s\n", name);
@@ -930,14 +933,17 @@ acs_init_run(acs_info_t ** acs_info_p)
 		if ((AUTOCHANNEL(c_info) || COEXCHECK(c_info)) &&
 			!(c_info->wet_enabled && acs_check_assoc_scb(c_info))) {
 
-			if (skip_init_acs)
-				continue;
-
 			/* First call to pick the chanspec for exit DFS chan */
 			c_info->switch_reason = APCS_INIT;
 
 			/* call to pick up init cahnspec */
 			acs_select_chspec(c_info);
+
+			if (skip_init_acs) {
+				ACSD_INFO("%s: skip init ACS for linkage with AVBLCHAN\n", c_info->name);
+				continue;
+			}
+
 			/* Other APP can request to change the channel via acsd, in that
 			 * case proper reason will be provided by requesting APP, For ACSD
 			 * USE_ACSD_DEF_METHOD: ACSD's own default method to set channel
@@ -1001,27 +1007,52 @@ acs_update_status(acs_chaninfo_t * c_info)
 {
 	int ret = 0;
 	int cur_chspec;
+	chanim_info_t * ch_info = c_info->chanim_info;
+	uint8 cur_idx = chanim_mark(ch_info).record_idx;
+	uint8 start_idx;
+	chanim_acs_record_t *start_record;
 
 	ret = wl_iovar_getint(c_info->name, "chanspec", &cur_chspec);
 	ACS_ERR(ret, "acs get chanspec failed\n");
 
+	cur_chspec = (chanspec_t)dtoh32(cur_chspec);
 	/* return if the channel hasn't changed */
-	if ((chanspec_t)dtoh32(cur_chspec) == c_info->cur_chspec) {
+	if (CHSPEC_CHANNEL(cur_chspec) == CHSPEC_CHANNEL(c_info->cur_chspec)) {
 		return ret;
 	}
 
 	/* To add a acs_record when finding out channel change isn't made by ACSD */
-	c_info->cur_chspec = (chanspec_t)dtoh32(cur_chspec);
+	c_info->cur_chspec = cur_chspec;
 	c_info->cur_is_dfs = acs_is_dfs_chanspec(c_info, cur_chspec);
 	c_info->cur_is_dfs_weather = acs_is_dfs_weather_chanspec(c_info, cur_chspec);
 	c_info->is160_bwcap = WL_BW_CAP_160MHZ((c_info->rs_info).bw_cap);
 
-	if (c_info->selected_chspec != c_info->cur_chspec) {
+	if (CHSPEC_CHANNEL(c_info->selected_chspec) != CHSPEC_CHANNEL(c_info->cur_chspec)) {
+		ACSD_INFO("%s selected_chspec: 0x%04x != 0x%04x :cur_chspec\n", c_info->name,
+				c_info->selected_chspec, c_info->cur_chspec);
 		chanim_upd_acs_record(c_info->chanim_info, c_info->cur_chspec, APCS_NONACSD);
+		acs_update_bw_status(c_info);
+		c_info->recent_prev_chspec = c_info->selected_chspec;
+		c_info->selected_chspec = c_info->cur_chspec;
+		c_info->acs_prev_chan_at = uptime();
 	}
 
-	acs_dfsr_chanspec_update(ACS_DFSR_CTX(c_info), c_info->cur_chspec,
-			__FUNCTION__, c_info->name);
+	start_idx = MODSUB(cur_idx, 1, CHANIM_ACS_RECORD);
+	start_record = &ch_info->record[start_idx];
+	/* Avoiding the duplicate entries only if cur_chspec and start_record->selected_chspec
+	 * are same else adding the entry into acs_record.
+	 */
+	if ((c_info->switch_reason_type == APCS_DFS_REENTRY) && c_info->cur_is_dfs &&
+			CHSPEC_CHANNEL(start_record->selected_chspc) !=
+			CHSPEC_CHANNEL(c_info->cur_chspec)) {
+		chanim_upd_acs_record(c_info->chanim_info, c_info->cur_chspec, APCS_DFS_REENTRY);
+		c_info->switch_reason_type = 0;
+	}
+
+	if (AUTOCHANNEL(c_info)) {
+		acs_dfsr_chanspec_update(ACS_DFSR_CTX(c_info), c_info->cur_chspec,
+				__FUNCTION__, c_info->name);
+	}
 
 	ACSD_INFO("%s: chanspec: 0x%x is160_bwcap %d is160_upgradable %d, is160_downgradable %d\n",
 		c_info->name, c_info->cur_chspec, c_info->is160_bwcap,
@@ -1066,6 +1097,52 @@ acs_update_dyn160_status(acs_chaninfo_t * c_info)
 	ACSD_INFO("%s phy_dyn_switch: %d is160_upgradable %d is160_downgradable %d \n",
 		c_info->name, c_info->phy_dyn_switch, c_info->is160_upgradable,
 		c_info->is160_downgradable);
+
+	return BCME_OK;
+}
+
+/* Marks c_info->bw_upgradable to TRUE if bw_cap is higher than current channel bandwidth.
+ * Avoids when dyn160 or other forms of OMN are in progress.
+ * Returns zero on sucess, non-zero (negative) values on error.
+ */
+int
+acs_update_bw_status(acs_chaninfo_t * c_info)
+{
+	bool maxed_bwcap = ACS_CHSPEC_MAXED_BWCAP(c_info->cur_chspec, c_info->rs_info.bw_cap);
+
+	c_info->bw_upgradable = FALSE;
+
+	if (!c_info->cur_chspec) {
+		return BCME_OK;
+	}
+
+	if (maxed_bwcap) {
+		ACSD_DEBUG("%s maxed_bwcap:%d, cur_chspec:0x%04x, bw_cap:0x%02x\n", c_info->name,
+				maxed_bwcap, c_info->cur_chspec, c_info->rs_info.bw_cap);
+		return BCME_OK;
+	}
+	/* if dyn160 capable, do not upgrade BW here */
+	if (c_info->dyn160_cap && c_info->is160_bwcap) {
+		ACSD_DEBUG("%s dyn160_cap:%d, is160_bwcap:%d\n", c_info->name,
+				c_info->dyn160_cap, c_info->is160_bwcap);
+		return BCME_OK;
+	}
+
+	/* if oper_mode fetch fails, do not allow BW upgrade */
+	if (acs_update_oper_mode(c_info) != BCME_OK) {
+		ACSD_INFO("%s could not update oper_mode\n", c_info->name);
+		return BCME_ERROR;
+	}
+
+	/* if oper_mode is enabled (in progress), do not allow BW upgrade */
+	if (ACS_OP_IS_ENABLED(c_info->oper_mode)) {
+		ACSD_INFO("%s oper_mode is enabled 0x%04x\n", c_info->name, c_info->oper_mode);
+		return BCME_OK;
+	}
+
+	c_info->bw_upgradable = !ACS_CHSPEC_MAXED_BWCAP(c_info->cur_chspec, c_info->rs_info.bw_cap);
+
+	ACSD_INFO("%s bw_upgradable:%d\n", c_info->name, c_info->bw_upgradable);
 
 	return BCME_OK;
 }

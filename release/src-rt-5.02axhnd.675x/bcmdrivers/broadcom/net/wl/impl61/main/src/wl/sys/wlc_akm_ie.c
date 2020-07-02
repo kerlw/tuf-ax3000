@@ -2253,6 +2253,7 @@ wlc_akm_arq_parse_rsn_ie(void *ctx, wlc_iem_parse_data_t *data)
 #ifdef BCMDBG
 			WL_ERROR(("wl%d: %s: tlvs_len=%d\n",
 			          wlc->pub->unit, __FUNCTION__, data->ie_len));
+			if (WL_ERROR_ON())
 			prhex("All TLVs IE data", data->ie, data->ie_len);
 #endif /* BCMDBG */
 			return BCME_ERROR;

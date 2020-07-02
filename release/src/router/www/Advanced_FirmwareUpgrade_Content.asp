@@ -489,6 +489,7 @@ function detect_update(){
 		}
 		else{
 			document.start_update.action_mode.value="apply";
+			document.start_update.webs_update_trigger.value="AFC.asp";
 			document.start_update.action_script.value="start_webs_update";
 			document.start_update.submit();
 		}
@@ -501,6 +502,7 @@ function detect_update(){
 				((first_link_status == "2" && first_link_auxstatus == "0") || (first_link_status == "2" && first_link_auxstatus == "2")) ||
 				((secondary_link_status == "2" && secondary_link_auxstatus == "0") || (secondary_link_status == "2" && secondary_link_auxstatus == "2"))){
 		document.start_update.action_mode.value="apply";
+		document.start_update.webs_update_trigger.value="AFC.asp";
 		document.start_update.action_script.value="start_webs_update";
 		document.getElementById('update_states').style.display="";
 		document.getElementById('update_states').innerHTML="<#check_proceeding#>";
@@ -722,7 +724,7 @@ function update_sig_ver(){
     		document.getElementById("sig_update_date").innerHTML = "";
     		document.getElementById("sig_update_scan").style.display = "none";
 			document.getElementById("sig_check").disabled = false;
-    		$("#sig_status").html("Signature update completely");	/* Untranslated */
+    		$("#sig_status").html("Signature update completed.");	/* Untranslated */
     		$("#sig_ver_word").html(sig_ver);
   		}
   	});
@@ -985,7 +987,7 @@ function check_fw_relese_note_status() {
 			success: function() {
 				switch(cfg_note) {
 					case "0" :
-						check_fw_relese_note_status();
+						setTimeout(function(){check_fw_release_note_status();}, 1000);
 						break;
 					case "1" :
 						show_fw_relese_note_result(true);
@@ -999,16 +1001,18 @@ function check_fw_relese_note_status() {
 		});
 	}
 }
-function show_fw_relese_note_result(_status) {
-	if($(".confirm_block").children().find("#status_iframe").contents().find("#amas_relese_note").length == 0)
-		show_fw_relese_note_result(_status);
+function show_fw_release_note_result(_status) {
+	/*if($(".confirm_block").children().find("#status_iframe").contents().find("#amas_release_note").length == 0)
+		show_fw_release_note_result(_status);*/
 
 	if(_status) {
-		$(".confirm_block").children().find("#status_iframe").attr("src", "get_release_note_amas.asp");//reload
+		$(".confirm_block").children().find("#status_iframe").attr("src", "get_release_note_amas.asp?flag=1");//reload and flag_show
+		$(".confirm_block").children().find("#status_iframe").load();
+		/*
 		$(".confirm_block").children().find("#status_iframe").load(function() {
-			$(".confirm_block").children().find("#status_iframe").contents().find("#amas_relese_note").css("display", "");
-			$(".confirm_block").children().find("#status_iframe").contents().find("#amas_relese_note_hint").css("display", "none");
-		});
+			$(".confirm_block").children().find("#status_iframe").contents().find("#amas_release_note").css("display", "");
+			$(".confirm_block").children().find("#status_iframe").contents().find("#amas_release_note_hint").css("display", "none");
+		});*/
 	}
 	else
 		$(".confirm_block").children().find("#status_iframe").contents().find("#amas_relese_note_hint").val("Fail to grab release note");/* untranslated */
@@ -1320,6 +1324,7 @@ function check_AiMesh_fw_version(_fw) {
 <input type="hidden" name="action_mode" value="">
 <input type="hidden" name="action_script" value="">
 <input type="hidden" name="action_wait" value="">
+<input type="hidden" name="webs_update_trigger" value="">
 </form>
 <form method="post" name="sig_update" action="/start_apply.htm" target="hidden_frame">
 <input type="hidden" name="productid" value="<% nvram_get("productid"); %>">

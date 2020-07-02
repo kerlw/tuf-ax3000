@@ -3438,6 +3438,7 @@ wlc_cfp_rxframe(wlc_info_t *wlc, void* p)
 			PKTISRXCORRUPTED(wlc->osh, p)));
 
 		/* Dump the packet */
+		if (WL_ERROR_ON())
 		prhex("Pkt dump", PKTDATA(wlc->osh, p), PKTLEN(wlc->osh, p));
 
 		PKTFREE(wlc->osh, p, FALSE);

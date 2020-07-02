@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: d11.h 778068 2019-08-21 22:05:05Z $
+ * $Id: d11.h 780059 2019-10-15 02:58:47Z $
  */
 
 #ifndef	_D11_H
@@ -189,7 +189,8 @@ typedef struct {
 #define	MCTL_DISCARD_PMQ	(1 << 30)
 #define	MCTL_DISCARD_TXSTATUS	(1 << 29)
 #define	MCTL_TBTT_HOLD		(1 << 28)
-#define	MCTL_CLOSED_NETWORK	(1 << 27)
+#define	MCTL_FRCHAN		(1 << 27) /* corerev ge128 only */
+#define MCTL_CLOSED_NETWORK	(1 << 27) /* corerev < 128 */
 #define	MCTL_WAKE		(1 << 26)
 #define	MCTL_HPS		(1 << 25)
 #define	MCTL_PROMISC		(1 << 24)
@@ -214,12 +215,13 @@ typedef struct {
 
 /* maccontrol_x register, rev128 */
 #define	MCTLX_UPDPEND		MCTL_INFRA
+#define	MCTLX_FRCHAN		MCTL_FRCHAN
 
 #if defined(WL_PSMR1)
 /* Mask of valid MCTL bits */
 #define MCTL_PSMR1_MASK (\
 		MCTL_GMODE | MCTL_DISCARD_PMQ | \
-		MCTL_CLOSED_NETWORK | MCTL_WAKE | MCTL_HPS | \
+		MCTL_CLOSED_NETWORK | MCTL_FRCHAN | MCTL_WAKE | MCTL_HPS | \
 		MCTL_PROMISC | MCTL_KEEPBADFCS | MCTL_KEEPCONTROL | \
 		MCTL_AP | MCTL_INFRA | MCTL_BIGEND | \
 		MCTL_EN_PSMDBG | MCTL_IHR_EN | MCTL_SHM_UPPER | \
@@ -1444,6 +1446,8 @@ BWL_PRE_PACKED_STRUCT struct d11ulotxd_rev128 {
 					D11_ULOTXD_UCFG_NSS_SHIFT)
 #define D11_ULOTXD_UCFG_SET_MCSNSS(a, v) ((a) = ((a) & ~D11_ULOTXD_UCFG_MCSNSS_MASK) | (((v) << \
 					D11_ULOTXD_UCFG_MCS_SHIFT) & D11_ULOTXD_UCFG_MCSNSS_MASK))
+#define D11_ULOTXD_UCFG_GET_MCSNSS(a)	(((a) & D11_ULOTXD_UCFG_MCSNSS_MASK) >> \
+					D11_ULOTXD_UCFG_MCS_SHIFT)
 #define D11_ULOTXD_UCFG_SET_TRSSI(a, v)	((a) = ((a) & ~D11_ULOTXD_UCFG_TRSSI_MASK) | (((v) << \
 					D11_ULOTXD_UCFG_TRSSI_SHIFT) & D11_ULOTXD_UCFG_TRSSI_MASK))
 #define D11_ULOTXD_UCFG_GET_TRSSI(a)	(((a) & D11_ULOTXD_UCFG_TRSSI_MASK) >> \
@@ -2512,6 +2516,7 @@ BWL_PRE_PACKED_STRUCT struct shm_acparams {
 #define MHF4_BPHY_2TXCORES	0x0040	/**< bphy Tx on both cores (negative logic) */
 #define MHF4_BPHY_TXCORE0	0x0080	/**< force bphy Tx on core 0 (board level WAR) */
 #define MHF4_NOPHYHANGWAR	0x0100  /**< disable ucode WAR for idletssi cal */
+#define MHF4_CLOSED_NETWORK	0x0100  /**< rev ge128 only, enable closed network */
 #define MHF4_WMAC_ACKTMOUT	0x0200	/**< reserved for WMAC testing */
 #define MHF4_NAPPING_ENABLE	0x0400	/**< Napping enable */
 #define MHF4_MAC_AIDED_WAR	0x0400	/**< ULOFDMA MAC-aided WAR enable */
@@ -3417,7 +3422,6 @@ enum prxs_subband_bphy {
 
 /* ucode RxStatus1: */
 #define	RXS_BCNSENT		0x8000
-#define	RXS_TOFINFO		0x4000		/**< Rxed measurement frame processed by ucode */
 #define	RXS_GRANTBT		0x2000		/* Indicate medium given to BT */
 #define	RXS_SECKINDX_MASK(rev)	(D11REV_GE((rev), 64) ? 0x1FE0 : 0x07E0)
 #define	RXS_SECKINDX_SHIFT	5
@@ -3447,6 +3451,10 @@ enum prxs_subband_bphy {
 #define RXS_RXANT_MASK		0x3
 #define RXS_RXANT_SHIFT_LT80	12
 #define RXS_RXANT_SHIFT_GE80	5
+
+#define RXS_TOF_AVB_INDEX_MASK	0x7
+#define RXS_TOF_AVB_INDEX_SHIFT	12
+#define	RXS_TOFINFO		0x8000		/**< Rxed measurement frame processed by ucode */
 
 /* Bit definitions for MRXS word for short rx status. */
 /* RXSS = RX Status Short */
@@ -4917,21 +4925,23 @@ typedef enum {
 #define M_UCODE_F3_AVB_BIT	2 /* part of features_3 shm */
 #define M_UCODE_F3_SEQ_BIT	3 /* part of features_3 shm */
 
-#define FTM_TXSTATUS_ACK_RSPEC_BLOCK_MASK	0xFF
+#define FTM_TXSTATUS_ACK_RSPEC_BLOCK_MASK	0x1FF
 #define FTM_TXSTATUS_ACK_RSPEC_BW_MASK		0x3
-#define FTM_TXSTATUS_ACK_RSPEC_BW_SHIFT		2
+#define FTM_TXSTATUS_ACK_RSPEC_BW_SHIFT		0
 #define FTM_TXSTATUS_ACK_RSPEC_BW_20		0
 #define FTM_TXSTATUS_ACK_RSPEC_BW_40		1
 #define FTM_TXSTATUS_ACK_RSPEC_BW_80		2
 #define FTM_TXSTATUS_ACK_RSPEC_BW_160		3
-#define FTM_TXSTATUS_ACK_RSPEC_TYPE_SHIFT	4
+#define FTM_TXSTATUS_ACK_RSPEC_TYPE_SHIFT	2
 #define FTM_TXSTATUS_ACK_RSPEC_TYPE_MASK	0x7
 #define FTM_TXSTATUS_ACK_RSPEC_TYPE_CCK		0
 #define FTM_TXSTATUS_ACK_RSPEC_TYPE_LEG		1 /* Legacy */
 #define FTM_TXSTATUS_ACK_RSPEC_TYPE_HT		2
 #define FTM_TXSTATUS_ACK_RSPEC_TYPE_VHT		3
 #define FTM_TXSTATUS_ACK_RSPEC_TYPE_HE		4
-#define FTM_TXSTATUS_ACK_RSPEC_RATE_6M(ackword)	(ackword >> 7)
+#define FTM_TXSTATUS_ACK_RSPEC_RATE_SHIFT	5
+#define FTM_TXSTATUS_ACK_RSPEC_RATE_MASK	0xF
+#define FTM_TXSTATUS_ACK_RSPEC_RATE_6M(ackword)	(ackword == 0xB)
 
 /* Following are the offsets in M_DRVR_UCODE_IF_PTR block. Start address of
  * M_DRVR_UCODE_IF_PTR block is present in M_DRVR_UCODE_IF_PTR.
@@ -5181,4 +5191,5 @@ enum {
 #define WAR_COREVMINOR_SHIFT 14
 
 #define D11_UCX2R_CONS_MASK	0xf
+
 #endif	/* _D11_H */

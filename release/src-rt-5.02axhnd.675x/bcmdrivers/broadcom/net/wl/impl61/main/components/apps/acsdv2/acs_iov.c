@@ -44,7 +44,7 @@
  *	OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *	NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_iov.c 777838 2019-08-13 06:42:07Z $
+ *	$Id: acs_iov.c 779763 2019-10-07 08:51:14Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -291,7 +291,7 @@ acs_update_oper_mode(acs_chaninfo_t * c_info)
 		return ret;
 	}
 	c_info->oper_mode = (uint16) oper_mode;
-	ACSD_INFO("%s read oper_mode succeeded 0x%02x\n", c_info->name, oper_mode);
+	ACSD_DEBUG("%s read oper_mode succeeded 0x%02x\n", c_info->name, oper_mode);
 
 	return ret;
 }

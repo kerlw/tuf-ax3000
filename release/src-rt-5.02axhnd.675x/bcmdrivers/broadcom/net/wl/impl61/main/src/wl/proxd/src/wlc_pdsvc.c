@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: wlc_pdsvc.c 777979 2019-08-19 23:14:13Z $
+ * $Id: wlc_pdsvc.c 779958 2019-10-10 22:22:02Z $
  */
 
 #include <typedefs.h>
@@ -93,6 +93,7 @@
 #if defined(WLRSDB) && defined(WL_RANGE_SEQ)
 #include<wlc_rsdb.h>
 #endif /* WLRSDB && WL_RANGE_SEQ */
+#include <wlc_ratelinkmem.h>
 
 #define PROXD_NAME "proxd"
 
@@ -647,8 +648,8 @@ wlc_proxd_AVB_clock_factor(wlc_pdsvc_info_t* pdsvc, uint8 shift, uint32 *ki, uin
 		/* FVCO = 50 * 58.14009476 / 1 = 2907.00474MHz */
 		/* factor = (1000/2907.00474)ns =  0.343996687 << 15 (TOF_SHIFT) */
 		/** AVB Clock =  */
-		factor = 11272;
-	} else if (CHIPID(pdsvc->wlc->pub->sih->chip) == BCM43684_CHIP_ID) {
+		factor = 136533;
+	} else if ((BCM43684_CHIP(pdsvc->wlc->pub->sih->chip))) {
 		/* Considering the default settings for 43684 avoidance mode */
 		/* i_pdiv (pre-divider) = 1 */
 		/* FVCO = xtal (54) * (integer + fractional) */
@@ -657,7 +658,7 @@ wlc_proxd_AVB_clock_factor(wlc_pdsvc_info_t* pdsvc, uint8 shift, uint32 *ki, uin
 		/* FVCO = 54 * 53.833415985 / 1 = 2907.004463MHz */
 		/* factor = (1000/2907.004463)ns =  0.34399672 << 15 (TOF_SHIFT) */
 		/** AVB Clock =  */
-		factor = 11272;
+		factor = 136533;
 	} else
 	if ((CHIPID(pdsvc->wlc->pub->sih->chip)) == BCM4360_CHIP_ID ||
 		(CHIPID(pdsvc->wlc->pub->sih->chip)) == BCM4352_CHIP_ID ||
@@ -1279,6 +1280,8 @@ proxd_tx(pdsvc_t *pdsvc, void *pkt, wlc_bsscfg_t *bsscfg, ratespec_t rspec, int 
 	wlc_txq_info_t * qi;
 	struct scb *scb;
 	wlc_pkttag_t *pkttag;
+	bool ret;
+	ratespec_t temp_rspec = pdsvc->wlc->band->rspec_override;
 
 	ASSERT(pdsvc != NULL);
 	ASSERT(pkt != NULL);
@@ -1294,8 +1297,22 @@ proxd_tx(pdsvc_t *pdsvc, void *pkt, wlc_bsscfg_t *bsscfg, ratespec_t rspec, int 
 	else
 		qi = pdsvc->wlc->active_queue;
 
-	return wlc_queue_80211_frag(pdsvc->wlc, pkt, qi, scb,
+	if (rspec && RATELINKMEM_ENAB(pdsvc->wlc->pub)) {
+		pdsvc->wlc->band->rspec_override = rspec;
+		wlc_ratelinkmem_update_rate_entry(pdsvc->wlc,
+			WLC_RLM_SPECIAL_RATE_SCB(pdsvc->wlc), NULL, 0);
+	}
+
+	ret = wlc_queue_80211_frag(pdsvc->wlc, pkt, qi, scb,
 		bsscfg, FALSE, NULL, rspec);
+
+	if (rspec && RATELINKMEM_ENAB(pdsvc->wlc->pub)) {
+		pdsvc->wlc->band->rspec_override = temp_rspec;
+		wlc_ratelinkmem_update_rate_entry(pdsvc->wlc,
+			WLC_RLM_SPECIAL_RATE_SCB(pdsvc->wlc), NULL, 0);
+	}
+
+	return ret;
 }
 
 static wl_proxd_params_tof_tune_t *proxd_init_tune(wlc_info_t *wlc)
@@ -1399,6 +1416,8 @@ wl_proxd_params_tof_tune_t *proxd_get_tunep(wlc_info_t *wlc, uint64 *tq)
 void proxd_enable(wlc_info_t *wlc, bool enable)
 {
 	uint32 gptime = 0;
+	uint16 chip_id = CHIPID(wlc->pub->sih->chip);
+	uint16 val, avb_cap = 0;
 
 	WL_TRACE(("proxd_enable: enable %d, _proxd %d\n", enable, wlc->pub->_proxd));
 	if (wlc->pub->_proxd != enable)
@@ -1406,10 +1425,12 @@ void proxd_enable(wlc_info_t *wlc, bool enable)
 		WL_TRACE(("proxd_enable: set _proxd to %d\n", enable));
 		wlc->pub->_proxd = enable;
 
-		/* For supported AX corerevs (>129), a new ucode needs to be
+		/* For supported AX corerevs that are < 129.2, a new ucode needs to be
 		 * loaded to use PROXD
 		 */
-		if (D11REV_GE(wlc->pub->corerev, 129)) {
+		if (D11REV_IS(wlc->pub->corerev, 129) &&
+			D11MINORREV_LT(wlc->pub->corerev_minor, 2)) {
+
 			WLCNTINCR(wlc->pub->_cnt->reinit);
 
 			/* cache gptime out count */
@@ -1426,7 +1447,27 @@ void proxd_enable(wlc_info_t *wlc, bool enable)
 			 */
 			if (gptime)
 				wlc_hrt_gptimer_set(wlc, gptime);
+		} else {
+			if (D11REV_GE(wlc->pub->corerev, 129)) {
+				avb_cap = wlc_read_shm(wlc, M_UCODE_CAP_H(wlc->hw)) & EAP_FTM_CAP;
+			}
+
+			if (((chip_id == BCM43684_CHIP_ID) ||
+				(chip_id == BCM63178_CHIP_ID) ||
+				(D11REV_GE(wlc->pub->corerev, 65) && avb_cap)) &&
+				PROXD_ENAB(wlc->pub)) {
+				WL_ERROR(("wl%d: %s: proxd ucode tsync enable\n",
+					wlc->pub->unit, __FUNCTION__));
+				wlc->pub->cmn->_proxd_ucode_tsync = TRUE;
+				val = wlc_read_shm(wlc, M_HOST_FLAGS6(wlc->hw));
+				/*
+				3rd TX status not necessary
+				wlc_write_shm(wlc, M_HOST_FLAGS6(wlc->hw), val | MHF6_TSYNC_EN);
+				*/
+			}
 		}
+
+		wlc_enable_avb_timer(wlc->hw, enable);
 	}
 }
 
@@ -1579,27 +1620,22 @@ wlc_proxd_wlc_up(void *context)
 	wlc_pdsvc_info_t *pdsvc = (wlc_pdsvc_info_t *)context;
 	wlc_info_t *wlc = pdsvc->wlc;
 	uint16 val;
-	uint16 tof_cap = 0, avb_cap = 0;
+	uint16 avb_cap = 0;
 	uint16 chip_id = CHIPID(wlc->pub->sih->chip);
 
-	if (D11REV_GE(wlc->pub->corerev, 65)) {
-		/* check if TOF is enabled in ucode */
-		tof_cap = wlc_read_shm(wlc, M_UCODE_FEATURES2(wlc->hw));
-		if (!(tof_cap & (1 << M_UCODE_F2_TOF_BIT))) {
-			OSL_SYS_HALT();
-			return BCME_UNSUPPORTED;
-		}
-		/* get avb cap in ucode */
-		avb_cap = wlc_read_shm(wlc, M_UCODE_FEATURES3(wlc->hw));
-		avb_cap &= (1 << M_UCODE_F3_AVB_BIT);
+	if (D11REV_GE(wlc->pub->corerev, 129)) {
+		avb_cap = wlc_read_shm(wlc, M_UCODE_CAP_H(wlc->hw)) & EAP_FTM_CAP;
 	}
 
-	if ((chip_id == BCM43684_CHIP_ID) ||
+	if (((chip_id == BCM43684_CHIP_ID) ||
 		(chip_id == BCM63178_CHIP_ID) ||
-		(D11REV_GE(wlc->pub->corerev, 65) && avb_cap)) {
+		(D11REV_GE(wlc->pub->corerev, 65) && avb_cap)) && PROXD_ENAB(pdsvc->wlc->pub)) {
 		wlc->pub->cmn->_proxd_ucode_tsync = TRUE;
 		val = wlc_read_shm(wlc, M_HOST_FLAGS6(wlc->hw));
-		wlc_write_shm(wlc, M_HOST_FLAGS6(wlc->hw), val | MHF6_TSYNC_3PKG);
+		/*
+		3rd TX status not necessary
+		wlc_write_shm(wlc, M_HOST_FLAGS6(wlc->hw), val | MHF6_TSYNC_EN);
+		*/
 	}
 #endif /* WL_PROXD_UCODE_TSYNC */
 	return BCME_OK;
@@ -1614,7 +1650,10 @@ wlc_proxd_wlc_down(void *context)
 	uint16 val;
 	if (PROXD_ENAB_UCODE_TSYNC(wlc->pub)) {
 		val = wlc_read_shm(wlc, M_HOST_FLAGS6(wlc->hw));
-		wlc_write_shm(wlc, M_HOST_FLAGS6(wlc->hw), val & ~MHF6_TSYNC_3PKG);
+		/*
+		3rd TX status not necessary
+		wlc_write_shm(wlc, M_HOST_FLAGS6(wlc->hw), val & ~MHF6_TSYNC_EN);
+		*/
 	}
 #endif /* WL_PROXD_UCODE_TSYNC */
 	return BCME_OK;

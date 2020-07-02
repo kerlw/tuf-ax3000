@@ -42,7 +42,7 @@
  * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- * $Id: wlconf.c 777961 2019-08-16 12:32:59Z $
+ * $Id: wlconf.c 780088 2019-10-15 10:03:20Z $
  */
 
 #include <typedefs.h>
@@ -227,6 +227,7 @@
 #define MAP_IS_AGENT(mode)	((mode) & MAP_MODE_FLAG_AGENT)		/* Is Agent */
 #endif /* defined(MULTIAP) || defined(BCM_WBD) */
 
+#define DEFAULT_MAP_BCN_TIMEOUT 3
 #define PSPRETEND_DEFAULT_THRESHOLD 5
 
 #define DPSTA_PRIMARY_AP_IDX (IS_FIRST_WET_BSSIDX + 1)
@@ -3396,6 +3397,25 @@ wlconf(char *name)
 				system(tmp);
 			}
 #endif /* CONFIG_HOSTAPD */
+			if (cap_11ax) {
+				str = nvram_get(strcat_r(bsscfg->prefix, "he_bssaxmode", tmp));
+				if (str) {
+					val = atoi(str);
+					if (val == 0 || val == 1) {
+						WL_HEIOVAR_SETINT(bsscfg->ifname,
+								"he", "bssaxmode", val);
+					}
+				}
+
+				str = nvram_get(strcat_r(bsscfg->prefix, "block_he", tmp));
+				if (str) {
+					val = atoi(str);
+					if (val >= 0 && val <= 2) {
+						WL_IOVAR_SETINT(bsscfg->ifname, "block_he", val);
+					}
+				}
+			}
+
 			strcat_r(bsscfg->prefix, "ssid", tmp);
 			ssid.SSID_len = strlen(nvram_safe_get(tmp));
 			if (ssid.SSID_len > sizeof(ssid.SSID))
@@ -3482,11 +3502,6 @@ wlconf(char *name)
 		WL_IOVAR_SETINT(name, "mac_spoof", 1);
 	}
 	WL_IOVAR_SETINT(name, "wet_enab", wet);
-
-	/* If we are using hostapd/wpa_supplicant, disable the auto-join from driver */
-	if (wet && !nvram_match("hapd_enable", "0")) {
-		WL_IOVAR_SETINT(name, "block_as_retry", 2);
-	}
 
 	/* For STA configurations, configure association retry time.
 	 * Use specified time (capped), or mode-specific defaults.
@@ -4174,7 +4189,12 @@ wlconf(char *name)
 			str = nvram_safe_get(strcat_r(prefix, "bw_switch_160", tmp));
 			/* if nvram is properly set, apply value from nvram to firmware */
 			if (str && str[0] && str[0] >= '0' && str[0] <= '2') {
+#if 1
+				/* always override to 1 to ignore previous FW defeult */
+				val = 1; /* default value to set */
+#else
 				val = atoi(str);
+#endif
 				WL_IOVAR_SETINT(name, "bw_switch_160", (uint32)val);
 				WLCONF_DBG("interface %s set bw_switch_160 to %d\n", name, val);
 			}
@@ -4593,8 +4613,9 @@ wlconf(char *name)
 
 	/* For 11ax device, update he features only if explicitly updated by NVRAM */
 	if (cap_11ax) {
-		val = atoi(nvram_safe_get(strcat_r(prefix, "he_features", tmp)));
-		if (val != -1) {
+		str = nvram_safe_get(strcat_r(prefix, "he_features", tmp));
+		if (str) {
+			val = atoi(str);
 			WL_HEIOVAR_SETINT(name, "he", "features", val);
 		}
 	}
@@ -5033,6 +5054,9 @@ legacy_end:
 		bsscfg = &bclist->bsscfgs[i];
 		wlconf_configure_mbo(bsscfg->ifname, bsscfg->prefix, bsscfg->idx);
 	}
+
+	/* configure MTU */
+
 	/*
 	 * Finally enable BSS Configs or Join BSS
 	 *
@@ -5368,6 +5392,7 @@ wlconf_start(char *name)
 	 */
 	for (i = 0; i < bclist->count; i++) {
 		struct {int bsscfg_idx; int enable;} setbuf;
+		int bcn_timeout;
 
 		setbuf.bsscfg_idx = bclist->bsscfgs[i].idx;
 		setbuf.enable = 0;
@@ -5376,6 +5401,7 @@ wlconf_start(char *name)
 		if (nvram_match(strcat_r(bsscfg->prefix, "bss_enabled", tmp), "1")) {
 			setbuf.enable = 1;
 		}
+		bcn_timeout = atoi(nvram_safe_get(strcat_r(prefix, "bcn_timeout", tmp)));
 
 #ifdef BCM_WBD
 		/* If multiap is enabled and if the interface is STA, try to join to the
@@ -5384,8 +5410,14 @@ wlconf_start(char *name)
 		if ((bsscfg->idx == 0) && (!MAP_IS_DISABLED(map_mode)) && (map & 0x04)) {
 			is_bssid_join = wlconf_wbd_is_bssid_join_possible(name,
 				bsscfg->prefix, &bssid);
+			if (bcn_timeout == 0) {
+				bcn_timeout = DEFAULT_MAP_BCN_TIMEOUT;
+			}
 		} else {
 			is_bssid_join = 0;
+		}
+		if (bcn_timeout) {
+			WL_IOVAR_SETINT(name, "bcn_timeout", bcn_timeout);
 		}
 #endif /* BCM_WBD */
 

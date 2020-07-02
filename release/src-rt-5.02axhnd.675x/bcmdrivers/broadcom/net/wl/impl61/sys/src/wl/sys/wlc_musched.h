@@ -123,4 +123,6 @@ extern void wlc_musched_max_clients_set(wlc_muscheduler_info_t *musched);
 #endif /* WL_MUSCHEDULER */
 bool wlc_musched_scb_isdlofdma_eligible(wlc_muscheduler_info_t *musched, scb_t* scb);
 extern void wlc_umusched_set_fb(wlc_muscheduler_info_t *musched, bool enable);
+extern void wlc_musched_ul_twt_params(wlc_muscheduler_info_t *musched, bool on);
+
 #endif /* _wlc_muscheduler_h_ */

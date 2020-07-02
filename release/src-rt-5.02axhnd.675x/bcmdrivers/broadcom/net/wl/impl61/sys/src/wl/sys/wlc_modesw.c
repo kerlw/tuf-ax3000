@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_modesw.c 776148 2019-06-19 10:35:54Z $
+ * $Id: wlc_modesw.c 779730 2019-10-04 21:11:09Z $
  */
 
 #include <wlc_cfg.h>
@@ -101,6 +101,7 @@
 #ifdef WL_MUSCHEDULER
 #include <wlc_musched.h>
 #endif /* WL_MUSCHEDULER */
+#include <wlc_txbf.h>
 
 enum msw_oper_mode_states {
 	MSW_NOT_PENDING = 0,
@@ -3897,6 +3898,11 @@ wlc_modesw_chansw_opmode_upd_cb(void *arg, wlc_chansw_notif_data_t *data)
 #ifdef WL_MUSCHEDULER
 	wlc_musched_chanspec_upd(wlc);
 #endif /* WL_MUSCHEDULER */
+#ifdef WL_BEAMFORMING
+	if (TXBF_ENAB(wlc->pub)) {
+		wlc_txbf_chanspec_upd(wlc->txbf);
+	}
+#endif // endif
 	WL_MODE_SWITCH(("wl%d: %s, old_cs %x, new_cs %x home_chanspec 0x%x\n",
 			WLCWLUNIT(wlc), __FUNCTION__, old_chspec, new_chspec,
 			wlc->home_chanspec));

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_shared.h 776552 2019-07-02 09:46:49Z $
+ * $Id: wbd_shared.h 779283 2019-09-24 08:30:26Z $
  */
 
 #ifndef _WBD_SHARED_H_
@@ -156,7 +156,8 @@ typedef enum wbd_cli_cmd_type {
 	WBD_CMD_CLI_WEAK_CLIENT,
 	WBD_CMD_CLI_WEAK_CANCEL,
 	WBD_CMD_CLI_LOGS,
-	WBD_CMD_CLI_MSGLEVEL
+	WBD_CMD_CLI_MSGLEVEL,
+	WBD_CMD_CLI_BHOPT
 } wbd_cli_cmd_type_t;
 
 /* Common parameters for all the commands */
@@ -190,6 +191,7 @@ typedef struct wbd_cli_send_data {
 	chanspec_t chanspec;
 	int flags;
 	int msglevel;
+	int disable;
 } wbd_cli_send_data_t;
 
 typedef struct wbd_cmd_common_resp {

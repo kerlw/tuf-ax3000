@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_txiqlocal.c 778100 2019-08-22 14:02:37Z $
+ * $Id: phy_ac_txiqlocal.c 780102 2019-10-15 14:37:12Z $
  */
 
 #include <typedefs.h>
@@ -555,7 +555,7 @@ BCMATTACHFN(phy_ac_txiqlocal_populate_params)(phy_ac_txiqlocal_info_t *iqcal_inf
 		num_cmds_restart_prerx = num_cmds_restart;
 		cmd_refine_prerx_ptr = cmd_restart_ptr;
 		num_cmds_refine_prerx = num_cmds_restart;
-		if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+		if (ACMAJORREV_51(pi->pubpi->phy_rev) || ACMAJORREV_128(pi->pubpi->phy_rev)) {
 			reset_loftcoefs_prerxcal = 1;
 		}
 	} else {
@@ -5195,7 +5195,7 @@ phy_ac_txiqlocal_cmd(phy_ac_txiqlocal_info_t *ti, bool last_phase,
 	uint8 sweep_tone = 0;
 	uint8 tone_idx = 0;
 	uint16 stall_val;
-	txgain_setting_t siso_txgain[PHY_CORE_MAX], dummygain;
+	txgain_setting_t siso_txgain[PHY_CORE_MAX], dummygain[PHY_CORE_MAX];
 	txgain_setting_t *txcal_txgain = &(pi->cal_info->u.accal).txcal_txgain[0];
 	txiqlocal_lopwr_cal_t lopwr_cal;
 #if defined(PHYCAL_CACHING)
@@ -5281,7 +5281,7 @@ phy_ac_txiqlocal_cmd(phy_ac_txiqlocal_info_t *ti, bool last_phase,
 				memset(siso_txgain, 0, PHY_CORE_MAX * sizeof(txgain_setting_t));
 				memcpy(&siso_txgain[core], &txcal_txgain[core],
 					sizeof(txgain_setting_t));
-				wlc_phy_txcal_txgain_setup_acphy(pi, &siso_txgain[0], &dummygain);
+				wlc_phy_txcal_txgain_setup_acphy(pi, &siso_txgain[0], dummygain);
 			}
 
 			cmd = ti->cmds[ti->cmd_idx % ti->num_cmds_per_core] | 0x8000 | (core << 12);

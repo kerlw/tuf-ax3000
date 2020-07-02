@@ -62,7 +62,7 @@
 #define key_aes_tx_gcm(k, p, h, b, l, s) BCME_UNSUPPORTED
 #endif /* !BCMGCMP */
 
-#if defined(BCMDBG)
+#if defined(BCMDBG) && defined(BCMINTERNAL)
 /* check aes key for compatible algo vs (key, icv, iv) sizes
  * note: all gcm/gmac algorithms have longer icv
  */

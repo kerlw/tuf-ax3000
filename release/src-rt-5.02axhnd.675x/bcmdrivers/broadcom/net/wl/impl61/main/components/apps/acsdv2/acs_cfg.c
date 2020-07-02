@@ -45,7 +45,7 @@
  *      OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
  *      NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
  *
- *	$Id: acs_cfg.c 777145 2019-07-22 05:05:21Z $
+ *	$Id: acs_cfg.c 779769 2019-10-07 10:14:09Z $
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -570,6 +570,12 @@ acs_retrieve_config(acs_chaninfo_t *c_info, char *prefix)
 		c_info->fallback_to_primary = atoi(str);
 	}
 
+	if ((str = nvram_get(strcat_r(prefix, "acs_enable_dfsr_on_highpwr", tmp))) == NULL) {
+		c_info->acs_enable_dfsr_on_highpwr = ACS_ENABLE_DFSR_ON_HIGHPWR;
+	} else {
+		c_info->acs_enable_dfsr_on_highpwr = atoi(str);
+	}
+
 	if (((str = nvram_get(strcat_r(prefix, "acs_chanim_tx_avail", tmp))) == NULL) ||
 			!str[0] || str[0] < '1' || str[0] > '9') {
 		c_info->acs_chanim_tx_avail = ACS_CHANIM_TX_AVAIL;
@@ -608,9 +614,9 @@ acs_retrieve_config(acs_chaninfo_t *c_info, char *prefix)
 		c_info->acs_ci_scan_timer = ACS_DFLT_CI_SCAN_TIMER;
 	} else {
 		c_info->acs_ci_scan_timer = atoi(str);
-		if (c_info->acs_ci_scan_timer < ACS_DFLT_CI_SCAN_TIMER)
+		if (c_info->acs_ci_scan_timer < ACS_DFLT_CI_SCAN_TIMER_MIN)
 		{
-			c_info->acs_ci_scan_timer = ACS_DFLT_CI_SCAN_TIMER;
+			c_info->acs_ci_scan_timer = ACS_DFLT_CI_SCAN_TIMER_MIN;
 			ACSD_INFO(" ifname :%s adjusting the ci scan timer to default %d\n",
 				c_info->name, c_info->acs_ci_scan_timer);
 		}
@@ -731,6 +737,17 @@ acs_retrieve_config(acs_chaninfo_t *c_info, char *prefix)
 			ACSD_INFO("Adjusting ci_scan txop limit to default ifname = %s txop_"
 				"limit = %d\n", c_info->name, c_info->ci_scan_txop_limit);
 		}
+	}
+
+	if ((str = nvram_get(strcat_r(prefix, "acs_txop_limit", tmp))) == NULL ||
+			!str[0] || str[0] < '1' || str[0] > '9') {
+		c_info->acs_txop_limit = ACS_TXOP_LIMIT;
+		ACSD_INFO("ifname :%s No acs_txop_limit is set.retrieving default value %ds\n",
+				c_info->name, c_info->acs_txop_limit);
+	} else {
+		c_info->acs_txop_limit = atoi(str);
+		ACSD_INFO("ifname = %s Adjusting acs_txop_limit to %ds\n", c_info->name,
+				c_info->acs_txop_limit);
 	}
 
 #ifdef ACSD_SEGMENT_CHANIM

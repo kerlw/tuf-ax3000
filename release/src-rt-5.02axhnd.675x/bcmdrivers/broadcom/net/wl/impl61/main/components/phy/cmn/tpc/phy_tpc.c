@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_tpc.c 774858 2019-05-09 02:42:47Z $
+ * $Id: phy_tpc.c 780101 2019-10-15 14:26:22Z $
  */
 
 #include <phy_cfg.h>
@@ -1557,6 +1557,18 @@ BCMATTACHFN(wlc_phy_txpwr_srom12_read_ppr)(phy_info_t *pi)
 
 	    pi->ppr->u.sr11.offset_dup_h = (uint16)PHY_GETINTVAR_SLICE(pi, rstr_dot11agduphrpo);
 	    pi->ppr->u.sr11.offset_dup_l = (uint16)PHY_GETINTVAR_SLICE(pi, rstr_dot11agduplrpo);
+#ifdef NO_PROPRIETARY_VHT_RATES
+#else
+#ifdef WL11AC
+	    PHY_INFORM(("Get SROM <= 11 1024 QAM Power Offset per rate\n"));
+	    pi->ppr->u.sr11.pp1024qam2g = (uint16)PHY_GETINTVAR(pi, rstr_mcs1024qam2gpo);
+
+	    pi->ppr->u.sr11.ppmcsexp[0] = (uint32)PHY_GETINTVAR(pi, rstr_mcs8poexp);
+	    pi->ppr->u.sr11.ppmcsexp[1] = (uint32)PHY_GETINTVAR(pi, rstr_mcs9poexp);
+	    pi->ppr->u.sr11.ppmcsexp[2] = (uint32)PHY_GETINTVAR(pi, rstr_mcs10poexp);
+	    pi->ppr->u.sr11.ppmcsexp[3] = (uint32)PHY_GETINTVAR(pi, rstr_mcs11poexp);
+#endif /* WL11AC */
+#endif /* NO_PROPRIETARY_VHT_RATES */
 
 #ifdef BAND5G
 	    /* ---------------5G--------------- */
@@ -1629,6 +1641,20 @@ BCMATTACHFN(wlc_phy_txpwr_srom12_read_ppr)(phy_info_t *pi)
 			(uint16)PHY_GETINTVAR_SLICE(pi, rstr_sb40and80lr5gx2po);
 		pi->ppr->u.sr11.offset_40in80_h[4] =
 			(uint16)PHY_GETINTVAR_SLICE(pi, rstr_sb40and80hr5gx2po);
+
+#ifdef NO_PROPRIETARY_VHT_RATES
+#else
+#ifdef WL11AC
+	    /* 1024 qam fields for SROM <= 12 */
+	    pi->ppr->u.sr11.pp1024qam5g[0] = (uint32)PHY_GETINTVAR(pi, rstr_mcs1024qam5glpo);
+	    pi->ppr->u.sr11.pp1024qam5g[1] = (uint32)PHY_GETINTVAR(pi, rstr_mcs1024qam5gmpo);
+	    pi->ppr->u.sr11.pp1024qam5g[2] = (uint32)PHY_GETINTVAR(pi, rstr_mcs1024qam5ghpo);
+	    pi->ppr->u.sr11.pp1024qam5g[3] = (uint32)PHY_GETINTVAR(pi, rstr_mcs1024qam5gx1po);
+	    pi->ppr->u.sr11.pp1024qam5g[4] = (uint32)PHY_GETINTVAR(pi, rstr_mcs1024qam5gx2po);
+
+#endif /* WL11AC */
+#endif /* NO_PROPRIETARY_VHT_RATES */
+
 #endif /* BAND5G */
 	}
 }

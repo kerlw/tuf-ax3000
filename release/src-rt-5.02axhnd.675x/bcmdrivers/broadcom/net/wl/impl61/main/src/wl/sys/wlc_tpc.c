@@ -1193,6 +1193,7 @@ wlc_recv_tpc_report(wlc_tpc_info_t *tpc, wlc_bsscfg_t *cfg, struct dot11_managem
 
 	if (rep_ie->id != DOT11_MNG_TPC_REPORT_ID) {
 		WL_INFORM(("Unexpected IE (id %d len %d):\n", rep_ie->id, rep_ie->len));
+		if (WL_ERROR_ON())
 		prhex(NULL, (uint8*)rep_ie + TLV_HDR_LEN, rep_ie->len);
 		return;
 	}

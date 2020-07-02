@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_txbf.c 778014 2019-08-20 09:42:00Z $
+ * $Id: wlc_txbf.c 779815 2019-10-08 07:53:37Z $
  */
 
 /**
@@ -1247,6 +1247,12 @@ wlc_txbf_impbf_upd(wlc_txbf_info_t *txbf)
 
 	if (D11REV_GT(wlc->pub->corerev, 40)) {
 		bool is_caled = wlc_phy_is_txbfcal((wlc_phy_t *)WLC_PI(wlc));
+		if (D11REV_IS(wlc->pub->corerev, 130)) {
+			if (!wlc->pub->sih->otpflag && (CHIPREV(wlc->pub->sih->chiprev) <= 2)) {
+				/* limit iTXBF to newly calibrated chips/boards */
+				is_caled = FALSE;
+			}
+		}
 		if (is_caled) {
 			txbf->flags |= WLC_TXBF_FLAG_IMPBF;
 		} else {
@@ -1350,16 +1356,27 @@ wlc_txbf_chanspec_upd(wlc_txbf_info_t *txbf)
 			wlc_txbf_init_imp(txbf, scb, bfi);
 		}
 	} else {
-		WL_TXBF(("wl%d: %s: update chanspec with txbf links\n",
-			wlc->pub->unit, __FUNCTION__));
-		FOREACHSCB(wlc->scbstate, &scbiter, scb) {
-			bfi = (txbf_scb_info_t *)TXBF_SCB_INFO(txbf, scb);
-			if (!bfi) {
-				continue;
+		WL_TXBF(("wl%d: %s: update chanspec 0x%04x home 0x%04x\n",
+			wlc->pub->unit, __FUNCTION__, wlc->chanspec,
+			wlc->home_chanspec));
+
+		if (D11REV_GE(wlc->pub->corerev, 128)) {
+			wlc_suspend_mac_and_wait(wlc);
+			if (wlc->home_chanspec != wlc->chanspec) {
+				wlc_mctrlx(wlc, MCTLX_FRCHAN, MCTLX_FRCHAN);
+				wlc_mctrl(wlc, MCTL_FRCHAN, MCTL_FRCHAN);
+			} else {
+				wlc_mctrlx(wlc, MCTLX_FRCHAN, 0);
+				wlc_mctrl(wlc, MCTL_FRCHAN, 0);
 			}
-			wlc_txbf_bfr_chanspec_upd(txbf, bfi);
-			if (RATELINKMEM_ENAB(wlc->pub)) {
-				wlc_ratelinkmem_update_link_entry_with_internal_data(wlc, scb);
+			wlc_enable_mac(wlc);
+		} else {
+			FOREACHSCB(wlc->scbstate, &scbiter, scb) {
+				bfi = (txbf_scb_info_t *)TXBF_SCB_INFO(txbf, scb);
+				if (!bfi) {
+					continue;
+				}
+				wlc_txbf_bfr_chanspec_upd(txbf, bfi);
 			}
 		}
 	}
@@ -1783,7 +1800,7 @@ wlc_txbf_init_exp_ge128(wlc_txbf_info_t *txbf, scb_t *scb, txbf_scb_info_t *bfi)
 
 	bfi->init_pending = FALSE;
 	if (RATELINKMEM_ENAB(pub)) {
-		wlc_ratelinkmem_update_link_entry_with_internal_data(wlc, scb);
+		wlc_ratelinkmem_upd_lmem_int(wlc, scb, TRUE /* clr_txbf_sts=1 in mreq */);
 	}
 
 	WL_TXBF(("wl%d: %s enables sta "MACF". exp_en %d amt %d\n",
@@ -1938,11 +1955,6 @@ wlc_txbf_init_imp(wlc_txbf_info_t *txbf, scb_t *scb, txbf_scb_info_t *bfi)
 		bfi->imp_en = TRUE;
 	else
 		bfi->imp_en = FALSE;
-
-	if (D11REV_IS(wlc->pub->corerev, 130)) {
-		/* implicit beamforming not ready yet, disable actual use */
-		bfi->imp_en = FALSE;
-	}
 
 	/* as iovar also calls this func, reset counters here */
 	bfi->imp_used = 0;
@@ -2747,71 +2759,84 @@ wlc_txbf_bfe_init(wlc_txbf_info_t *txbf, txbf_scb_info_t *bfi)
 	wlc_enable_mac(wlc);
 }
 
+/* callback function upon evert chanspec change, corerev < 128 only */
 static void
 wlc_txbf_bfr_chanspec_upd(wlc_txbf_info_t *txbf, txbf_scb_info_t *bfi)
 {
 	wlc_info_t *wlc;
-	scb_t *scb = bfi->scb;
+	struct scb *scb = bfi->scb;
+	uint16	bfi_blk, bfr_config0;
+	bool isVHT = FALSE;
 	uint8 bw;
-	uint32 sb;
-	uint16 mucidx;
+#ifdef WL_PSMX
+	uint16 val;
+#endif /* WL_PSMX */
 
 	ASSERT(scb);
-	BCM_REFERENCE(mucidx);
 
 	wlc = txbf->wlc;
 	ASSERT(wlc);
-	if (D11REV_LT(wlc->pub->corerev, 128)) {
+
+	if (D11REV_GE(wlc->pub->corerev, 128)) {
 		return;
 	}
+#ifdef WL_PSMX
+	if ((bfi->flags & MU_BFE)) {
+		if (bfi->mx_bfiblk_idx == BF_SHM_IDX_INV)
+			return;
+	} else
+#endif /* WL_PSMX */
+	{
+		if (bfi->shm_index == BF_SHM_IDX_INV)
+			return;
+	}
 
+	if (SCB_VHT_CAP(scb)) {
+		isVHT = TRUE;
+	}
+
+	bfr_config0 = (TXBF_BFR_CONFIG0 | (isVHT << (TXBF_BFR_CONFIG0_FRAME_TYPE_SHIFT)));
 	bw = wlc_scb_ratesel_get_link_bw(wlc, scb);
-	sb = CHSPEC_CTL_SB(wlc->chanspec);
 	if (CHSPEC_IS80(wlc->chanspec)) {
 		if (bw == BW_20MHZ) {
-			sb = (sb >> WL_CHANSPEC_CTL_SB_SHIFT) & 0x3;
+			bfr_config0 |= (((CHSPEC_CTL_SB(wlc->chanspec)
+				>> WL_CHANSPEC_CTL_SB_SHIFT) & 0x3) << 10);
 		} else if (bw == BW_40MHZ) {
-			sb = (sb >> (WL_CHANSPEC_CTL_SB_SHIFT+1)) & 0x1;
+			bfr_config0 |= (0x1 << 13);
+			bfr_config0 |= (((CHSPEC_CTL_SB(wlc->chanspec)
+				>> (WL_CHANSPEC_CTL_SB_SHIFT+1)) & 0x1) << 10);
+		} else if (bw == BW_80MHZ) {
+			bfr_config0 |= (0x2 << 13);
 		}
 	} else if (CHSPEC_IS40(wlc->chanspec)) {
 		if (bw == BW_20MHZ) {
-			sb = (sb >> WL_CHANSPEC_CTL_SB_SHIFT) & 0x1;
+			bfr_config0 |= (((CHSPEC_CTL_SB(wlc->chanspec)
+				>> WL_CHANSPEC_CTL_SB_SHIFT) & 0x1) << 10);
+		} else if (bw == BW_40MHZ) {
+			bfr_config0 |= (0x1 << 13);
 		}
 	}
 
-	/* see if mutx module already assigned a muclient index, if not mutx module
-	 * takes care of updating ratecap
-	 */
-#ifdef WL_MU_TX
-	if (SCB_MU(scb) &&
-		((mucidx = wlc_mutx_sta_mucidx_get(wlc->mutx, scb)) != BF_SHM_IDX_INV) &&
-		((bfi->flags & MU_BFE) || (bfi->flags & HE_MU_BFE))) {
-		wlc_svmp_update_ratecap(wlc, scb, bfi->amt_index);
-	}
-#endif // endif
 #ifdef WL_PSMX
-	if (PSMX_ENAB(wlc->pub)) {
-		uint16 bfrStats = 0;
-		bool en;
-
+	if ((bfi->flags & MU_BFE)) {
 		wlc_bmac_suspend_macx_and_wait(wlc->hw);
-		en = wlc_txbf_invalidate_bfridx(txbf, bfi, bfi->amt_index);
-		bfrStats = ((bw - 1) << C_LNK_BFRLBW_NBIT) | sb << C_LNK_BFRSB_NBIT;
-
-		if (!SCB_PS(scb) && en) {
-			wlc_txbf_bfridx_set_en_bit(txbf, bfi, en);
-		} else {
-			/* STA in PS, so enable sounding later by wlc_txbf_scb_ps_notify()
-			 * when it comes out of PS.
-			 */
-			WL_TXBF(("wl%d: %s scb-PS is ON. Defer enabling BFI\n",
-				wlc->pub->unit, __FUNCTION__));
-		}
+		bfi_blk = txbf->mx_bfiblk_base +
+				(bfi->mx_bfiblk_idx * BFI_BLK_SIZE(wlc->pub->corerev));
+		/* Invalidate bfridx */
+		val = wlc_read_shmx(wlc, shm_addr(bfi_blk, C_BFI_BFRIDX_POS));
+		val &= (~(1 << C_BFRIDX_VLD_NBIT));
+		wlc_write_shmx(wlc, shm_addr(bfi_blk, C_BFI_BFRIDX_POS), val);
+		wlc_write_shmx(wlc, shm_addr(bfi_blk, C_BFI_BFR_CONFIG0_POS), bfr_config0);
 		wlc_bmac_enable_macx(wlc->hw);
-
-		bfi->BFRStat0 = bfrStats;
-	}
+	} else
 #endif /* WL_PSMX */
+	{
+		wlc_suspend_mac_and_wait(wlc);
+		bfi_blk = txbf->shm_base + bfi->shm_index * BFI_BLK_SIZE(wlc->pub->corerev);
+		wlc_txbf_invalidate_bfridx(txbf, bfi, shm_addr(bfi_blk, C_BFI_BFRIDX_POS));
+		wlc_write_shm(wlc, shm_addr(bfi_blk, C_BFI_BFR_CONFIG0_POS), bfr_config0);
+		wlc_enable_mac(wlc);
+	}
 }
 
 static void
@@ -2855,7 +2880,6 @@ wlc_txbf_bfr_init_ge128(wlc_txbf_info_t *txbf, txbf_scb_info_t *bfi)
 	if ((bfi->flags & MU_BFE) || ((bfi->flags & HE_MU_BFE) && HE_MMU_ENAB(wlc->pub))) {
 		/* update rate capabilities for this mu user */
 		wlc_svmp_update_ratecap(wlc, scb, bfi->amt_index);
-
 		setbit(&bfrcfg0, C_LNK_MUCAP_NBIT);
 	}
 
@@ -2905,8 +2929,6 @@ wlc_txbf_bfr_init_ge128(wlc_txbf_info_t *txbf, txbf_scb_info_t *bfi)
 			bfr_sts = bfr_ntx;
 		}
 
-		wlc_bmac_suspend_macx_and_wait(wlc->hw);
-		wlc_txbf_invalidate_bfridx(txbf, bfi, bfi->amt_index);
 		bfrStats = ((bw -1) << C_LNK_BFRLBW_NBIT) | sb << C_LNK_BFRSB_NBIT;
 
 		if ((bfi->flags & MU_BFE)) {
@@ -2925,7 +2947,6 @@ wlc_txbf_bfr_init_ge128(wlc_txbf_info_t *txbf, txbf_scb_info_t *bfi)
 			"nc_idx %d ndps %d flags:0x%x %x\n", pub->unit, __FUNCTION__,
 			bw, bfr_sts, bfe_nrx, bfe_sts, nc_idx, ndps, bfi->flags, bfi->vht_cap));
 
-		wlc_bmac_enable_macx(wlc->hw);
 	}
 #endif /* WL_PSMX */
 
@@ -3272,7 +3293,8 @@ void wlc_txbf_rxchain_upd(wlc_txbf_info_t *txbf)
 	wlc_write_shm(wlc, M_BFI_NRXC(wlc), rxchains - 1);
 
 	if (RATELINKMEM_ENAB(wlc->pub)) {
-		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, FALSE, TRUE);
+		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, FALSE,
+			TRUE /* clr_txbf_stats=1 in mreq */);
 	}
 }
 
@@ -3334,27 +3356,22 @@ wlc_txbf_invalidate_bfridx(wlc_txbf_info_t *txbf, txbf_scb_info_t *bfi, uint16 b
 	}
 
 	corerev = wlc->pub->corerev;
+	if (D11REV_GE(corerev, 128)) {
+		return TRUE;
+	}
+
 	offset = C_BFI_BFRIDX_POS;
 	vld_nbit = C_BFRIDX_VLD_NBIT;
 	en_nbit = C_BFRIDX_EN_NBIT;
-	if (D11REV_GE(corerev, 128)) {
-		bfridx = bfi->amt_index;
-		offset = C_BFI_IDX_POS;
-		vld_nbit = C_BFI_TXVRDY_NBIT;
-	}
 	bfi_blk = txbf->mx_bfiblk_base + bfridx * BFI_BLK_SIZE(corerev);
 	BCM_REFERENCE(en_nbit);
 #ifdef WL_PSMX
-	if (PSMX_ENAB(wlc->pub) && (D11REV_GE(corerev, 128) ||
-		(bfi->flags & MU_BFE || bfi->flags & HE_MU_BFE))) {
+	if (PSMX_ENAB(wlc->pub) &&
+		(bfi->flags & MU_BFE || bfi->flags & HE_MU_BFE)) {
 		addr = shm_addr(bfi_blk, offset);
 		val = wlc_read_shmx(wlc, addr);
 		en = isset(&val, en_nbit);
-		if (D11REV_GE(corerev, 128)) {
-			val &= (~(1 << vld_nbit));
-		} else {
-			val &= (~(1 << vld_nbit| 1 << en_nbit));
-		}
+		val &= (~(1 << vld_nbit| 1 << en_nbit));
 		wlc_write_shmx(wlc, addr, val);
 	} else
 #endif /* WL_PSMX */
@@ -3562,7 +3579,8 @@ void wlc_txbf_txchain_upd(wlc_txbf_info_t *txbf)
 	}
 
 	if (RATELINKMEM_ENAB(wlc->pub)) {
-		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, FALSE, TRUE);
+		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, FALSE,
+			TRUE /* clr_txbf_stats=1 in mreq */);
 	}
 
 	wlc_enable_mac(wlc);
@@ -5914,7 +5932,7 @@ void wlc_forcesteer_gerev129(wlc_info_t *wlc, uint8 enable)
 	}
 
 	if (RATELINKMEM_ENAB(wlc->pub)) {
-		wlc_ratelinkmem_update_link_entry_with_internal_data(wlc, scb);
+		wlc_ratelinkmem_upd_lmem_int(wlc, scb, FALSE /* clr_txbf_sts=0 in mreq */);
 	}
 }
 
@@ -5974,7 +5992,10 @@ wlc_txbf_tbcap_update(wlc_txbf_info_t *txbf, scb_t *scb)
 		}
 	}
 
-	wlc_ratelinkmem_update_link_entry_with_internal_data(wlc, scb);
+	if (WLC_TXC_ENAB(wlc)) {
+		wlc_txc_inv(wlc->txc, scb);
+	}
+	wlc_ratelinkmem_update_link_entry(wlc, scb);
 }
 
 static void

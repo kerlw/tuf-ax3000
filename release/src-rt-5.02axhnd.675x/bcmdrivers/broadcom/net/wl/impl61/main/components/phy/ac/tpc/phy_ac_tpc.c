@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_tpc.c 776724 2019-07-08 13:21:21Z $
+ * $Id: phy_ac_tpc.c 780101 2019-10-15 14:26:22Z $
  */
 #include <phy_cfg.h>
 #include <typedefs.h>
@@ -232,6 +232,11 @@ static void phy_ac_tpc_get_paparams_80p80_srom12(phy_info_t *pi,
 		uint8 *chan_freqs, int16 *a, int16 *b, int16 *c, int16 *d);
 static int32 phy_ac_tpc_get_estpwrlut_srom12(int16 *a, int16 *b, int16 *c, int16 *d,
 		uint8 pa_fittype, uint8 core, int32 idx);
+static void
+phy_ac_tpc_get_paparams_percore_multimode2_srom12(phy_info_t *pi, uint8 chan_freq_range,
+		int16 *a, int16 *b, int16 *c, int16 *d,
+		int16 *a1, int16 *b1, int16 *c1, int16 *d1,
+		int16 *a2, int16 *b2, int16 *c2, int16 *d2, uint8 core, uint8 cck);
 static void wlc_phy_get_tssi_floor_acphy(phy_info_t *pi, int16 *floor);
 static uint32 wlc_phy_pdoffset_cal_acphy(uint32 pdoffs, uint16 pdoffset, uint8 band, uint8 core);
 static bool wlc_phy_txpwrctrl_ison_acphy(phy_info_t *pi);
@@ -2944,6 +2949,81 @@ wlc_phy_get_srom12_pdoffset_acphy(phy_info_t *pi, int8 *pdoffs, int8 *pdoffs_160
 	}
 }
 
+void wlc_phy_txpwrctrl_idle_tssi_phyreg_setup_acphy(phy_info_t *pi)
+{
+	uint8  tssi_delay = 0;
+	uint8 stall_val;
+	stall_val = READ_PHYREGFLD(pi, RxFeCtrl1, disable_stalls);
+	ACPHY_REG_LIST_START
+		ACPHY_DISABLE_STALL_ENTRY(pi)
+		/* enable TSSI */
+		MOD_PHYREG_ENTRY(pi, TSSIMode, tssiEn, 1)
+		MOD_PHYREG_ENTRY(pi, TxPwrCtrlCmd, txPwrCtrl_en, 0)
+	ACPHY_REG_LIST_EXECUTE(pi);
+
+	/* determine pos/neg TSSI slope */
+	if (CHSPEC_IS2G(pi->radio_chanspec)) {
+		MOD_PHYREG(pi, TSSIMode, tssiPosSlope, pi->fem2g->tssipos);
+	} else {
+		MOD_PHYREG(pi, TSSIMode, tssiPosSlope, pi->fem5g->tssipos);
+	}
+	MOD_PHYREG(pi, TSSIMode, tssiPosSlope, 1);
+
+	/* When to sample TSSI */
+	if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev) ||
+	    ACMAJORREV_37(pi->pubpi->phy_rev) || (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
+	    !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+		tssi_delay = 200;
+		MOD_PHYREG(pi, perPktIdleTssiCtrl, perPktIdleTssiUpdate_en, 0);
+		MOD_PHYREG(pi, TSSIMode, TwoPwrRange, 0);
+		if (!ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
+			MOD_PHYREG(pi, TssiAccumCtrl, tssi_accum_en, 1);
+			MOD_PHYREG(pi, TssiAccumCtrl, tssi_filter_pos, 1);
+		} else {
+			MOD_PHYREG(pi, TssiAccumCtrl, tssi_accum_en, 0);
+			MOD_PHYREG(pi, TssiAccumCtrl, tssi_filter_pos, 0);
+		}
+		MOD_PHYREG(pi, TssiAccumCtrl, Ntssi_accum_delay, 200);
+		MOD_PHYREG(pi, TssiAccumCtrl, Ntssi_intg_log2, 4);
+
+		MOD_PHYREG(pi, TssiAccumCtrlcck, Ntssi_accum_delay_cck, 200);
+		MOD_PHYREG(pi, TssiAccumCtrlcck, Ntssi_intg_log2_cck, 4);
+	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+		tssi_delay = wlc_phy_ac_set_tssi_params_majrev128(pi);
+	} else if (IS_4364(pi)) {
+		tssi_delay = SAMPLE_TSSI_AFTER_160_SAMPLES;
+		MOD_PHYREG(pi, TssiAccumCtrl, tssi_accum_en, 1);
+		MOD_PHYREG(pi, TssiAccumCtrl, Ntssi_intg_log2, 4);
+		MOD_PHYREG(pi, TssiAccumCtrl, Ntssi_accum_delay, tssi_delay);
+		MOD_PHYREG(pi, TssiAccumCtrl, tssi_filter_pos, 1);
+	} else if (CHSPEC_IS2G(pi->radio_chanspec)) {
+		if (pi->tpci->data->cfg->srom_2g_pdrange_id >= 5) {
+			tssi_delay = 150;
+		} else if (pi->tpci->data->cfg->srom_2g_pdrange_id >= 4) {
+			tssi_delay = 220;
+		} else {
+			tssi_delay = 150;
+		}
+	} else {
+		if (pi->tpci->data->cfg->srom_5g_pdrange_id >= 5) {
+			tssi_delay = 150;
+		} else if (pi->tpci->data->cfg->srom_5g_pdrange_id >= 4) {
+			tssi_delay = 220;
+		} else {
+			tssi_delay = 150;
+		}
+	}
+	MOD_PHYREG(pi, TxPwrCtrlNnum, Ntssi_delay, tssi_delay);
+	/* When to sample TSSI for CCK */
+	if (IS_4364_1x1(pi)) {
+		uint8 tssi_delay_cck = SAMPLE_TSSI_AFTER_160_SAMPLES;
+		MOD_PHYREG(pi, perPktIdleTssiCtrlcck, base_index_cck_en, 1);
+		MOD_PHYREG(pi, TssiAccumCtrlcck, Ntssi_accum_delay_cck, tssi_delay_cck);
+		MOD_PHYREG(pi, TssiAccumCtrlcck, Ntssi_intg_log2_cck, 2);
+	}
+	ACPHY_ENABLE_STALL(pi, stall_val);
+}
+
 static void
 wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 {
@@ -2958,7 +3038,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 	int16  ck[PHY_CORE_MAX], dk[PHY_CORE_MAX];
 	int32  idx;
 	uint8  shfttbl_len;
-	uint32 shfttblval[40];
+	uint32 shfttblval[64];
 	int32  pwr_est, pwr_est0, pwr_est1, pwr_est_cck, tbl_len;
 	int32  pwr_est_2gbw20;
 	uint32 regval[128];
@@ -2970,7 +3050,6 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 	uint8  chan_freq_range, iidx, chan_freq = 0;
 	uint8  chan_freqs[NUM_CHANS_IN_CHAN_BONDING];
 	uint8  core, rx_coremask, val;
-	uint8  tssi_delay = 0;
 	uint8  mult_mode = 0;
 	uint8  pa_fittype = 0;
 	uint8 pdet_range_id = 0;
@@ -3021,18 +3100,14 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 		lowrate_tssi_delay = lowrate_tssi_delay_set47_1[pdet_range_id][a_band];
 	} else if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
 		lowrate_tssi_delay = 470;
+	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+		lowrate_tssi_delay = 750; /* Pending bringup */
 	} else {
 		lowrate_tssi_delay = 750;
 	}
 	PHY_TRACE(("wl%d: %s\n", pi->sh->unit, __FUNCTION__));
-
+	wlc_phy_txpwrctrl_idle_tssi_phyreg_setup_acphy(pi);
 	stall_val = READ_PHYREGFLD(pi, RxFeCtrl1, disable_stalls);
-	ACPHY_REG_LIST_START
-		ACPHY_DISABLE_STALL_ENTRY(pi)
-		/* enable TSSI */
-		MOD_PHYREG_ENTRY(pi, TSSIMode, tssiEn, 1)
-		MOD_PHYREG_ENTRY(pi, TxPwrCtrlCmd, txPwrCtrl_en, 0)
-	ACPHY_REG_LIST_EXECUTE(pi);
 
 	/* initialize a, b, c,d to be all zero */
 	for (idx = 0; idx < PHY_CORE_MAX; idx++) {
@@ -3049,8 +3124,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 	    ACMAJORREV_32(pi->pubpi->phy_rev) ||
 	    ACMAJORREV_33(pi->pubpi->phy_rev) ||
 	    ACMAJORREV_37(pi->pubpi->phy_rev) ||
-	    (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-	    !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+	    ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 		/* 4360B0/B1/4350 using 0.5dB-step gaintbl, bbmult interpolation enabled */
 		MOD_PHYREG(pi, TxPwrCtrlCmd, bbMultInt_en, 1);
 #ifdef PREASSOC_PWRCTRL
@@ -3083,8 +3157,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 	} else if (ACMAJORREV_32(pi->pubpi->phy_rev) ||
 	           ACMAJORREV_33(pi->pubpi->phy_rev) ||
 	           ACMAJORREV_37(pi->pubpi->phy_rev) ||
-	           (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-	           !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+	           ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 		if (PHY_AS_80P80(pi, pi->radio_chanspec)) {
 			phy_ac_chanmgr_get_chan_freq_range_80p80_srom12(pi,
 					pi->radio_chanspec, chan_freqs);
@@ -3103,7 +3176,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 	    ACMAJORREV_33(pi->pubpi->phy_rev) ||
 	    ACMAJORREV_37(pi->pubpi->phy_rev) ||
 	    (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-	    !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+		!ACMAJORREV_128(pi->pubpi->phy_rev))) {
 		if (PHY_AS_80P80(pi, pi->radio_chanspec)) {
 			phy_ac_tpc_get_paparams_80p80_srom12(pi, chan_freqs, a, b, c, d);
 
@@ -3149,6 +3222,12 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 					}
 				}
 			}
+		}
+	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+		FOREACH_CORE(pi, core) {
+			phy_ac_tpc_get_paparams_percore_multimode2_srom12(pi, chan_freq_range,
+				a, b, c, d, a1, b1, c1, d1, ak, bk, ck, dk, core,
+				pi->sromi->sr18_cck_paparam_en);
 		}
 	} else {
 		FOREACH_CORE(pi, core) {
@@ -3216,17 +3295,6 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 			++core_count;
 		}
 	}
-
-	/* determine pos/neg TSSI slope */
-	if (CHSPEC_IS2G(pi->radio_chanspec)) {
-		MOD_PHYREG(pi, TSSIMode, tssiPosSlope, pi->fem2g->tssipos);
-	} else {
-		MOD_PHYREG(pi, TSSIMode, tssiPosSlope, pi->fem5g->tssipos);
-	}
-	MOD_PHYREG(pi, TSSIMode, tssiPosSlope, 1);
-
-	/* disable txpwrctrl during idleTssi measurement, etc */
-	MOD_PHYREG(pi, TxPwrCtrlCmd, txPwrCtrl_en, 0);
 
 #ifdef PREASSOC_PWRCTRL
 	FOREACH_ACTV_CORE(pi, rx_coremask, core) {
@@ -3330,25 +3398,10 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 #endif /* PREASSOC_PWRCTRL */
 	/* MOD_PHYREG(pi, TxPwrCtrlIdleTssi, rawTssiOffsetBinFormat, 1); */
 
-	/* When to sample TSSI */
+	/* multi-mode setup */
 	if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev) ||
 	    ACMAJORREV_37(pi->pubpi->phy_rev) || (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
 	    !ACMAJORREV_128(pi->pubpi->phy_rev))) {
-		tssi_delay = 200;
-		MOD_PHYREG(pi, perPktIdleTssiCtrl, perPktIdleTssiUpdate_en, 0);
-		MOD_PHYREG(pi, TSSIMode, TwoPwrRange, 0);
-		if (!ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
-			MOD_PHYREG(pi, TssiAccumCtrl, tssi_accum_en, 1);
-			MOD_PHYREG(pi, TssiAccumCtrl, tssi_filter_pos, 1);
-		} else {
-			MOD_PHYREG(pi, TssiAccumCtrl, tssi_accum_en, 0);
-			MOD_PHYREG(pi, TssiAccumCtrl, tssi_filter_pos, 0);
-		}
-		MOD_PHYREG(pi, TssiAccumCtrl, Ntssi_accum_delay, 200);
-		MOD_PHYREG(pi, TssiAccumCtrl, Ntssi_intg_log2, 4);
-
-		MOD_PHYREG(pi, TssiAccumCtrlcck, Ntssi_accum_delay_cck, 200);
-		MOD_PHYREG(pi, TssiAccumCtrlcck, Ntssi_intg_log2_cck, 4);
 		if (ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 			if (pi->u.pi_acphy->sromi->srom_low_adc_rate_en) {
 				mult_mode = 1;
@@ -3397,6 +3450,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 				//ER packet offset due to 3dB L-STF/LTF boosting
 				MOD_PHYREG(pi, txPwrCtrl11ax, he_range_ext_power_offset, 12);
 			}
+
 		} else {
 			mult_mode = 2;
 		}
@@ -3408,37 +3462,10 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 			if (!ACMAJORREV_129(pi->pubpi->phy_rev))
 				MOD_PHYREG(pi, TxPwrCtrl_Multi_Mode3, multi_mode, mult_mode);
 		}
-	} else if (IS_4364(pi)) {
-		tssi_delay = SAMPLE_TSSI_AFTER_160_SAMPLES;
-		MOD_PHYREG(pi, TssiAccumCtrl, tssi_accum_en, 1);
-		MOD_PHYREG(pi, TssiAccumCtrl, Ntssi_intg_log2, 4);
-		MOD_PHYREG(pi, TssiAccumCtrl, Ntssi_accum_delay, tssi_delay);
-		MOD_PHYREG(pi, TssiAccumCtrl, tssi_filter_pos, 1);
-	} else if (CHSPEC_IS2G(pi->radio_chanspec)) {
-		if (pi->tpci->data->cfg->srom_2g_pdrange_id >= 5) {
-			tssi_delay = 150;
-		} else if (pi->tpci->data->cfg->srom_2g_pdrange_id >= 4) {
-			tssi_delay = 220;
-		} else {
-			tssi_delay = 150;
-		}
-	} else {
-		if (pi->tpci->data->cfg->srom_5g_pdrange_id >= 5) {
-			tssi_delay = 150;
-		} else if (pi->tpci->data->cfg->srom_5g_pdrange_id >= 4) {
-			tssi_delay = 220;
-		} else {
-			tssi_delay = 150;
-		}
-	}
-	MOD_PHYREG(pi, TxPwrCtrlNnum, Ntssi_delay, tssi_delay);
-
-	/* When to sample TSSI for CCK */
-	if (IS_4364_1x1(pi)) {
-		uint8 tssi_delay_cck = SAMPLE_TSSI_AFTER_160_SAMPLES;
-		MOD_PHYREG(pi, perPktIdleTssiCtrlcck, base_index_cck_en, 1);
-		MOD_PHYREG(pi, TssiAccumCtrlcck, Ntssi_accum_delay_cck, tssi_delay_cck);
-		MOD_PHYREG(pi, TssiAccumCtrlcck, Ntssi_intg_log2_cck, 2);
+	} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+		mult_mode = 2;
+		MOD_PHYREG(pi, TxPwrCtrl_Multi_Mode0, multi_mode, mult_mode);
+		MOD_PHYREG(pi, TxPwrCtrl_Multi_Mode1, multi_mode, mult_mode);
 	}
 
 	if ((pi->tpci->data->cfg->bphy_scale != 0) &&
@@ -3452,8 +3479,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 	/* average over 2 or 16 packets */
 	wlc_phy_pwrctrl_shortwindow_upd_acphy(pi, pi->tpci->data->channel_short_window);
 #else
-	if (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-	    !ACMAJORREV_128(pi->pubpi->phy_rev)) {
+	if (ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 		if (pi->u.pi_acphy->sromi->srom_low_adc_rate_en) {
 			FOREACH_CORE(pi, core) {
 				MOD_PHYREGCE(pi, lowRateTssiDlyOFDM, core, Ntssi_hw_delay_ofdm,
@@ -3567,12 +3593,17 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 			pa_fittype = wlc_phy_fittype_srom12_acphy(pi);
 			PHY_TXPWR(("wl%d: %s:pa_fittype = %d\n",
 				pi->sh->unit, __FUNCTION__, pa_fittype));
+		} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+			/* get PA fittype */
+			pa_fittype = wlc_phy_fittype_srom12_acphy(pi);
+			PHY_TXPWR(("wl%d: %s:pa_fittype = %d\n",
+				pi->sh->unit, __FUNCTION__, pa_fittype));
 		}
-		if (ACMAJORREV_37(pi->pubpi->phy_rev) ||
-		    (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-		    !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+		if (ACMAJORREV_37(pi->pubpi->phy_rev)) {
 			/* 7271 WAR: meas the idle tssi added the call here.
 			 * Removing it breaks Receive and Tx power control.
+			 * bypass for BCA 11ax chipset, idletssi
+			 * would be done in phycal or chanmgr
 			 */
 			wlc_phy_txpwrctrl_idle_tssi_meas_acphy(pi);
 		}
@@ -3613,6 +3644,10 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 								a1, b1, c1, d1,
 								pa_fittype, core, idx);
 					}
+				} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+					pwr_est = phy_ac_tpc_get_estpwrlut_srom12(
+							a, b, c, d,
+							pa_fittype, core, idx);
 				} else {
 					if (wlc_phy_fittype_srom12_acphy(pi) == 0) {
 						firstTerm  = (int32)a[core] * 128;
@@ -3715,6 +3750,21 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 					        (((uint32)(pwr_est0 & 0xff)) << 8) |
 					        (((uint32)(pwr_est1 & 0xff)) << 16) |
 					        (((uint32)(pwr_est & 0xff)) << 24);
+				} else if (ACMAJORREV_128(pi->pubpi->phy_rev)) {
+					pwr_est0 = phy_ac_tpc_get_estpwrlut_srom12(
+								a1, b1, c1, d1,
+								pa_fittype, core, idx);
+					pwr_est1 = phy_ac_tpc_get_estpwrlut_srom12(
+								ak, bk, ck, dk,
+								pa_fittype, core, idx);
+
+					pwr_est  = MIN(0x7f, (MAX(pwr_est,  0)));
+					pwr_est0 = MIN(0x7f, (MAX(pwr_est0, 0)));
+					pwr_est1 = MIN(0x7f, (MAX(pwr_est1, 0)));
+
+					regval[idx] = ((uint32)(pwr_est & 0xff)) |
+					        (((uint32)(pwr_est0 & 0xff)) << 8) |
+					        (((uint32)(pwr_est1 & 0xff)) << 16);
 				} else {
 					regval[idx] = (uint16)(pwr_est&0xff);
 				}
@@ -3725,8 +3775,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 				if (ACMAJORREV_32(pi->pubpi->phy_rev) ||
 				    ACMAJORREV_33(pi->pubpi->phy_rev) ||
 				    ACMAJORREV_37(pi->pubpi->phy_rev) ||
-				    (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-				    !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+				    ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 					/* Est Pwr Table is 128x24 Table. */
 					wlc_phy_table_write_acphy(pi, ACPHY_TBL_ID_ESTPWRLUTS(core),
 						tbl_len, 0, 32, regval);
@@ -3759,8 +3808,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 		} else {
 			shfttbl_len = 24;
 		}
-		if (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-		   !ACMAJORREV_128(pi->pubpi->phy_rev)) {
+		if (ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 			shfttbl_len = 64;
 		}
 		if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev)) {
@@ -3768,7 +3816,8 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 			memset(shfttblval, 0, sizeof(shfttblval));
 		} else {
 			if ((ACMAJORREV_47(pi->pubpi->phy_rev) && (HW_ACMINORREV(pi) >= 1)) ||
-				ACMAJORREV_51_129(pi->pubpi->phy_rev)) {
+				ACMAJORREV_51_129(pi->pubpi->phy_rev) ||
+				ACMAJORREV_128(pi->pubpi->phy_rev)) {
 				if (CHSPEC_IS5G(pi->radio_chanspec)) {
 					phy_ac_fill_estpwrshft_table(pi, pwrdet, chan_freq + 1,
 					shfttbl_len, shfttblval);
@@ -3782,8 +3831,7 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 			}
 		}
 		if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev) ||
-		    ACMAJORREV_37(pi->pubpi->phy_rev) || (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-		    !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+		    ACMAJORREV_37(pi->pubpi->phy_rev) || ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 			wlc_phy_table_write_acphy(pi, AC2PHY_TBL_ID_ESTPWRSHFTLUTS0,
 				shfttbl_len, 0, 32, shfttblval);
 		} else {
@@ -3796,6 +3844,87 @@ wlc_phy_txpwrctrl_pwr_setup_srom12_acphy(phy_info_t *pi)
 #endif // endif
 
 	ACPHY_ENABLE_STALL(pi, stall_val);
+}
+
+/* Multi-mode 2 pa parameter assignment */
+static void
+phy_ac_tpc_get_paparams_percore_multimode2_srom12(phy_info_t *pi, uint8 chan_freq_range,
+		int16 *a, int16 *b, int16 *c, int16 *d,
+		int16 *a1, int16 *b1, int16 *c1, int16 *d1,
+		int16 *a2, int16 *b2, int16 *c2, int16 *d2, uint8 core, uint8 cck)
+{
+	/* Supports 3 tables each in a different 8 bit sections of the EstPwrLut - low/mid/high
+	**
+	** Low - Parameters used are a, b, c, d for 20 MHz OFDM,
+	**       including 20MHz subband modes (20L, 20LL etc)
+	** Mid - Parameters used are a1, b1, c1, d1 for 40 MHz OFDMA,
+	**       including 40MHz subband modes (40L, 40U)
+	** High - Parameters used are a2, b2, c2, d2 (ak, bk, ck, dk) for CCK (2G)
+	**        and 80MHz OFDM (5G)
+	**
+	** Input chan_freq_range is defined in phy_ac_chanmgr_chan2freq_range_srom12
+	*/
+
+	int offset = 0;
+	srom12_pwrdet_t *pwrdet = pi->pwrdet_ac;
+
+	switch (chan_freq_range) {
+		case WL_CHAN_FREQ_RANGE_2G:
+		case WL_CHAN_FREQ_RANGE_5G_BAND0:
+		case WL_CHAN_FREQ_RANGE_5G_BAND1:
+		case WL_CHAN_FREQ_RANGE_5G_BAND2:
+		case WL_CHAN_FREQ_RANGE_5G_BAND3:
+		case WL_CHAN_FREQ_RANGE_5G_BAND4:
+			offset = 0;
+			break;
+		case WL_CHAN_FREQ_RANGE_2G_40:
+		case WL_CHAN_FREQ_RANGE_5G_BAND0_40:
+		case WL_CHAN_FREQ_RANGE_5G_BAND1_40:
+		case WL_CHAN_FREQ_RANGE_5G_BAND2_40:
+		case WL_CHAN_FREQ_RANGE_5G_BAND3_40:
+		case WL_CHAN_FREQ_RANGE_5G_BAND4_40:
+			/* Adjust index for 40M */
+			offset = 6;
+			break;
+		case WL_CHAN_FREQ_RANGE_5G_BAND0_80:
+		case WL_CHAN_FREQ_RANGE_5G_BAND1_80:
+		case WL_CHAN_FREQ_RANGE_5G_BAND2_80:
+		case WL_CHAN_FREQ_RANGE_5G_BAND3_80:
+		case WL_CHAN_FREQ_RANGE_5G_BAND4_80:
+			/* Adjust index for 80M */
+			offset = 11;
+			break;
+		default:
+			PHY_ERROR(("wl%d: %s: pwrdet core%d, unsupported chan_freq_range:%d \n",
+					pi->sh->unit, __FUNCTION__, core, chan_freq_range));
+			break;
+	}
+
+	ASSERT(chan_freq_range >= offset);
+
+	a[core] =  pwrdet->pwrdet_a[core][chan_freq_range - offset];
+	b[core] =  pwrdet->pwrdet_b[core][chan_freq_range - offset];
+	c[core] =  pwrdet->pwrdet_c[core][chan_freq_range - offset];
+	d[core] =  pwrdet->pwrdet_d[core][chan_freq_range - offset];
+
+	a1[core] =  pwrdet->pwrdet_a_40[core][chan_freq_range - offset];
+	b1[core] =  pwrdet->pwrdet_b_40[core][chan_freq_range - offset];
+	c1[core] =  pwrdet->pwrdet_c_40[core][chan_freq_range - offset];
+	d1[core] =  pwrdet->pwrdet_d_40[core][chan_freq_range - offset];
+
+	if (chan_freq_range - offset > 0) {
+		a2[core] =  pwrdet->pwrdet_a_80[core][chan_freq_range - offset - 1];
+		b2[core] =  pwrdet->pwrdet_b_80[core][chan_freq_range - offset - 1];
+		c2[core] =  pwrdet->pwrdet_c_80[core][chan_freq_range - offset - 1];
+		d2[core] =  pwrdet->pwrdet_d_80[core][chan_freq_range - offset - 1];
+	}
+
+	if (cck == 1 && CHSPEC_IS2G(pi->radio_chanspec)) {
+		a2[core] =  pwrdet->pwrdet_a[core][CH_2G_GROUP + CH_5G_5BAND];
+		b2[core] =  pwrdet->pwrdet_b[core][CH_2G_GROUP + CH_5G_5BAND];
+		c2[core] =  pwrdet->pwrdet_c[core][CH_2G_GROUP + CH_5G_5BAND];
+		d2[core] =  pwrdet->pwrdet_d[core][CH_2G_GROUP + CH_5G_5BAND];
+	}
 }
 
 /* Get the content for the ESTPWRSHFTLUTS_TBL table */
@@ -3814,7 +3943,8 @@ phy_ac_fill_estpwrshft_table(phy_info_t *pi, srom12_pwrdet_t *pwrdet, uint8 chan
 		pdoffs = 0;
 		FOREACH_CORE(pi, core) {
 			if ((ACMAJORREV_47(pi->pubpi->phy_rev) && (HW_ACMINORREV(pi) >= 1)) ||
-				ACMAJORREV_51_129(pi->pubpi->phy_rev)) {
+				ACMAJORREV_51_129(pi->pubpi->phy_rev) ||
+				ACMAJORREV_128(pi->pubpi->phy_rev)) {
 				switch (idx1) {
 				case 0:
 				// Ofdm20LL
@@ -5426,7 +5556,7 @@ wlc_phy_txpwr_srom11_convert_mcs_2g(uint32 po, uint8 nibble,
 
 /* for MCS10/11 cases, 2 rates only */
 static void
-wlc_phy_txpwr_srom13_ext_1024qam_convert_mcs_2g(uint16 po, chanspec_t chanspec,
+wlc_phy_txpwr_srom13_ext_1024qam_convert_mcs_2g(uint16 po, uint8 pkt_bw,
          uint8 tmp_max_pwr, ppr_vht_mcs_rateset_t* vht) {
 
 	if (!(sizeof(*vht) > WL_RATESET_SZ_VHT_MCS)) {
@@ -5436,12 +5566,14 @@ wlc_phy_txpwr_srom13_ext_1024qam_convert_mcs_2g(uint16 po, chanspec_t chanspec,
 		return;
 	}
 
-	if (CHSPEC_IS20(chanspec)) {
+	if (pkt_bw == WL_PKT_BW_20) {
 		vht->pwr[PPREXP_MCS_P_10] = tmp_max_pwr - ((po & 0xf) << 1);
 		vht->pwr[PPREXP_MCS_P_11] = tmp_max_pwr - (((po >> 4) & 0xf) << 1);
-	} else if (CHSPEC_IS40(chanspec)) {
+	} else if (pkt_bw == WL_PKT_BW_40) {
 		vht->pwr[PPREXP_MCS_P_10] = tmp_max_pwr - (((po >> 8) & 0xf) << 1);
 		vht->pwr[PPREXP_MCS_P_11] = tmp_max_pwr - (((po >> 12) & 0xf) << 1);
+	} else {
+		PHY_ERROR(("%s: Invalid pkt_bw = %d!\n", __FUNCTION__, pkt_bw));
 	}
 }
 #endif /* WL11AC */
@@ -6404,7 +6536,7 @@ wlc_phy_txpwr_apply_srom13_2g_bw2040(phy_info_t *pi, chanspec_t chanspec,
 		        tmp_max_pwr, &mcs20_offset_2g);
 
 		wlc_phy_txpwr_srom13_ext_1024qam_convert_mcs_2g(sr13->pp1024qam2g,
-		        chanspec, tmp_max_pwr, &mcs20_offset_2g);
+		        WL_PKT_BW_20, tmp_max_pwr, &mcs20_offset_2g);
 		/* No shift needed for 2g bw20 ppr mcsexp */
 		wlc_phy_txpwr_ppr_bit_ext_srom13_mcs8to11(pi, &mcs20_offset_2g, 0);
 
@@ -6443,7 +6575,7 @@ wlc_phy_txpwr_apply_srom13_2g_bw2040(phy_info_t *pi, chanspec_t chanspec,
 			        tmp_max_pwr, &mcs40_offset_2g);
 
 			wlc_phy_txpwr_srom13_ext_1024qam_convert_mcs_2g(sr13->pp1024qam2g,
-				chanspec, tmp_max_pwr, &mcs40_offset_2g);
+				WL_PKT_BW_40, tmp_max_pwr, &mcs40_offset_2g);
 			/* shift 8 bits for 2g bw40 ppr mcsexp */
 			wlc_phy_txpwr_ppr_bit_ext_srom13_mcs8to11(pi, &mcs40_offset_2g, 8);
 
@@ -6896,8 +7028,7 @@ wlc_phy_txpower_sromlimit_get_srom12_acphy(phy_info_t *pi, chanspec_t chanspec,
 	  if (ACMAJORREV_32(pi->pubpi->phy_rev) ||
 	      ACMAJORREV_33(pi->pubpi->phy_rev) ||
 	      ACMAJORREV_37(pi->pubpi->phy_rev) ||
-	      (ACMAJORREV_GE47(pi->pubpi->phy_rev) &&
-	      !ACMAJORREV_128(pi->pubpi->phy_rev))) {
+	      ACMAJORREV_GE47(pi->pubpi->phy_rev)) {
 	    if (CHSPEC_IS5G(pi->radio_chanspec))
 	      ASSERT(pi->sromi->subband5Gver == PHY_MAXNUM_5GSUBBANDS);
 	  } else {
@@ -8041,7 +8172,7 @@ static bool BCMATTACHFN(wlc_phy_txpwr_srom12_read)(phy_type_tpc_ctx_t *ctx)
 	    pwrdet->pwrdet_b[0][b] = (int16)PHY_GETINTVAR_ARRAY_SLICE(pi, rstr_pa2ga0, 1);
 	    pwrdet->pwrdet_c[0][b] = (int16)PHY_GETINTVAR_ARRAY_SLICE(pi, rstr_pa2ga0, 2);
 	    pwrdet->pwrdet_d[0][b] = (int16)PHY_GETINTVAR_ARRAY_SLICE(pi, rstr_pa2ga0, 3);
-		if (pi->sh->sromrev == 18) {
+		if (pi->sh->sromrev == 18 || ACMAJORREV_128(pi->pubpi->phy_rev)) {
 			pwrdet->pwrdet_a[0][b + CH_2G_GROUP + CH_5G_5BAND] =
 				(int16)PHY_GETINTVAR_ARRAY_SLICE(pi, rstr_pa2g20ccka0, 0);
 			pwrdet->pwrdet_b[0][b + CH_2G_GROUP + CH_5G_5BAND] =
@@ -8063,7 +8194,7 @@ static bool BCMATTACHFN(wlc_phy_txpwr_srom12_read)(phy_type_tpc_ctx_t *ctx)
 		pwrdet->pwrdet_b[1][b] = (int16)PHY_GETINTVAR_ARRAY_SLICE(pi, rstr_pa2ga1, 1);
 		pwrdet->pwrdet_c[1][b] = (int16)PHY_GETINTVAR_ARRAY_SLICE(pi, rstr_pa2ga1, 2);
 		pwrdet->pwrdet_d[1][b] = (int16)PHY_GETINTVAR_ARRAY_SLICE(pi, rstr_pa2ga1, 3);
-		if (pi->sh->sromrev == 18) {
+		if (pi->sh->sromrev == 18 || ACMAJORREV_128(pi->pubpi->phy_rev)) {
 			pwrdet->pwrdet_a[1][b + CH_2G_GROUP + CH_5G_5BAND] =
 				(int16)PHY_GETINTVAR_ARRAY_SLICE(pi, rstr_pa2g20ccka1, 0);
 			pwrdet->pwrdet_b[1][b + CH_2G_GROUP + CH_5G_5BAND] =
@@ -9309,7 +9440,7 @@ phy_ac_tpc_set_pavars(phy_type_tpc_ctx_t *ctx, void *a, void *p)
 		pwrdet->pwrdet_d[chain][freq_range] = inpa[j++];
 		break;
 		case WL_CHAN_FREQ_RANGE_2G_20_CCK:
-		if (SROMREV(pi->sh->sromrev) >= 18) {
+		if (SROMREV(pi->sh->sromrev) >= 18 || ACMAJORREV_128(pi->pubpi->phy_rev)) {
 			// CCK PAPARAM
 			pwrdet->pwrdet_a[chain][CH_2G_GROUP + CH_5G_5BAND]
 				= inpa[j++];
@@ -9521,7 +9652,7 @@ phy_ac_tpc_get_pavars(phy_type_tpc_ctx_t *ctx, void *a, void *p)
 		outpa[j++] = pwrdet->pwrdet_d[chain][freq_range];
 		break;
 		case WL_CHAN_FREQ_RANGE_2G_20_CCK:
-		if (SROMREV(pi->sh->sromrev) >= 18) {
+		if (SROMREV(pi->sh->sromrev) >= 18 || ACMAJORREV_128(pi->pubpi->phy_rev)) {
 			// CCK PAPARAM
 			outpa[j++] = pwrdet->
 				pwrdet_a[chain][CH_2G_GROUP + CH_5G_5BAND];

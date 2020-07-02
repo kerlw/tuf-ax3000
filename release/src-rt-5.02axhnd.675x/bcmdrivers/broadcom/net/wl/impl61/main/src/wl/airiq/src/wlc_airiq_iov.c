@@ -138,11 +138,11 @@ enum {
 	IOV_AIRIQ_OFFLOAD                = 0x60,
 	IOV_AIRIQ_OFFLOAD_CMD            = 0x61,
 #endif // endif
-#ifdef BCMDBG
+#if defined(BCMDBG) || defined(WLTEST)
 	/* Debug */
 	IOV_AIRIQ_TXTONE                 = 0x80,
 	IOV_AIRIQ_3PLUS1                 = 0x81,
-#endif /* BCMDBG */
+#endif /* BCMDBG || WLTEST */
 	IOV_LTE_U_SCAN_START             = 0x90,
 	IOV_LTE_U_SCAN_ABORT             = 0x91,
 	IOV_LTE_U_SCAN_CONFIG            = 0x92,
@@ -227,14 +227,14 @@ const bcm_iovar_t airiq_iovars[] = {
 	{ "airiq_mangain",
 	IOV_AIRIQ_MANGAIN, (0), (0), IOVT_UINT32, 0
 	},
-#ifdef BCMDBG
+#if defined(BCMDBG) || defined(WLTEST)
 	{ "airiq_txtone",
 	IOV_AIRIQ_TXTONE, (0), (0), IOVT_INT32, 0
 	},
 	{ "airiq_3plus1",
 	IOV_AIRIQ_3PLUS1, (0), (0), IOVT_UINT32, 0
 	},
-#endif // endif
+#endif /* BCMDBG || WLTEST */
 	{ "lte_u_scan_config",
 	IOV_LTE_U_SCAN_CONFIG, (0), (0), IOVT_BUFFER, sizeof(airiq_config_t)
 	},
@@ -573,6 +573,8 @@ airiq_doiovar(void *hdl, uint32 actionid, void *p, uint plen,
 	}
 	break;
 #endif /* WLOFFLD */
+#endif /* BCMDBG */
+#if defined(BCMDBG) || defined(WLTEST)
 	case IOV_SVAL(IOV_AIRIQ_TXTONE):
 	{
 		if (int_val == 0) {
@@ -594,42 +596,13 @@ airiq_doiovar(void *hdl, uint32 actionid, void *p, uint plen,
 		} else {
 			int32 radio_chanspec_sc;
 			phy_ac_chanmgr_get_val_sc_chspec(PHY_AC_CHANMGR(pi), &radio_chanspec_sc);
-			*ret_int_ptr = CHSPEC_CHANNEL(radio_chanspec_sc);
+			*ret_int_ptr = radio_chanspec_sc;
 		}
 		break;
 	case IOV_SVAL(IOV_AIRIQ_3PLUS1):
-	{
-		/* when the phy is downgraded, the +1 chanspec is set to scan.chanspec_list[0] */
-		airiqh->scan.chanspec_list[0] = CHSPEC_BW(pi->radio_chanspec) | int_val;
-		if (int_val < 20) {
-			airiqh->scan.chanspec_list[0] |= WL_CHANSPEC_BAND_2G;
-		} else {
-			airiqh->scan.chanspec_list[0] |= WL_CHANSPEC_BAND_5G;
-		}
-
-		airiqh->scan.scan_start = 0; /* do not begin scanning */
-
-		/* Place the radio into the airiq 3+1 mode with the given chanspec on the +1 */
-		err = wlc_airiq_3p1_scan_prep(airiqh);
-
-		if (err == BCME_BUSY) {
-			/* Must reconfigure and wait for callback */
-			WL_AIRIQ(("%s: preparing for 3+1 scan. downgrade\n", __FUNCTION__));
-#if defined(WL_MODESW)
-			wlc_airiq_modeswitch_state_upd(airiqh, AIRIQ_MODESW_DOWNGRADE_IN_PROGRESS);
-#endif // endif
-			airiqh->phy_mode = PHYMODE_3x3_1x1;
-			return 0;
-		} else if (err != BCME_OK) {
-			WL_ERROR(("%s: error starting 3+1 scan, couldn't downgrade (%d)\n",
-				__FUNCTION__, err));
-			return err;
-		}
-		/* phymode is already set */
-		wlc_airiq_3p1_downgrade_phy(airiqh, airiqh->scan.chanspec_list[0]);
-
+		wlc_airiq_scan_set_chanspec_3p1(airiqh, pi, pi->radio_chanspec, int_val);
 		break;
-	}
+
 #endif /* BCMDBG */
 	case IOV_GVAL(IOV_LTE_U_SCAN_CONFIG):
 		err = lte_u_get_scan_config(airiqh, (airiq_config_t*)arg, alen);

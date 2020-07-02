@@ -236,6 +236,8 @@ const int8 airiq_rev65_scale_3plus1[3] = { 50, 52, 50 };
 #define lte_u_gaincode_lnarout(code) ((uint8)(((code) >> 16) & 0xff))
 #define lte_u_gaincode_elna(code) (((code) >> 24) & 0x1)
 
+const uint8 femctl_war_43684mcm = 0x5;
+
 #ifdef VASIP_HW_SUPPORT
 void
 wlc_airiq_phy_ack_vasip_fft(airiq_info_t *airiqh)
@@ -284,6 +286,7 @@ wlc_airiq_build_desens_lut(airiq_info_t *airiqh, airiq_gain_table_t *gt,
 	uint16 k;
 	uint16 lnarout_ix;
 	uint8 elna;
+	bool force_elna = FALSE;
 
 	if (D11REV_GE(airiqh->wlc->pub->corerev, 64)) {
 		elna = (gt->elna > 0); /* If ELNA present */
@@ -294,6 +297,14 @@ wlc_airiq_build_desens_lut(airiq_info_t *airiqh, airiq_gain_table_t *gt,
 		biq1 = 3;
 		maxgain = gt->elna + gt->lna1[lna1] + gt->lna2[lna2] +
 		    gt->mixtia[tia] + 3 * biq0 + 3 * biq1;
+		/*43684MCM has one band select for all four cores. In mixed
+		  2g/5g operation, +1 femctl output cannot be set as usual.
+		  eLNA is always enabled and cannot be bypassed. */
+		if ((SI_CHIPID(airiqh->wlc->pub->sih) == BCM43684_CHIP_ID) &&
+			(IS_43694MC(airiqh->wlc->deviceid)) )
+		{
+			force_elna = TRUE;
+		}
 	} else if (D11REV_IS(airiqh->wlc->pub->corerev, 42)) {
 		elna = (gt->elna > 0); /* If ELNA present */
 		lna1 = 5;
@@ -355,7 +366,7 @@ wlc_airiq_build_desens_lut(airiq_info_t *airiqh, airiq_gain_table_t *gt,
 				lna2--;
 			} else if (lna1 > 1) {
 				lna1--;
-			} else if (elna > 0) {
+			} else if (elna > 0 && !force_elna) {
 				elna--;
 			} else {
 				/* maxed out */
@@ -540,8 +551,22 @@ wlc_airiq_phy_override_fem(airiq_info_t *airiqh, phy_info_t *pi, uint8 core,
 			lna2g= ((swctrl->rx2g[core]) << 1) | 0x1;
 			lna5g= ((swctrl->rx5g[core]) << 1) | 0x1;
 		} else {
-			lna2g= ((swctrl->rxbyp2g[core]) << 1) & 0x1;
-			lna5g= ((swctrl->rxbyp5g[core]) << 1) & 0x1;
+			lna2g= ((swctrl->rxbyp2g[core]) << 1) | 0x1;
+			lna5g= ((swctrl->rxbyp5g[core]) << 1) | 0x1;
+		}
+
+		/* 43684MCM has one band select for all four cores. In mixed 2g/5g
+		   operation, +1 femctl output cannot be set as usual. eLNA is always
+		   enabled and cannot be bypassed. Usuing the normal femctl setting
+		   results in the FEM being disabled (high attenuation). A hardcoded
+		   WAR value keeps the eLNA in RX mode to workaround this HW limitation
+		   of 43684MCM.*/
+		if ((SI_CHIPID(airiqh->wlc->pub->sih) == BCM43684_CHIP_ID) &&
+			(IS_43694MC(airiqh->wlc->deviceid)) &&
+			CHSPEC_IS2G(airiqh->wlc->chanspec) &&
+			CHSPEC_IS5G(airiqh->scan.chanspec_list[airiqh->scan.channel_idx]))
+		{
+			lna5g= femctl_war_43684mcm;
 		}
 
 		if (restore) {

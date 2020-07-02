@@ -92,4 +92,5 @@ extern void wlc_nar_flush_flowid_pkts(wlc_nar_info_t * nit, struct scb *scb, uin
 extern struct pktq *wlc_nar_txq(wlc_nar_info_t * nit, struct scb *scb);
 #endif // endif
 
+extern void wlc_nar_flush_scb_queues(wlc_nar_info_t * nit, struct scb *scb);
 #endif /* __WLC_NAR_H__ */

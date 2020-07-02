@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scan_priv.h 774257 2019-04-17 10:08:19Z $
+ * $Id: wlc_scan_priv.h 779762 2019-10-07 07:12:37Z $
  */
 
 #ifndef _WLC_SCAN_PRIV_H_
@@ -143,6 +143,7 @@ struct scan_info {
 						 * time is more than threshold by reducing time
 						 */
 	uint16		scan_dfs_min_dwell;     /* On DFS home ch - min dwell time in sec */
+	scancb_fn_t	scan_ex_cb;		/* function to call when extended scan is done */
 	/* keep all these debugging related fields at the end */
 #ifdef BCMDBG
 	uint8	debug;

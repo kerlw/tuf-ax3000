@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_tpc.h 769618 2018-11-21 06:20:37Z $
+ * $Id: phy_ac_tpc.h 780010 2019-10-12 05:22:00Z $
  */
 
 #ifndef _phy_ac_tpc_h_
@@ -91,6 +91,7 @@ extern int8 wlc_phy_tone_pwrctrl(phy_info_t *pi, int8 tx_idx, uint8 core);
 
 extern void wlc_phy_txpwrctrl_set_target_acphy(phy_info_t *pi, uint8 pwr_qtrdbm, uint8 core);
 extern void wlc_phy_txpwrctrl_config_acphy(phy_info_t *pi);
+extern void wlc_phy_txpwrctrl_idle_tssi_phyreg_setup_acphy(phy_info_t *pi);
 
 #if defined(WLTEST)
 void wlc_phy_iovar_patrim_acphy(phy_info_t *pi, int32 *ret_int_ptr);

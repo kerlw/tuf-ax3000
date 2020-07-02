@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ampdu.c 777641 2019-08-07 02:27:22Z $
+ * $Id: wlc_ampdu.c 780082 2019-10-15 08:48:44Z $
  */
 
 /**
@@ -2176,7 +2176,8 @@ scb_ampdu_update_config_all(ampdu_tx_info_t *ampdu_tx)
 		}
 	}
 	if (RATELINKMEM_ENAB(wlc->pub)) {
-		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, TRUE, FALSE);
+		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, TRUE,
+			FALSE /* clr_txbf_stats=0 in mreq */);
 	}
 
 	/* The ampdu config affects values that are in the tx headers of outgoing packets.
@@ -2472,14 +2473,14 @@ wlc_ampdu_dbg_stats(wlc_info_t *wlc, struct scb *scb, scb_ampdu_tid_ini_t *ini,
 			ETHER_TO_MACF(scb->ea), scb, ini->tid));
 
 		if (D11REV_GE(wlc->pub->corerev, 128)) {
-			WL_PRINT(("ampdu_dbg: wl%d.%d dead_cnt %d tx_in_transit %d "
+			WL_ERROR(("ampdu_dbg: wl%d.%d dead_cnt %d tx_in_transit %d "
 				"aqmqmap 0x%x aqmfifo_status 0x%x\n",
 				wlc->pub->unit, WLC_BSSCFG_IDX(SCB_BSSCFG(scb)),
 				ini->dead_cnt, ini->tx_in_transit,
 				R_REG(osh, D11_AQM_QMAP(wlc)),
 				R_REG(osh, D11_MQF_STATUS(wlc))));
 		} else if (D11REV_GE(wlc->pub->corerev, 65)) {
-			WL_PRINT(("ampdu_dbg: wl%d.%d dead_cnt %d tx_in_transit %d "
+			WL_ERROR(("ampdu_dbg: wl%d.%d dead_cnt %d tx_in_transit %d "
 				"psm_reg_mux 0x%x aqmqmap 0x%x aqmfifo_status 0x%x\n",
 				wlc->pub->unit, WLC_BSSCFG_IDX(SCB_BSSCFG(scb)),
 				ini->dead_cnt, ini->tx_in_transit,
@@ -2498,7 +2499,7 @@ wlc_ampdu_dbg_stats(wlc_info_t *wlc, struct scb *scb, scb_ampdu_tid_ini_t *ini,
 				fifosel = R_REG(osh, D11_xmtsel(wlc));
 				frmcnt = R_REG(osh, D11_XmtFifoFrameCnt(wlc));
 			}
-			WL_PRINT(("ampdu_dbg: wl%d.%d dead_cnt %d tx_in_transit %d "
+			WL_ERROR(("ampdu_dbg: wl%d.%d dead_cnt %d tx_in_transit %d "
 				"fifordy 0x%x frmcnt 0x%x fifosel 0x%x\n",
 				wlc->pub->unit, WLC_BSSCFG_IDX(SCB_BSSCFG(scb)),
 				ini->dead_cnt, ini->tx_in_transit,
@@ -2508,22 +2509,22 @@ wlc_ampdu_dbg_stats(wlc_info_t *wlc, struct scb *scb, scb_ampdu_tid_ini_t *ini,
 			BCM_REFERENCE(frmcnt);
 		}
 
-		WL_PRINT(("ampdu_dbg: ifsstat 0x%x nav_stat 0x%x txop %u\n",
+		WL_ERROR(("ampdu_dbg: ifsstat 0x%x nav_stat 0x%x txop %u\n",
 			R_REG(osh, D11_IFS_STAT(wlc)),
 			R_REG(osh, D11_NAV_STAT(wlc)),
 			now_mdbg.txop - mdbg->txop));
 
-		WL_PRINT(("ampdu_dbg: pktpend: %d %d %d %d %d ap %d\n",
+		WL_ERROR(("ampdu_dbg: pktpend: %d %d %d %d %d ap %d\n",
 			TXPKTPENDGET(wlc, TX_AC_BK_FIFO), TXPKTPENDGET(wlc, TX_AC_BE_FIFO),
 			TXPKTPENDGET(wlc, TX_AC_VI_FIFO), TXPKTPENDGET(wlc, TX_AC_VO_FIFO),
 			TXPKTPENDGET(wlc, TX_BCMC_FIFO), AP_ENAB(wlc->pub)));
 
-		WL_PRINT(("ampdu_dbg: txall %d txbcn %d txrts %d rxcts %d rsptmout %d rxstrt %d\n",
+		WL_ERROR(("ampdu_dbg: txall %d txbcn %d txrts %d rxcts %d rsptmout %d rxstrt %d\n",
 			now_mdbg.txallfrm - mdbg->txallfrm, now_mdbg.txbcn - mdbg->txbcn,
 			now_mdbg.txrts - mdbg->txrts, now_mdbg.rxcts - mdbg->rxcts,
 			now_mdbg.rsptmout - mdbg->rsptmout, now_mdbg.rxstrt - mdbg->rxstrt));
 
-		WL_PRINT(("ampdu_dbg: cwcur0-3 %x %x %x %x bslots cur/0-3 %d %d %d %d %d "
+		WL_ERROR(("ampdu_dbg: cwcur0-3 %x %x %x %x bslots cur/0-3 %d %d %d %d %d "
 			 "ifs_boff %d\n",
 			 wlc_read_shm(wlc, 0x240 + 3*2), wlc_read_shm(wlc, 0x260 + 3*2),
 			 wlc_read_shm(wlc, 0x280 + 3*2), wlc_read_shm(wlc, 0x2a0 + 3*2),
@@ -2533,7 +2534,7 @@ wlc_ampdu_dbg_stats(wlc_info_t *wlc, struct scb *scb, scb_ampdu_tid_ini_t *ini,
 			 R_REG(osh, D11_IFS_BOFF_CTR(wlc))));
 
 		for (i = 0; i < 2; i++) {
-			WL_PRINT(("ampdu_dbg: again%d ifsstat 0x%x nav_stat 0x%x\n",
+			WL_ERROR(("ampdu_dbg: again%d ifsstat 0x%x nav_stat 0x%x\n",
 				i + 1,
 				R_REG(osh, D11_IFS_STAT(wlc)),
 				R_REG(osh, D11_NAV_STAT(wlc))));
@@ -3556,7 +3557,8 @@ wlc_ampdu_tx_set_mpdu_density(ampdu_tx_info_t *ampdu_tx, uint8 mpdu_density)
 		}
 	}
 	if (RATELINKMEM_ENAB(wlc->pub)) {
-		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, TRUE, FALSE);
+		wlc_ratelinkmem_update_link_entry_all(wlc, NULL, TRUE,
+			FALSE /* clr_txbf_stats=0 in mreq */);
 	}
 	if (WLC_TXC_ENAB(wlc)) {
 		wlc_txc_inv_all(wlc->txc);
@@ -6078,7 +6080,10 @@ wlc_ampdu_release(ampdu_tx_info_t *ampdu_tx, scb_ampdu_tx_t *scb_ampdu,
 #endif /* WLATF_DONGLE */
 
 		if (next_fid == TXMOD_TRANSMIT) {
-			wlc_txq_enq_pkt(wlc, scb, p, WLC_PRIO_TO_PREC(tid));
+			if (wlc_txq_enq_pkt(wlc, scb, p, WLC_PRIO_TO_PREC(tid)) != BCME_OK) {
+				/* the packet has been freed by wlc_txq_enq_pkt() */
+				p = NULL;
+			}
 		} else {
 			/* calls apps module (wlc_apps_ps_enq) : */
 			SCB_TX_NEXT(TXMOD_AMPDU, scb, p, WLC_PRIO_TO_PREC(tid));
@@ -6948,7 +6953,8 @@ wlc_sendampdu(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, int pre
 
 	ini = scb_ampdu->ini[tid];
 
-	if (!ini || (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_ON)) {
+	if (!ini || (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_ON) ||
+		(ini->ba_state == AMPDU_TID_STATE_BA_OFF)) {
 		WL_AMPDU(("wlc_sendampdu: bailing out for bad ini (%p)/bastate\n",
 			OSL_OBFUSCATE_BUF(ini)));
 		WLCNTINCR(ampdu_tx->cnt->orphan);
@@ -7195,7 +7201,7 @@ wlc_sendampdu_noaqm(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, i
 			break;
 		}
 
-	BCM_REFERENCE(suppress_pkt);
+		BCM_REFERENCE(suppress_pkt);
 
 #ifdef PROP_TXSTATUS
 		if (GET_DRV_HAS_ASSIGNED_SEQ(WLPKTTAG(p)->seq)) {
@@ -7280,13 +7286,11 @@ wlc_sendampdu_noaqm(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, i
 
 		if (!(WLPKTTAG(p)->flags & WLF_MIMO) ||
 		    (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_OFF) ||
-		    (ini->ba_state == AMPDU_TID_STATE_BA_OFF) ||
 		    SCB_PS(scb)) {
 			/* clear ampdu related settings if going as regular frame */
 			if ((WLPKTTAG(p)->flags & WLF_MIMO) &&
 			    (SCB_PS(scb) ||
-			     (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_OFF) ||
-			     (ini->ba_state == AMPDU_TID_STATE_BA_OFF))) {
+			     (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_OFF))) {
 				WLC_CLR_MIMO_PLCP_AMPDU(plcp);
 				WLC_SET_MIMO_PLCP_LEN(plcp, len);
 			}
@@ -8220,7 +8224,6 @@ wlc_sendampdu_aqm(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, int
 
 		regmpdu_pkt = !(pkttag->flags & WLF_MIMO) ||
 		        (ini->ba_state == AMPDU_TID_STATE_BA_PENDING_OFF) ||
-		        (ini->ba_state == AMPDU_TID_STATE_BA_OFF) ||
 		        SCB_PS(scb) || s_mpdu_pdu;
 
 		/* if no error, populate tx hdr (TSO/ucode header) info and continue */
@@ -8356,6 +8359,12 @@ wlc_sendampdu_aqm(ampdu_tx_info_t *ampdu_tx, wlc_txq_info_t *qi, void **pdu, int
 			tx_info.MacTxControlLow &= htol16(~D11AC_TXC_AMPDU);
 			/* non-ampdu must have svht bit set */
 			tx_info.MacTxControlHigh |= htol16(D11AC_TXC_SVHT);
+
+			/* clear all MU bits in case of SVHT/S-MPDU due to limitation in lower MAC
+			 * XXX: we can remove the limitation once we have it fully supported
+			 */
+			tx_info.MacTxControlHigh &= htol16(~(D11AC_TXC_MU |
+				D11REV128_TXC_HEMUMIMO | D11REV128_TXC_HEOFDMA));
 
 			*maclow = tx_info.MacTxControlLow;
 			*machigh = tx_info.MacTxControlHigh;
@@ -10495,7 +10504,11 @@ free_and_next:
 		}
 
 #ifdef PKTQ_LOG
-		if (prec_cnt) {
+		if (prec_cnt ||
+#ifdef SCB_BS_DATA
+			bs_data_counters ||
+#endif // endif
+			actq_cnt) {
 			/* hdrlength should be same across all MPDUs */
 			prec_pktlen = pkttotlen(wlc->osh, p) - hdr_len;
 #ifdef BCMDBG
@@ -14544,6 +14557,9 @@ wlc_ampdu_tx_scb_dump_scb(ampdu_tx_info_t *ampdu_tx, struct bcmstrbuf *b, struct
 	int tid;
 #endif // endif
 
+	if (!WL_ERROR_ON())
+		return 0;
+
 	if (SCB_AMPDU(scb)) {
 		scb_ampdu = SCB_AMPDU_TX_CUBBY(ampdu_tx, scb);
 		bcm_bprintf(b, MACF": max_pdu %d release %d\n",
@@ -14657,6 +14673,9 @@ exit:
 static void
 ampdu_dump_ini(wlc_info_t *wlc, scb_ampdu_tid_ini_t *ini)
 {
+	if (!WL_ERROR_ON())
+		return;
+
 	printf("ba_state %d ba_wsize %d tx_in_transit %d tid %d rem_window %d\n",
 		ini->ba_state, ini->ba_wsize, ini->tx_in_transit, ini->tid,
 		wlc_ampdu_get_rem_window(ini));
@@ -15079,6 +15098,8 @@ wlc_ampdu_tx_recv_delba(ampdu_tx_info_t *ampdu_tx, struct scb *scb, uint8 tid, u
 	BCM_REFERENCE(initiator);
 	BCM_REFERENCE(reason);
 	ASSERT(scb_ampdu_tx);
+
+	AMPDU_VALIDATE_TID(ampdu_tx, tid, "wlc_ampdu_tx_recv_delba");
 
 	if (category & DOT11_ACTION_CAT_ERR_MASK) {
 		WL_AMPDU_ERR(("wl%d: %s: unexp error action frame\n",

@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: pdftmsched.c 777979 2019-08-19 23:14:13Z $
+ * $Id: pdftmsched.c 779958 2019-10-10 22:22:02Z $
  */
 
 #include "pdftmpvt.h"
@@ -112,6 +112,9 @@ ftm_sched_compute_burst_start(pdftm_t *ftm, pdftm_session_t *sn)
 	pdftm_time_t burst_start = 0;
 	pdftm_cmn_t *ftm_cmn = ftm->ftm_cmn;
 	uint64 min_delay_us;
+#ifdef WL_FTM_MSCH
+	uint64 msch_exp = 0, now = 0;
+#endif /* WL_FTM_MSCH */
 	ASSERT(ftm_cmn->sched->burst_sn == NULL || ftm_cmn->sched->in.burst != 0);
 	ASSERT(!ftm_cmn->sched->in.burst || ftm_cmn->sched->burst_sn != NULL);
 
@@ -132,7 +135,22 @@ ftm_sched_compute_burst_start(pdftm_t *ftm, pdftm_session_t *sn)
 			FTM_LOG_TSF_ARG(sst->delay_exp), FTM_LOG_TSF_ARG(min_delay_us))));
 	}
 	BCM_REFERENCE(min_delay_us);
+#ifdef WL_FTM_MSCH
+	if (!BSSCFG_SLOTTED_BSS(sn->bsscfg) && FTM_SESSION_IS_INITIATOR(sn)) {
+		now = msch_current_time(ftm->wlc->msch_info);
+		msch_exp = wlc_msch_query_timeslot(ftm->wlc->msch_info, 0, 0);
+		if (sst->delay_exp > msch_exp) {
+			burst_start = sst->delay_exp;
+		} else {
+			burst_start = sst->delay_exp + (msch_exp - now);
+		}
+	}
+	else {
+		burst_start = sst->delay_exp;
+	}
+#else
 	burst_start = sst->delay_exp;
+#endif /* WL_FTM_MSCH */
 	sst->burst_start = burst_start;
 	sst->burst_end = sst->burst_start +
 		FTM_INTVL2USEC(&sn->config->burst_config->duration);

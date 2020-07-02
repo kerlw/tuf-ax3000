@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scb.h 777861 2019-08-13 21:59:37Z $
+ * $Id: wlc_scb.h 779286 2019-09-24 08:33:14Z $
  */
 
 #ifndef _wlc_scb_h_
@@ -107,8 +107,12 @@ struct scb_trf_info {
 		((scb)->pkts_inflt_fifocnt[(prio)] += (delta))	/**< Increment by specified value */
 #define SCB_PKTS_INFLT_FIFOCNT_SUB(scb, prio, delta) \
 	do { \
-		((scb)->pkts_inflt_fifocnt[(prio)] -= (delta));	/* Decrement by specified value */ \
-		ASSERT((scb)->pkts_inflt_fifocnt[(prio)] >= 0); \
+		if ((scb)->pkts_inflt_fifocnt[(prio)] >= (delta)) { \
+			/* Decrement by specified value */ \
+			((scb)->pkts_inflt_fifocnt[(prio)] -= (delta));	\
+		} else { \
+			((scb)->pkts_inflt_fifocnt[(prio)] = 0); \
+		} \
 	} while (0);
 
 #define SCB_PKTS_INFLT_FIFOCNT_VAL(scb, prio) \
@@ -187,6 +191,7 @@ struct scb {
 	uint8		auth_alg;	/**< 802.11 authentication mode */
 	uint8		ps_pretend;	/**< AP pretending STA is in PS mode */
 	bool		PS;		/**< remote STA in PS mode */
+	bool		PS_TWT;		/**< remote STA in TWT PS mode */
 	wlc_if_t	*wds;		/**< per-port WDS cookie */
 	tx_path_node_t	*tx_path;	/**< pkt tx path (allocated as scb cubby) */
 	wl_if_stats_t	*if_stats;
@@ -553,6 +558,7 @@ void wlc_scblist_validaterates(wlc_info_t *wlc);
 /* scb_info macros */
 #ifdef AP
 #define SCB_PS(a)		((a) && (a)->PS)
+#define SCB_TWTPS(a)		((a) && (a)->PS_TWT)
 #ifdef WDS
 #define SCB_WDS(a)		((a)->wds)
 #else
@@ -563,6 +569,7 @@ void wlc_scblist_validaterates(wlc_info_t *wlc);
 #define WLC_BCMC_PSMODE(wlc, bsscfg) (SCB_PS(WLC_BCMCSCB_GET(wlc, bsscfg)))
 #else
 #define SCB_PS(a)		FALSE
+#define SCB_TWTPS(a)		FALSE
 #define SCB_WDS(a)		NULL
 #define SCB_INTERFACE(a)        ((a)->bsscfg->wlcif->wlif)
 #define SCB_WLCIFP(a)           ((a)->bsscfg->wlcif)

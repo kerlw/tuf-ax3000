@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_temp.c 775501 2019-06-02 00:18:19Z $
+ * $Id: phy_ac_temp.c 778770 2019-09-10 09:50:17Z $
  */
 
 #include <typedefs.h>
@@ -461,6 +461,16 @@ BCMATTACHFN(phy_ac_temp_nvram_attach)(phy_ac_temp_info_t *tempi)
 	pi->sromi->rpcal5gb1core3 = (uint16)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_rpcal5gb1core3, 0);
 	pi->sromi->rpcal5gb2core3 = (uint16)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_rpcal5gb2core3, 0);
 	pi->sromi->rpcal5gb3core3 = (uint16)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_rpcal5gb3core3, 0);
+	pi->u.pi_acphy->sromi->rpcal_phase2g =
+		(uint16)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_rpcal_phase2g, 0);
+	pi->u.pi_acphy->sromi->rpcal_phase5gb0 =
+		(uint16)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_rpcal_phase5gb0, 0);
+	pi->u.pi_acphy->sromi->rpcal_phase5gb1 =
+		(uint16)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_rpcal_phase5gb1, 0);
+	pi->u.pi_acphy->sromi->rpcal_phase5gb2 =
+		(uint16)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_rpcal_phase5gb2, 0);
+	pi->u.pi_acphy->sromi->rpcal_phase5gb3 =
+		(uint16)PHY_GETINTVAR_DEFAULT_SLICE(pi, rstr_rpcal_phase5gb3, 0);
 }
 /* ********************************************* */
 /*				Internal Definitions					*/

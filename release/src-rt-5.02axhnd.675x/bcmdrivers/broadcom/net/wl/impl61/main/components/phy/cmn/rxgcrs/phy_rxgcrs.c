@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_rxgcrs.c 771175 2019-01-17 05:27:50Z $
+ * $Id: phy_rxgcrs.c 778740 2019-09-09 20:44:13Z $
  */
 
 #include <phy_cfg.h>
@@ -235,6 +235,20 @@ wlc_phy_adjust_ed_thres(phy_info_t *pi, int32 *assert_thresh_dbm, bool set_thres
 	}
 
 	return BCME_UNSUPPORTED;
+}
+
+bool
+wlc_phy_is_edcrs_high(phy_info_t *pi)
+{
+	phy_rxgcrs_info_t *info = pi->rxgcrsi;
+	phy_type_rxgcrs_fns_t *fns = info->fns;
+
+	PHY_TRACE(("%s\n", __FUNCTION__));
+
+	if (NULL != fns->is_edcrs_high)
+		return fns->is_edcrs_high(pi);
+	else
+		return FALSE;
 }
 
 /* Rx desense Module */

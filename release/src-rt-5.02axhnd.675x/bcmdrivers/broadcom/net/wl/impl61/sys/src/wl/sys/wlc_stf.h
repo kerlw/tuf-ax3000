@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_stf.h 775058 2019-05-16 19:11:51Z $
+ * $Id: wlc_stf.h 779729 2019-10-04 20:43:14Z $
  */
 
 #ifndef _wlc_stf_h_
@@ -219,6 +219,7 @@ struct wlc_stf {
 
 	/* features set for thermal throttle */
 	uint32   thermal_throttle_features;
+	bool     core3_p1c; /* +1 core chain mask */
 };
 
 extern int wlc_stf_attach(wlc_info_t* wlc);

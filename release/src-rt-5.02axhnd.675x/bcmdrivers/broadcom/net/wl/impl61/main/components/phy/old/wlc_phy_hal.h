@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_phy_hal.h 770792 2019-01-04 01:55:04Z $
+ * $Id: wlc_phy_hal.h 778770 2019-09-10 09:50:17Z $
  */
 
 #ifndef _wlc_phy_h_
@@ -203,6 +203,7 @@ enum {
 	IOV_PHY_BSSCOLOR,
 	IOV_PHY_TXPWRCAP,
 	IOV_PHY_SNIFFER_ALIGN,
+	IOV_RPCALPHASEVARS,
 	IOV_PHY_LAST	/* insert before this one */
 };
 

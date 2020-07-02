@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_apcs.c 769543 2018-11-20 00:27:47Z $
+ * $Id: wlc_apcs.c 779762 2019-10-07 07:12:37Z $
  */
 
 /**
@@ -2059,8 +2059,8 @@ static apcs_test_vec_t apcs_test_11a[] =
 static void
 wlc_cs_scan_complete(void *arg, int status, wlc_bsscfg_t *cfg)
 {
-	cs_info_t *cs = (cs_info_t *)arg;
-	wlc_info_t *wlc = cs->wlc;
+	wlc_info_t *wlc = (wlc_info_t*)arg;
+	cs_info_t *cs = (cs_info_t *)wlc->cs;
 	bool bw40 = cs->bw40;
 
 #ifdef WL11N_20MHZONLY
@@ -2443,7 +2443,7 @@ wlc_cs_scan_start(wlc_bsscfg_t *cfg, wl_uint32_list_t *request, bool bw40, bool 
 	                        active ? DOT11_SCANTYPE_ACTIVE : DOT11_SCANTYPE_PASSIVE,
 	                        -1, -1, -1, -1, cs->scan_chanspec_list,
 	                        cs->scan_chanspec_count, 0,
-	                        FALSE, wlc_cs_scan_complete, cs,
+	                        FALSE, wlc_cs_scan_complete, wlc,
 	                        WLC_ACTION_SCAN, FALSE, cfg, NULL, NULL);
 	if (status == BCME_OK) {
 		cs->cb = cb;

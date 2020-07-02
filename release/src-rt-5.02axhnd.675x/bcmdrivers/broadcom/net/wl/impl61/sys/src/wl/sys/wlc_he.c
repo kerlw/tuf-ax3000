@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_he.c 778011 2019-08-20 09:01:58Z $
+ * $Id: wlc_he.c 780087 2019-10-15 09:59:59Z $
  */
 
 #ifdef WL11AX
@@ -1490,6 +1490,11 @@ wlc_he_cmd_features(void *ctx, uint8 *params, uint16 plen, uint8 *result, uint16
 	if (set) {
 		uint32 features = *(uint32 *)params;
 		bool update_fifos = FALSE;
+
+		if (*(int32 *)params == -1) {
+			/* Reset to default value */
+			features = WL_HE_FEATURES_DEFAULT(wlc);
+		}
 		if (features & (~WL_HE_MAX_ALLOWED_FEATURES)) {
 			return BCME_UNSUPPORTED;
 		}
@@ -1547,7 +1552,8 @@ wlc_he_configure_new_bsscolor(wlc_he_info_t *hei, uint8 new_color, uint8 disable
 				wlc_bss_update_probe_resp(wlc, bsscfg, TRUE);
 			}
 			if (RATELINKMEM_ENAB(wlc->pub)) {
-				wlc_ratelinkmem_update_link_entry_all(wlc, bsscfg, FALSE, FALSE);
+				wlc_ratelinkmem_update_link_entry_all(wlc, bsscfg, FALSE,
+					FALSE /* clr_txbf_stats=0 in mreq */);
 			}
 		}
 	} else {
@@ -2881,11 +2887,9 @@ wlc_he_parse_cap_ie(wlc_he_info_t *hei, scb_t *scb, he_cap_ie_t *cap)
 	}
 #endif /*  WL_BEAMFORMING */
 
-	/* Trigger ratelinkmem update to make sure all values get programmed, use
-	 * with_internal_data to make sure OMI settings are programmed.
-	 */
+	/* Trigger ratelinkmem update to make sure all values get programmed */
 	if (RATELINKMEM_ENAB(wlc->pub)) {
-		wlc_ratelinkmem_update_link_entry_with_internal_data(wlc, scb);
+		wlc_ratelinkmem_upd_lmem_int(wlc, scb, TRUE /* clr_txbf_sts=1 in mreq */);
 	}
 }
 
@@ -3024,7 +3028,8 @@ wlc_he_write_op_ie(void *ctx, wlc_iem_build_data_t *data)
 		bhei->bsscolor = hei->bsscolor;
 		/* find all scbs for this bsscfg and get ratelinkmem updated */
 		if (RATELINKMEM_ENAB(wlc->pub)) {
-			wlc_ratelinkmem_update_link_entry_all(wlc, cfg, FALSE, FALSE);
+			wlc_ratelinkmem_update_link_entry_all(wlc, cfg, FALSE,
+				FALSE /* clr_txbf_stats=0 in mreq */);
 		}
 		/* Configure phy rx filter */
 		bhei->bsscolor_disable = hei->bsscolor_disable;
@@ -3627,7 +3632,8 @@ wlc_he_cmd_ppet(void *ctx, uint8 *params, uint16 plen, uint8 *result, uint16 *rl
 			}
 			/* trigger ratelinkmem for all scbs to get the override configured */
 			if (RATELINKMEM_ENAB(wlc->pub)) {
-				wlc_ratelinkmem_update_link_entry_all(wlc, cfg, FALSE, FALSE);
+				wlc_ratelinkmem_update_link_entry_all(wlc, cfg, FALSE,
+					FALSE /* clr_txbf_stats=0 in mreq */);
 			}
 		}
 	} else {
@@ -3833,6 +3839,10 @@ wlc_he_htc_process_omi(wlc_info_t* wlc, scb_t *scb, uint32 omi_data)
 		((omi_data & HTC_OM_CONTROL_UL_MU_DATA_DISABLE_MASK) !=
 		(he_scb->omi_htc & HTC_OM_CONTROL_UL_MU_DATA_DISABLE_MASK)));
 
+	WL_PS(("wl%d.%d %s: omi_pmq: 0x%x omi_htc: 0x%x -> 0x%x\n", wlc->pub->unit,
+		WLC_BSSCFG_IDX(SCB_BSSCFG(scb)), __FUNCTION__,
+		he_scb->omi_pmq, he_scb->omi_htc, omi_data));
+
 	bw_change = ((omi_data & HTC_OM_CONTROL_CHANNEL_WIDTH_MASK) !=
 		(he_scb->omi_htc & HTC_OM_CONTROL_CHANNEL_WIDTH_MASK));
 
@@ -3881,10 +3891,6 @@ wlc_he_htc_process_omi(wlc_info_t* wlc, scb_t *scb, uint32 omi_data)
 #endif /* TESTBED_AP_11AX */
 		wlc_mutx_hemmu_omibw_upd(wlc->mutx, scb, link_bw, new_omi_bw);
 	}
-
-	WL_PS(("wl%d.%d %s: omi_pmq: 0x%x omi_htc: 0x%x -> 0x%x\n", wlc->pub->unit,
-		WLC_BSSCFG_IDX(SCB_BSSCFG(scb)), __FUNCTION__,
-		he_scb->omi_pmq, he_scb->omi_htc, omi_data));
 
 	he_scb->omi_lm = (uint16)omi_data;
 
@@ -4453,7 +4459,8 @@ wlc_he_upd_scb_rateset_mcs(wlc_he_info_t *hei, struct scb *scb, uint8 link_bw)
 {
 	wlc_info_t *wlc =  hei->wlc;
 	wlc_bsscfg_t *cfg = SCB_BSSCFG(scb);
-	uint txstreams, rxstreams, peer_nss;
+	uint txstreams, rxstreams, peer_nss, omi_rx_nss;
+	scb_he_t *he_scb;
 
 	/* For Tx chain limit, use min of op_txsreams and Peer's NSS from OMN;
 	 * If Peer is in OMN, use the RXNSS of OMN as the Tx chains.
@@ -4461,15 +4468,15 @@ wlc_he_upd_scb_rateset_mcs(wlc_he_info_t *hei, struct scb *scb, uint8 link_bw)
 	if (SCB_VHT_CAP(scb)) {
 		peer_nss = wlc_vht_get_scb_oper_nss(wlc->vhti, scb);
 	} else if (SCB_HE_CAP(scb)) {
-		scb_he_t *sh;
+		he_scb = SCB_HE(hei, scb);
+		ASSERT(he_scb != NULL);
 
-		sh = SCB_HE(hei, scb);
-		ASSERT(sh != NULL);
-
-		peer_nss = HE_MAX_SS_SUPPORTED(sh->bw80_tx_mcs_nss);
+		peer_nss = HE_MAX_SS_SUPPORTED(he_scb->bw80_rx_mcs_nss);
 		if (link_bw == BW_160MHZ) {
-			peer_nss = HE_MAX_SS_SUPPORTED(sh->bw160_tx_mcs_nss);
+			peer_nss = HE_MAX_SS_SUPPORTED(he_scb->bw160_rx_mcs_nss);
 		}
+		omi_rx_nss = HTC_OM_CONTROL_RX_NSS(he_scb->omi_lm) + 1;
+		peer_nss = MIN(peer_nss, omi_rx_nss);
 	} else {
 		return;
 	}
@@ -4481,4 +4488,28 @@ wlc_he_upd_scb_rateset_mcs(wlc_he_info_t *hei, struct scb *scb, uint8 link_bw)
 	wlc_he_intersect_txrxmcsmaps(hei, scb, !wlc_he_bw80_limited(wlc, cfg),
 		FALSE, txstreams, rxstreams);
 }
+
+bool
+wlc_he_is_nonbrcm_160sta(wlc_he_info_t *hei, scb_t *scb)
+{
+	uint32 channel_width_set;
+	scb_he_t *sh;
+
+	sh = SCB_HE(hei, scb);
+	ASSERT(sh != NULL);
+
+	channel_width_set = getbits((uint8*)&sh->phy_cap, sizeof(sh->phy_cap),
+		HE_PHY_CH_WIDTH_SET_IDX, HE_PHY_CH_WIDTH_SET_FSZ);
+
+	if (!SCB_IS_BRCM(scb) &&
+		(channel_width_set & (HE_PHY_CH_WIDTH_2G_40 | HE_PHY_CH_WIDTH_5G_80 |
+			HE_PHY_CH_WIDTH_5G_160))) {
+		WL_INFORM(("%s : "MACF" likely non brcm bw160 sta\n",
+			__FUNCTION__, ETHER_TO_MACF(scb->ea)));
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
 #endif /* WL11AX */

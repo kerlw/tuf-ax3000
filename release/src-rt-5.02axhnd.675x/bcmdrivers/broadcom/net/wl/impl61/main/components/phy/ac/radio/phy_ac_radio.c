@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_radio.c 776911 2019-07-12 14:26:09Z $
+ * $Id: phy_ac_radio.c 780101 2019-10-15 14:26:22Z $
  */
 
 #include <typedefs.h>
@@ -1367,6 +1367,51 @@ acphy_set_lpmode(phy_info_t *pi, acphy_lp_opt_levels_t lp_opt_lvl)
 		}
 
 	}
+}
+
+int
+wlc_phy_get_recip_LO_div_phase(phy_info_t *pi)
+{
+	if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
+		return wlc_phy_get_recip_LO_div_phase_20704(pi);
+	} else {
+		return 0;
+	}
+}
+
+int
+wlc_phy_get_recip_LO_div_phase_20704(phy_info_t *pi)
+{
+	int core, tmp, LO_phase_diff;
+	int ncores = 2;
+	uint8 lodivstate[2] = {0, 0};
+
+	/* Add check for supported chip revisions
+	** If not supported, return a 0 phase
+	*/
+	if (!ACMAJORREV_51(pi->pubpi->phy_rev))
+		return 0;
+
+	for (core = 0; core < ncores; core++) {
+		/* Power up Logen div phase detectors */
+		MOD_RADIO_REG_20704(pi, LOGEN_CORE_REG1, core, logen_2g_phase, 0);
+		MOD_RADIO_REG_20704(pi, LOGEN_CORE_REG1, core, logen_2g_phase_rx_pd, 0);
+
+		tmp = READ_RADIO_REG_20704(pi, SPARE_CFG13, core);
+		lodivstate[core] = (tmp >> 15) & 0x1;
+
+		/* Power down Logen div phase detectors */
+		MOD_RADIO_REG_20704(pi, LOGEN_CORE_REG1, core, logen_2g_phase, 1);
+		MOD_RADIO_REG_20704(pi, LOGEN_CORE_REG1, core, logen_2g_phase_rx_pd, 1);
+	}
+
+	if (lodivstate[0] != lodivstate[1]) {
+		LO_phase_diff = 180;
+	} else {
+		LO_phase_diff = 0;
+	}
+
+	return LO_phase_diff;
 }
 
 void
@@ -15517,7 +15562,8 @@ wlc_phy_set_regtbl_on_pwron_acphy(phy_info_t *pi)
 		ACPHYREG_BCAST(pi, TxPwrCtrlIdleTssi_path0, -190);
 	} else {
 		ACPHYREG_BCAST(pi, TxPwrCtrlIdleTssi_path0, 0x25C);
-		if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev)) {
+		if (ACMAJORREV_32(pi->pubpi->phy_rev) || ACMAJORREV_33(pi->pubpi->phy_rev) ||
+				ACMAJORREV_128(pi->pubpi->phy_rev)) {
 			ACPHYREG_BCAST(pi, TxPwrCtrlIdleTssi_second_path0, 0x25C);
 			ACPHYREG_BCAST(pi, TxPwrCtrlIdleTssi_third_path0, 0x25C);
 		}

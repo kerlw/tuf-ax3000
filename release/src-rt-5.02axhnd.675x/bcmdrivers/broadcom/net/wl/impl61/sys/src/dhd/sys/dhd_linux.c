@@ -19,7 +19,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: dhd_linux.c 778115 2019-08-22 19:52:06Z $
+ * $Id: dhd_linux.c 780084 2019-10-15 09:01:36Z $
  */
 
 #include <typedefs.h>
@@ -599,9 +599,13 @@ static struct notifier_block dhd_reboot_notifier = {
 	.priority = 1,
 };
 
-#ifdef OEM_ANDROID
+#if defined(OEM_ANDROID) || defined(BCA_HNDROUTER)
 #ifdef BCMPCIE
+#ifdef BCA_HNDROUTER
+int is_reboot = 0;
+#else
 static int is_reboot = 0;
+#endif // endif
 #endif /* BCMPCIE */
 #endif /* OEM_ANDROID */
 
@@ -7451,11 +7455,6 @@ fwder_bypass:
 #endif /* PCIE_FULL_DONGLE */
 #endif /* BCM_ROUTER_DHD */
 
-#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE)
-		if (dhd_spdsvc_rx(skb) == BCME_OK)
-			continue;
-#endif // endif
-
 #ifdef BCM_BLOG
 		PKTSETFCDONE(pktbuf);
 		if (DHD_PKT_GET_SKB_SKIP_BLOG(pktbuf)) {
@@ -7521,6 +7520,12 @@ fwder_bypass:
 
 		ASSERT(IS_SKBUFF_PTR(pktbuf));
 #endif /* BCM_NBUFF_PKT_BPM */
+
+#if defined(CONFIG_BCM_SPDSVC) || defined(CONFIG_BCM_SPDSVC_MODULE)
+		/* skb has to be converted from fkb as BCM_NBUFF_PKT_BPM is enabled */
+		if (dhd_spdsvc_rx(skb) == BCME_OK)
+			continue;
+#endif // endif
 
 		/* Get the protocol, maintain skb around eth_type_trans()
 		 * The main reason for this hack is for the limitation of
@@ -9730,11 +9735,18 @@ dhd_allocate_if(dhd_pub_t *dhdpub, int ifidx, const char *name,
 			if (net->reg_state == NETREG_UNINITIALIZED) {
 				free_netdev(net);
 			} else {
+#ifdef BCA_HNDROUTER
+				if (is_reboot != SYS_RESTART) {
+#endif // endif
+
 				netif_stop_queue(net);
 				if (need_rtnl_lock)
 					unregister_netdev(net);
 				else
 					unregister_netdevice(net);
+#ifdef BCA_HNDROUTER
+				}
+#endif // endif
 			}
 			DHD_PERIM_LOCK(dhdpub);
 		}
@@ -10772,6 +10784,51 @@ dhd_event_log_alloc(dhd_pub_t *dhdpub,
 
 #endif /* SHOW_LOGTRACE */
 
+/**
+ * Get the next instance number used as unit#
+ *
+ * skip all powered down wlan interfaces during calculation of next instance
+ * if wlan deep power down feature is enabled. Called only once per radio
+ *
+ * @params none.
+ *
+ * return next unit# to be used
+ */
+int
+dhd_get_next_instance(void)
+{
+	int inst = dhd_found + instance_base;
+
+#if defined(CONFIG_BCM_WLAN_DPDCTL)
+	static int inst_skipped = 0;
+	char varstr[32];
+	char *var;
+	int pwrdn;
+
+	var = getvar(NULL, "wl_dpdctl_enable");
+	if (var && bcm_strtoul(var, NULL, 0) == 1) {
+	    inst += inst_skipped;
+	    do {
+	        pwrdn = 0;
+	        snprintf(varstr, sizeof(varstr), "wl%d_dpd", inst);
+	        var = getvar(NULL, varstr);
+	        if (var) {
+	            /* Get the nvram setting */
+	            pwrdn = (uint32)bcm_strtoul(var, NULL, 0);
+	        }
+
+	        if (pwrdn == 1) {
+	            /* Skip this instance */
+	            inst++;
+	            inst_skipped++;
+	        }
+	    } while (pwrdn == 1);
+	}
+#endif /* CONFIG_BCM_WLAN_DPDCTL */
+
+	return inst;
+}
+
 /** Called once for each hardware (dongle) instance that this DHD manages */
 dhd_pub_t *
 dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
@@ -10808,8 +10865,11 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	memset(dhd, 0, sizeof(dhd_info_t));
 	dhd_state |= DHD_ATTACH_STATE_DHD_ALLOC;
 
-	dhd->pub.unit = dhd_found + instance_base; /* do not increment dhd_found, yet */
+	dhd->pub.unit = dhd_get_next_instance();
 	dhd->pub.osh = osh;
+#if defined(BCM_WFD)
+	dhd->pub.wfd_idx = -1;
+#endif /* BCM_WFD */
 
 #if !defined(BCMDBUS) /* console not supported for USB (uses DBUS) */
 	dhd->pub.dhd_console_ms = dhd_console_ms; /* assigns default value */
@@ -11212,9 +11272,6 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	dhd_state |= DHD_ATTACH_STATE_DONE;
 	dhd->dhd_state = dhd_state;
 
-#if defined(BCM_BLOG)
-	fdb_check_expired_dhd_hook = fdb_check_expired_dhd;
-#endif /* BCM_BLOG */
 	dhd_found++;
 
 #ifdef DHD_DEBUG_PAGEALLOC
@@ -14303,7 +14360,11 @@ dhd_module_exit(void)
 	dhd_module_cleanup();
 #if defined(BCM_PKTFWD)
 	dhd_pktfwd_sys_fini(); /* Destruct the singleton wl_pktfwd global */
-#endif /* BCM_PKTFWD */
+#else /* !BCM_PKTFWD */
+#if defined(BCM_BLOG)
+	fdb_check_expired_dhd_hook = NULL;
+#endif /* BCM_BLOG */
+#endif /* !BCM_PKTFWD */
 #if defined(BCM_NBUFF_WLMCAST)
 	dhd_nbuff_detach();
 #endif /* BCM_NBUFF_WLMCAST */
@@ -14348,7 +14409,11 @@ dhd_module_init(void)
 	DHD_PERIM_RADIO_INIT();
 #if defined(BCM_PKTFWD)
 	dhd_pktfwd_sys_init(); /* Instantiate the singleton wl_pktfwd global */
-#endif /* BCM_PKTFWD */
+#else /* !BCM_PKTFWD */
+#if defined(BCM_BLOG)
+	fdb_check_expired_dhd_hook = fdb_check_expired_dhd;
+#endif /* BCM_BLOG */
+#endif /* !BCM_PKTFWD */
 
 #if defined(BCM_ROUTER_DHD)
 	{
@@ -14427,6 +14492,10 @@ dhd_reboot_callback(struct notifier_block *this, unsigned long code, void *unuse
 		is_reboot = code;
 #endif /* BCMPCIE */
 #else
+#ifdef BCA_HNDROUTER
+		is_reboot = code;
+#endif // endif
+
 		dhd_module_cleanup();
 #endif /* OEM_ANDROID */
 	}
@@ -17479,6 +17548,10 @@ dhd_fwtrap_handler(void *handle, void *event_info, enum dhd_wq_event event)
 		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
 		return;
 	}
+#ifdef BCA_HNDROUTER
+	if (is_reboot == SYS_RESTART)
+		return;
+#endif // endif
 
 	ASSERT(event == DHD_WQ_WORK_FWDUMP);
 

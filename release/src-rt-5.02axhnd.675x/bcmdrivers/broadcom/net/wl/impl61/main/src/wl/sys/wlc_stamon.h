@@ -80,4 +80,5 @@ extern int wlc_stamon_stats_update(wlc_info_t *wlc, const struct ether_addr* ea,
 extern void wlc_stamon_rxcounters_update(wlc_info_t *wlc, void *p, bool reset);
 extern void wlc_stamon_get_reserved_amt_index(wlc_info_t *wlc, uint16 *amt_start_idx,
 	uint16 *max_amt_idx);
+extern int wlc_stamon_rcmta_slots_free(wlc_stamon_info_t *ctxt);
 #endif /* _WLC_STAMON_H_ */

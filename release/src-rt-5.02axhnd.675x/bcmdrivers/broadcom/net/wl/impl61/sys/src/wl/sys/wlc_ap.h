@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_ap.h 774257 2019-04-17 10:08:19Z $
+ * $Id: wlc_ap.h 778742 2019-09-09 21:16:20Z $
  */
 #ifndef _WLC_AP_H_
 #define _WLC_AP_H_
@@ -119,6 +119,7 @@ struct wlc_ap_info {
 #define WLC_BW_SWITCH_ENABLED(wlc)	(wlc->pub->_bw_switch_160 == WLC_BW_SWITCH_ENABLE)
 
 #define WLC_AP_TXBCN_TIMEOUT		4	/**< # seconds: interval to detect beacon loss */
+#define WLC_AP_TXBCN_EDCRS_TIMEOUT	200	/**< # seconds: interval to detect beacon loss */
 
 #ifdef AP
 extern wlc_ap_info_t* wlc_ap_attach(wlc_info_t *wlc);

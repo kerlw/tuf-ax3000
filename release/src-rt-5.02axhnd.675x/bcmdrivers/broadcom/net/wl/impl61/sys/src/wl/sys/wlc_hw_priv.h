@@ -46,7 +46,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_hw_priv.h 776829 2019-07-10 23:13:09Z $
+ * $Id: wlc_hw_priv.h 778602 2019-09-05 14:18:05Z $
  */
 
 #ifndef _wlc_hw_priv_h_
@@ -471,6 +471,8 @@ struct wlc_hw_info {
 	uint32 d11war_flags;	/* flags to store d11 WARS */
 	bool is_pcielink_slowspeed;
 	uint32 sw_macintstatus; /* fake HW interrupt set by driver */
+	uint16	bmc_maxbufs;	/* max bufs based on fifo size */
+	uint16	bmc_nbufs;	/* number of bufs per fifo */
 };
 
 #endif /* !_wlc_hw_priv_h_ */

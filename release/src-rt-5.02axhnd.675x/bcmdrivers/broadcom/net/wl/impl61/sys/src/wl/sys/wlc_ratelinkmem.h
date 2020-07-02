@@ -123,10 +123,10 @@ extern scb_t* wlc_ratelinkmem_retrieve_cur_scb(wlc_info_t *wlc, uint16 index);
 /** trigger an update of the link entry for this SCB, returns error code */
 extern int wlc_ratelinkmem_update_link_entry(wlc_info_t *wlc, scb_t *scb);
 /** trigger link entry update for this SCB, including ucode internal data, returns error code */
-extern int wlc_ratelinkmem_update_link_entry_with_internal_data(wlc_info_t *wlc, scb_t *scb);
+extern int wlc_ratelinkmem_upd_lmem_int(wlc_info_t *wlc, scb_t *scb, bool clr_txbf_stats);
 /** update all link entries, or all link entries for a certain BSSCFG */
 extern void wlc_ratelinkmem_update_link_entry_all(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg,
-	bool ampdu_only, bool incl_ucodedata);
+	bool ampdu_only, bool clr_txbf_stats);
 extern uint16 wlc_ratelinkmem_vbss_link_index(wlc_info_t *wlc, wlc_bsscfg_t *bsscfg);
 extern void wlc_ratelinkmem_update_link_twtschedblk(wlc_info_t *wlc, uint idx, uint8* twtschedblk,
 	uint16 size);

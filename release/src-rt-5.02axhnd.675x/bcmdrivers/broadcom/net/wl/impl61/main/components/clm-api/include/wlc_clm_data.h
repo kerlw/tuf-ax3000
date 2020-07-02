@@ -1,56 +1,18 @@
 /*
  * CLM Data structure definitions
- * Copyright 2019 Broadcom
- *
- * This program is the proprietary software of Broadcom and/or
- * its licensors, and may only be used, duplicated, modified or distributed
- * pursuant to the terms and conditions of a separate, written license
- * agreement executed between you and Broadcom (an "Authorized License").
- * Except as set forth in an Authorized License, Broadcom grants no license
- * (express or implied), right to use, or waiver of any kind with respect to
- * the Software, and Broadcom expressly reserves all rights in and to the
- * Software and all intellectual property rights therein.  IF YOU HAVE NO
- * AUTHORIZED LICENSE, THEN YOU HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY
- * WAY, AND SHOULD IMMEDIATELY NOTIFY BROADCOM AND DISCONTINUE ALL USE OF
- * THE SOFTWARE.
- *
- * Except as expressly set forth in the Authorized License,
- *
- * 1. This program, including its structure, sequence and organization,
- * constitutes the valuable trade secrets of Broadcom, and you shall use
- * all reasonable efforts to protect the confidentiality thereof, and to
- * use this information only in connection with your use of Broadcom
- * integrated circuit products.
- *
- * 2. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED
- * "AS IS" AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES,
- * REPRESENTATIONS OR WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR
- * OTHERWISE, WITH RESPECT TO THE SOFTWARE.  BROADCOM SPECIFICALLY
- * DISCLAIMS ANY AND ALL IMPLIED WARRANTIES OF TITLE, MERCHANTABILITY,
- * NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE, LACK OF VIRUSES,
- * ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION OR
- * CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING
- * OUT OF USE OR PERFORMANCE OF THE SOFTWARE.
- *
- * 3. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL
- * BROADCOM OR ITS LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL,
- * SPECIAL, INDIRECT, OR EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR
- * IN ANY WAY RELATING TO YOUR USE OF OR INABILITY TO USE THE SOFTWARE EVEN
- * IF BROADCOM HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES; OR (ii)
- * ANY AMOUNT IN EXCESS OF THE AMOUNT ACTUALLY PAID FOR THE SOFTWARE ITSELF
- * OR U.S. $1, WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY
- * NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
+ * $ Copyright Broadcom $
  *
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_clm_data.h 802970 2019-02-05 19:00:18Z $
+ * $Id: wlc_clm_data.h 821810 2019-05-25 02:05:05Z fs936724 $
  */
 
 #ifndef _WLC_CLM_DATA_H_
 #define _WLC_CLM_DATA_H_
 
 #include <bcmwifi_rates.h>
+
 
 #define CLMATTACHDATA(_data) __attribute__ ((__section__ (".clmdataini2." #_data))) _data
 
@@ -83,6 +45,7 @@ enum clm_data_const {
 	/** Restricted set that covers all channels */
 	CLM_RESTRICTED_SET_NONE = 0xFF,
 
+
 	/** Locale index that designates absence of locale. If all locales of
 	 * region are absent region considered to be deleted from incremental
 	 * BLOB
@@ -111,6 +74,7 @@ enum clm_data_const {
 	/** Base for subchannel rules indices */
 	CLM_SUB_CHAN_IDX_BASE = 1,
 
+
 	/* INDICES OF LOCALE TYPES IN VECTORS OF PER-TYPE LOCALE DEFINITIONS */
 
 	/** Index of 2.4GHz base locales in vectors of locale definitions */
@@ -125,10 +89,14 @@ enum clm_data_const {
 	/** Index of 5GHz HT locales in vectors of locale definitions */
 	CLM_LOC_IDX_HT_5G = 3,
 
-	/** Number of locale type indices (length of locale definition
-	 * vectors)
-	 */
+	/** Number of legacy (2.4-5GHz) locale type indices */
 	CLM_LOC_IDX_NUM = 4,
+
+	/** Index of 6GHz base locales in vectors of locale definitions */
+	CLM_LOC_IDX_BASE_6G = 4,
+
+	/** Index of 5GHz HT locales in vectors of locale definitions */
+	CLM_LOC_IDX_HT_6G = 5,
 
 	/* INDICES OF VARIOUS DATA BYTES IN PARTS OF LOCALE DEFINITION */
 
@@ -178,6 +146,7 @@ enum clm_data_const {
 
 	/** Length of transmission power record without additional powers */
 	CLM_LOC_DSC_TX_REC_LEN = 3,
+
 
 	/** INDICES INSIDE SUBCHANNEL RULE (CLM_SUB_CHAN_CHANNEL_RULES_XX_T
 	 * STRUCTURE)
@@ -235,7 +204,7 @@ enum clm_data_const {
 	CLM_REGISTRY_FLAG_CD_REGIONS = 0x00010000,
 
 	/** Field that contains number of extra bytes (0, 1, 2, 3) in region
-	 * record that contain locale indices
+	 * record that contain legacy (2.4, 5GHz) locale indices
 	 */
 	CLM_REGISTRY_FLAG_CD_LOC_IDX_BYTES_MASK = 0x000C0000,
 	CLM_REGISTRY_FLAG_CD_LOC_IDX_BYTES_SHIFT = 18,
@@ -347,6 +316,15 @@ enum clm_data_const {
 	/** RU limits organized to support subchannel limits */
 	CLM_REGISTRY_FLAG2_RU_SUBCHAN_LIMITS = 0x00010000,
 
+	/** BLOB contains rate sets' indices */
+	CLM_REGISTRY_FLAG2_RATE_SET_INDEX = 0x00020000,
+
+	/** BLOB contains 6GHz data */
+	CLM_REGISTRY_FLAG2_6GHZ = 0x00040000,
+
+	/** Channel ranges specified per band and bandwidth */
+	CLM_REGISTRY_FLAG2_PER_BAND_BW_RANGES = 0x00080000,
+
 	/** All known registry flags (second flags field) */
 	CLM_REGISTRY_FLAG2_ALL = CLM_REGISTRY_FLAG2_PSD_LIMITS
 	| CLM_REGISTRY_FLAG2_MULTIBANDWIDTH_PSD
@@ -358,10 +336,13 @@ enum clm_data_const {
 	| CLM_REGISTRY_FLAG2_EXT4
 	| CLM_REGISTRY_FLAG2_RU_SETS_PER_BW_BAND
 	| CLM_REGISTRY_FLAG2_RU_SUBCHAN_LIMITS
+	| CLM_REGISTRY_FLAG2_RATE_SET_INDEX
+	| CLM_REGISTRY_FLAG2_6GHZ
+	| CLM_REGISTRY_FLAG2_PER_BAND_BW_RANGES
 };
 
 /** Major version number of CLM data format */
-#define CLM_FORMAT_VERSION_MAJOR 23
+#define CLM_FORMAT_VERSION_MAJOR 24
 
 /* Minor version number of CLM data format */
 #define CLM_FORMAT_VERSION_MINOR 0
@@ -383,6 +364,12 @@ enum clm_data_flags {
 	/** TW DFS rules */
 	CLM_DATA_FLAG_DFS_TW = 0x03,
 
+	/** UK DFS rules */
+	CLM_DATA_FLAG_DFS_UK = 0x10,
+
+	/** JP DFS rules */
+	CLM_DATA_FLAG_DFS_JP = 0x11,
+
 	/** Mask of DFS field */
 	CLM_DATA_FLAG_DFS_MASK = 0x13,
 
@@ -391,9 +378,6 @@ enum clm_data_flags {
 
 	/** Locale record has PSD limits */
 	CLM_DATA_FLAG_PSD_LIMITS = 0x08,
-
-	/** UK DFS rules */
-	CLM_DATA_FLAG_DFS_UK = 0x10,
 
 	/* TRANSMISSION POWER AND PSD LIMITS RECORDS FLAGS */
 
@@ -448,6 +432,7 @@ enum clm_data_flags {
 	/** Second power record flag byte follows */
 	CLM_DATA_FLAG_FLAG2 = 0x80,
 
+
 	/* SECOND TRANSMISSION POWER RECORD FLAG BYTE */
 
 	/** Bandwidth extension bit (see comments to CLM_DATA_FLAG_WIDTH_) */
@@ -500,6 +485,7 @@ enum clm_data_flags {
 	CLM_DATA_FLAG2_OUTER_BW_MASK = 0x18,
 	CLM_DATA_FLAG2_OUTER_BW_SHIFT = 3,
 
+
 	/* REGION FLAGS */
 
 	/* FLAGS OF FIRST REGION FLAG BYTE */
@@ -541,6 +527,7 @@ enum clm_data_flags {
 	/** China Spur WAR2 flag from CLM XML */
 	CLM_DATA_FLAG_2_REG_CHSPRWAR2 = 0x40,
 
+
 	/* SUBCHANNEL RULES BANDWIDTH FLAGS */
 
 	/** Use 20MHz limits */
@@ -554,6 +541,7 @@ enum clm_data_flags {
 
 	/** Use 160MHz limits */
 	CLM_DATA_FLAG_SC_RULE_BW_160 = 0x08,
+
 
 	/* HE RATE DESCRIPTOR FLAGS */
 
@@ -605,6 +593,7 @@ typedef enum clm_data_scr_indices_4 {
 	CLM_SCR_IDX_15 = 0x47
 } clm_data_scr_indices_t;
 
+
 /*
 ****************************
 * CLM DATA BLOB STRUCTURES *
@@ -642,6 +631,7 @@ typedef struct clm_channel_range {
 	/** Number of last channel */
 	unsigned char end;
 } clm_channel_range_t;
+
 
 /** Subchannel rule with increment. This representation of subchannel rules is
  * deprecated in favor of split bandwidth/increment vectors
@@ -948,6 +938,62 @@ typedef struct clm_country_rev_definition_cd13 {
 	unsigned char extra[6];
 } clm_country_rev_definition_cd13_t;
 
+/** Third-generation region descriptor: content-dependent layout, 7 extra bytes
+ * (14 bytes overall)
+ */
+typedef struct clm_country_rev_definition_cd14 {
+	/** Region identifier */
+	struct clm_cc_rev cc_rev;
+
+	/** Indices of region locales' descriptors */
+	unsigned char locales[CLM_LOC_IDX_NUM];
+
+	/** Extra bytes */
+	unsigned char extra[7];
+} clm_country_rev_definition_cd14_t;
+
+/** Third-generation region descriptor: content-dependent layout, 8 extra bytes
+ * (15 bytes overall)
+ */
+typedef struct clm_country_rev_definition_cd15 {
+	/** Region identifier */
+	struct clm_cc_rev cc_rev;
+
+	/** Indices of region locales' descriptors */
+	unsigned char locales[CLM_LOC_IDX_NUM];
+
+	/** Extra bytes */
+	unsigned char extra[8];
+} clm_country_rev_definition_cd15_t;
+
+/** Third-generation region descriptor: content-dependent layout, 9 extra bytes
+ * (16 bytes overall)
+ */
+typedef struct clm_country_rev_definition_cd16 {
+	/** Region identifier */
+	struct clm_cc_rev cc_rev;
+
+	/** Indices of region locales' descriptors */
+	unsigned char locales[CLM_LOC_IDX_NUM];
+
+	/** Extra bytes */
+	unsigned char extra[9];
+} clm_country_rev_definition_cd16_t;
+
+/** Third-generation region descriptor: content-dependent layout, 10 extra
+ * bytes (13 bytes overall)
+ */
+typedef struct clm_country_rev_definition_cd17 {
+	/** Region identifier */
+	struct clm_cc_rev cc_rev;
+
+	/** Indices of region locales' descriptors */
+	unsigned char locales[CLM_LOC_IDX_NUM];
+
+	/** Extra bytes */
+	unsigned char extra[10];
+} clm_country_rev_definition_cd17_t;
+
 /** Set of region descriptors */
 typedef struct clm_country_rev_definition_set {
 	/** Number of region descriptors in set */
@@ -1080,12 +1126,14 @@ typedef struct clm_regrev_cc_remap_set {
 	const struct clm_regrev_regrev_remap *regrev_remaps;
 } clm_regrev_cc_remap_set_t;
 
+
 #ifdef CLM_NO_PER_BAND_RATESETS_IN_ROM
 #define locale_rate_sets_5g_20m		locale_rate_sets_20m
 #define locale_rate_sets_5g_40m		locale_rate_sets_40m
 #define locale_rate_sets_5g_80m		locale_rate_sets_80m
 #define locale_rate_sets_5g_160m	locale_rate_sets_160m
-#endif // endif
+#endif
+
 
 /** Registry (TOC) of CLM data structures, obtained in BLOB */
 typedef struct clm_data_registry {
@@ -1096,7 +1144,9 @@ typedef struct clm_data_registry {
 	const struct clm_channel_comb_set *valid_channels_5g_20m;
 
 	/** Vector of channel range descriptors for 20MHz channel ranges (all
-	 * channel ranges if CLM_REGISTRY_FLAG_PER_BW_RS registry flag not set)
+	 * channel ranges if CLM_REGISTRY_FLAG_PER_BW_RS registry flag not set,
+	 * 5GHz 20MHz channel ranges if CLM_REGISTRY_FLAG2_PER_BAND_BW_CR is
+	 * set)
 	 */
 	const struct clm_channel_range *channel_ranges_20m;
 
@@ -1115,7 +1165,8 @@ typedef struct clm_data_registry {
 	 */
 	const unsigned char *locale_rate_sets_5g_20m;
 
-	/** Byte string sequences that encode locale definitions */
+	/** Byte string sequences that encode 2.4 and 5 GHz locale definitions
+	 */
 	const unsigned char *locales[CLM_LOC_IDX_NUM];
 
 	/** Address of region definitions set descriptor */
@@ -1130,23 +1181,32 @@ typedef struct clm_data_registry {
 	/** Flags */
 	unsigned int flags;
 
-	/** Address of subchannel rules set descriptor for 80MHz channels or
-	 * NULL
+	/** Address of subchannel rules set descriptor for 5GHz 80MHz channels
+	 * or NULL
 	 */
 	const clm_sub_chan_rules_set_80_t *sub_chan_rules_80;
 
-	/** Address of subchannel rules set descriptor for 160MHz channels or
-	 * NULL
+	/** Address of subchannel rules set descriptor for 5GHz 160MHz channels
+	 * or NULL
 	 */
 	const clm_sub_chan_rules_set_160_t *sub_chan_rules_160;
 
-	/** Vector of channel range descriptors for 40MHz channel ranges */
+	/** Vector of channel range descriptors for 40MHz channel ranges
+	 * (5GHz 40MHz channel ranges if CLM_REGISTRY_FLAG2_PER_BAND_BW_CR is
+	 * set)
+	 */
 	const struct clm_channel_range *channel_ranges_40m;
 
-	/** Vector of channel range descriptors for 80MHz channel ranges */
+	/** Vector of channel range descriptors for 80MHz channel ranges
+	 * (5GHz 80MHz channel ranges if CLM_REGISTRY_FLAG2_PER_BAND_BW_CR is
+	 * set)
+	 */
 	const struct clm_channel_range *channel_ranges_80m;
 
-	/** Vector of channel range descriptors for 160MHz channel ranges */
+	/** Vector of channel range descriptors for 160MHz channel ranges
+	 * (5GHz 160MHz channel ranges if CLM_REGISTRY_FLAG2_PER_BAND_BW_CR
+	 * is set)
+	 */
 	const struct clm_channel_range *channel_ranges_160m;
 
 	/** Sequence of byte strings that encode rate sets for 5GHz 40MHz
@@ -1348,6 +1408,116 @@ typedef struct clm_data_registry {
 	 */
 	const unsigned char *locale_he_rate_sets_5g_160m;
 
+	/** Indices of rate sets - vectors, indexed by rate set indices,
+	 * containing offsets of correspondent rates sets from beginning of
+	 * rate sets' vector). For 2.4 and 5GHz rate sets
+	 */
+	const unsigned short *locale_rate_sets_index_2g_20m;
+	const unsigned short *locale_rate_sets_index_2g_40m;
+	const unsigned short *locale_rate_sets_index_5g_20m;
+	const unsigned short *locale_rate_sets_index_5g_40m;
+	const unsigned short *locale_rate_sets_index_5g_80m;
+	const unsigned short *locale_rate_sets_index_5g_160m;
+	const unsigned short *locale_ext_rate_sets_index_2g_20m;
+	const unsigned short *locale_ext_rate_sets_index_2g_40m;
+	const unsigned short *locale_ext_rate_sets_index_5g_20m;
+	const unsigned short *locale_ext_rate_sets_index_5g_40m;
+	const unsigned short *locale_ext_rate_sets_index_5g_80m;
+	const unsigned short *locale_ext_rate_sets_index_5g_160m;
+	const unsigned short *locale_ext4_rate_sets_index_2g_20m;
+	const unsigned short *locale_ext4_rate_sets_index_2g_40m;
+	const unsigned short *locale_ext4_rate_sets_index_5g_20m;
+	const unsigned short *locale_ext4_rate_sets_index_5g_40m;
+	const unsigned short *locale_ext4_rate_sets_index_5g_80m;
+	const unsigned short *locale_ext4_rate_sets_index_5g_160m;
+	const unsigned short *locale_he_rate_sets_index_2g_20m;
+	const unsigned short *locale_he_rate_sets_index_2g_40m;
+	const unsigned short *locale_he_rate_sets_index_5g_20m;
+	const unsigned short *locale_he_rate_sets_index_5g_40m;
+	const unsigned short *locale_he_rate_sets_index_5g_80m;
+	const unsigned short *locale_he_rate_sets_index_5g_160m;
+
+	/** Vectors of 2.4GHz channel range descriptors for various bandwidths
+	 */
+	const struct clm_channel_range *channel_ranges_2g_20m;
+	const struct clm_channel_range *channel_ranges_2g_40m;
+
+	/** Indices of rate sets - vectors, indexed by rate set indices,
+	 * containing offsets of correspondent rates sets from beginning of
+	 * rate sets' vector). For 6GHz rate sets
+	 */
+	const unsigned short *locale_rate_sets_index_6g_20m;
+	const unsigned short *locale_rate_sets_index_6g_40m;
+	const unsigned short *locale_rate_sets_index_6g_80m;
+	const unsigned short *locale_rate_sets_index_6g_160m;
+	const unsigned short *locale_ext_rate_sets_index_6g_20m;
+	const unsigned short *locale_ext_rate_sets_index_6g_40m;
+	const unsigned short *locale_ext_rate_sets_index_6g_80m;
+	const unsigned short *locale_ext_rate_sets_index_6g_160m;
+	const unsigned short *locale_ext4_rate_sets_index_6g_20m;
+	const unsigned short *locale_ext4_rate_sets_index_6g_40m;
+	const unsigned short *locale_ext4_rate_sets_index_6g_80m;
+	const unsigned short *locale_ext4_rate_sets_index_6g_160m;
+	const unsigned short *locale_he_rate_sets_index_6g_20m;
+	const unsigned short *locale_he_rate_sets_index_6g_40m;
+	const unsigned short *locale_he_rate_sets_index_6g_80m;
+	const unsigned short *locale_he_rate_sets_index_6g_160m;
+
+	/** Valid channels of 6GHz band  for various bandwidths */
+	const struct clm_channel_comb_set *valid_channels_6g_20m;
+	const struct clm_channel_comb_set *valid_channels_6g_40m;
+	const struct clm_channel_comb_set *valid_channels_6g_80m;
+	const struct clm_channel_comb_set *valid_channels_6g_160m;
+
+	/** Vectors of 6GHz channel range descriptors for various bandwidths
+	 */
+	const struct clm_channel_range *channel_ranges_6g_20m;
+	const struct clm_channel_range *channel_ranges_6g_40m;
+	const struct clm_channel_range *channel_ranges_6g_80m;
+	const struct clm_channel_range *channel_ranges_6g_160m;
+
+	/** Sequences of byte strings that encode rate sets for 6GHz channels
+	 * of various bandwidths
+	 */
+	const unsigned char *locale_rate_sets_6g_20m;
+	const unsigned char *locale_rate_sets_6g_40m;
+	const unsigned char *locale_rate_sets_6g_80m;
+	const unsigned char *locale_rate_sets_6g_160m;
+
+	/** Sequences of byte strings that encode extended rate sets for 6GHz
+	 * channels of various bandwidths
+	 */
+	const unsigned char *locale_ext_rate_sets_6g_20m;
+	const unsigned char *locale_ext_rate_sets_6g_40m;
+	const unsigned char *locale_ext_rate_sets_6g_80m;
+	const unsigned char *locale_ext_rate_sets_6g_160m;
+
+	/** Sequences of byte strings that encode EXT4 rate sets for 6GHz
+	 * channels of various bandwidths
+	 */
+	const unsigned char *locale_ext4_rate_sets_6g_20m;
+	const unsigned char *locale_ext4_rate_sets_6g_40m;
+	const unsigned char *locale_ext4_rate_sets_6g_80m;
+	const unsigned char *locale_ext4_rate_sets_6g_160m;
+
+	/** Sequences of byte strings that encode OFDMA rate sets for 6GHz
+	 * channels of various bandwidths
+	 */
+	const unsigned char *locale_he_rate_sets_6g_20m;
+	const unsigned char *locale_he_rate_sets_6g_40m;
+	const unsigned char *locale_he_rate_sets_6g_80m;
+	const unsigned char *locale_he_rate_sets_6g_160m;
+
+	/** Byte string sequences that encode 6GHz locale definitions */
+	const unsigned char *locales_6g_base;
+	const unsigned char *locales_6g_ht;
+
+	/** Address of 6GHz subchannel rules set descriptors for various
+	 * bandwidths
+	 */
+	const clm_sub_chan_rules_set_40_t *sub_chan_rules_6g_40;
+	const clm_sub_chan_rules_set_80_t *sub_chan_rules_6g_80;
+	const clm_sub_chan_rules_set_160_t *sub_chan_rules_6g_160;
 } clm_registry_t;
 
 /** CLM data BLOB header */

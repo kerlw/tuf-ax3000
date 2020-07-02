@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd.h 778085 2019-08-22 06:32:04Z $
+ * $Id: wbd.h 779933 2019-10-10 09:42:10Z $
  */
 
 #ifndef _WBD_H_
@@ -144,6 +144,7 @@ extern bool gg_swap;
 							 * client watchdog created or not
 							 */
 #define WBD_BKT_SLV_FLAGS_AVOID_LOOP_BLOCK_MAC	0x0002	/* Avoid the loop by Blocking the MAC */
+#define WBD_BKT_SLV_FLAGS_FBT_REQ_SENT		0x0008	/* FBT request sent to controller */
 
 /* Check whether WNM STA cap check is enabled or not */
 #define WBD_WNM_CHECK_ENAB(flags)	((flags) & (WBD_INFO_FLAGS_STA_WNM_CHECK))
@@ -257,6 +258,9 @@ extern bool gg_swap;
 #define WBD_MAX_ACSD_SET_CHSPEC_DELAY	1000	/* Maximum delay in acsd to set chanspec (ms) */
 #define WBD_GET_CHSPEC_GAP		10	/* Milliseconds gap between each get chanspec */
 #define WBD_STR_MAC_LEN			17	/* String representation of MAC address length */
+#define WBD_MAX_CHAN_PREF_RC_COUNT	40	/* Maximum regulatory class count for individual
+						 * center channels
+						 */
 
 /* Wi-Fi Blanket Sleep Intervals for time taking task failures */
 #define WBD_SLEEP_SERVER_FAIL		5 /* Interval between each server creation if fails */
@@ -316,6 +320,7 @@ typedef enum wbd_wc_resp_reason_code {
 #define NVRAM_BKT_MSGLEVEL		WBD_NVRAM_MSGLVL
 #define WBD_NVRAM_BH_OPT_TRY		"wbd_bh_opt_try"
 #define WBD_NVRAM_BH_OPT		"wbd_bh_opt"
+#define WBD_NVRAM_BH_OPT_COMPLETE	"wbd_bh_opt_complete"
 #define WBD_NVRAM_AP_CONFIG_SEARCH_THLD	"wbd_ap_config_search_thld"
 #define WBD_NVRAM_AVOID_LOOP_METHOD	"wbd_avoid_loop_method"
 #define WBD_NVRAM_BH_OPT_TRY_ON_WEAK	"wbd_bh_opt_try_on_weak"

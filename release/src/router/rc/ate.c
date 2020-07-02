@@ -200,7 +200,7 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 				eval("wl", "-i", "eth7", "ledbh", "15", "1"); // wl 5G
 				eval("wl", "-i", "eth8", "ledbh", "15", "1"); // wl 5G-2
 #ifdef RTCONFIG_EXTPHY_BCM84880
-				eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x07FFF0", "0x0011");	// 2.5G LED (1000M/100M)
+				eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x7fff0", "0x0011");	// 2.5G LED (1000M/100M)
 				eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a832", "0x21");        // 2.5G LED (2500M)
 				eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a83b", "0xa490");
 #endif
@@ -210,7 +210,7 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 				eval("wl", "-i", "eth7", "ledbh", "15", "0"); // wl 5G
 				eval("wl", "-i", "eth8", "ledbh", "15", "0"); // wl 5G-2
 #ifdef RTCONFIG_EXTPHY_BCM84880
-				eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x07FFF0", "0x0009");
+				eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x7fff0", "0x0009");
 #endif
 			}
 		}
@@ -244,8 +244,9 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 		}
 		break;
 #endif
-#if defined(RTAX95Q)
+#if defined(RTAX95Q) || defined(RTAX56_XD4)
 	case MODEL_RTAX95Q:
+	case MODEL_RTAX56_XD4:
 		{
 			if(color == LED_COLOR_RED) {
 				setAllRedLedOn();
@@ -262,24 +263,85 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 		{
 			static enum led_id white_led[] = {
 				LED_POWER,
+#ifdef RTCONFIG_LAN4WAN_LED
 				LED_LAN1, LED_LAN2, LED_LAN3, LED_LAN4,
+#endif
 				LED_WAN_NORMAL,
 				LED_ID_MAX
 			};
 			static enum led_id red_led[] = {
 				LED_WAN,
+#ifdef RTAX82U
+				LED_GROUP1_RED,
+				LED_GROUP2_RED,
+				LED_GROUP3_RED,
+				LED_GROUP4_RED,
+#endif
 				LED_ID_MAX
 			};
+#ifdef RTAX82U
+			static enum led_id green_led[] = {
+				LED_GROUP1_GREEN,
+				LED_GROUP2_GREEN,
+				LED_GROUP3_GREEN,
+				LED_GROUP4_GREEN,
+				LED_ID_MAX
+			};
+			static enum led_id blue_led[] = {
+				LED_GROUP1_BLUE,
+				LED_GROUP2_BLUE,
+				LED_GROUP3_BLUE,
+				LED_GROUP4_BLUE,
+				LED_ID_MAX
+			};
+#endif
 			all_led[LED_COLOR_WHITE] = white_led;
 			all_led[LED_COLOR_RED] = red_led;
+#ifdef RTAX82U
+			all_led[LED_COLOR_GREEN] = green_led;
+			all_led[LED_COLOR_BLUE] = blue_led;
 
-			if(color == LED_COLOR_WHITE) {
+			LEDGroupReset(LED_ON);
+#endif
+
+			if (color == LED_COLOR_WHITE) {
 				eval("wl", "-i", "eth5", "ledbh", "0", "1");	// wl 2.4G
 				eval("wl", "-i", "eth6", "ledbh", "15", "1");	// wl 5G low
 			}
 			else {
 				eval("wl", "-i", "eth5", "ledbh", "0", "21");	// wl 2.4G
 				eval("wl", "-i", "eth6", "ledbh", "15", "0");	// wl 5G low
+			}
+		}
+		break;
+#endif
+#ifdef RTAX55
+	case MODEL_RTAX55:
+		{
+			static enum led_id red_led[] = {
+				LED_WAN,
+				LED_ID_MAX
+			};
+
+			static enum led_id blue_led[] = {
+				LED_POWER,
+				LED_WAN_NORMAL,
+				LED_LAN,
+				LED_ID_MAX
+			};
+
+			all_led[LED_COLOR_RED] = red_led;
+			all_led[LED_COLOR_BLUE] = blue_led;
+
+			if (color == LED_COLOR_BLUE)
+			{
+				eval("wl", "-i", "eth2", "ledbh", "0", "1");	// wl 2.4G
+				eval("wl", "-i", "eth3", "ledbh", "0", "1");	// wl 5G
+			}
+			else
+			{
+				eval("wl", "-i", "eth2", "ledbh", "0", "21");	// wl 2.4G
+				eval("wl", "-i", "eth3", "ledbh", "0", "21");	// wl 5G
 			}
 		}
 		break;
@@ -318,10 +380,12 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 					LED_POWER, LED_WAN_NORMAL,
 #ifdef RTCONFIG_LAN4WAN_LED
 					LED_LAN1, LED_LAN2, LED_LAN3, LED_LAN4,
-#elif RTCONFIG_LANWAN_LED
+#else
 					LED_LAN,
 #endif
-					//LED_WPS,
+#if defined(RTAX86U) || defined(RTAX5700)
+					LED_WPS,
+#endif
 					LED_ID_MAX
 					};
 			static enum led_id red_led[] = {
@@ -342,8 +406,10 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 				eval("wl", "-i", "eth6", "ledbh", "7", "1"); // wl 2.4G
 				eval("wl", "-i", "eth7", "ledbh", "15", "1"); // wl 5G
 #ifdef RTCONFIG_EXTPHY_BCM84880
-				if(ext_phy_model == 0)
-					eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a832", "0x8");
+				if(ext_phy_model == 0){
+					eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a832", "0x0");	// CTL LED3 MASK LOW
+					eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a835", "0xffff");	// CTL LED4 MASK LOW
+				}
 #endif
 			}
 			else {
@@ -351,7 +417,7 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 				eval("wl", "-i", "eth7", "ledbh", "15", "0"); // wl 5G
 #ifdef RTCONFIG_EXTPHY_BCM84880
 				if(ext_phy_model == 0)
-					eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a832", "0x0");
+					eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a835", "0x0");
 #endif
 			}
 		}
@@ -2458,6 +2524,9 @@ int ate_dev_status(void)
 	int len, remain;
 	char result;
 	char *p;
+#ifdef RTCONFIG_BT_CONN
+	int have_bt_device = 1;
+#endif
 
 	memset(dev_chk_buf, 0, sizeof(dev_chk_buf));
 	snprintf(wl_dev_name, sizeof(wl_dev_name), nvram_safe_get("wl_ifnames"));
@@ -2501,44 +2570,56 @@ int ate_dev_status(void)
 	{
 #define RETRY_MAX 100
 		int retry;
-#if defined(RTCONFIG_LANTIQ) || defined(RTAX95Q)
-		system("killall bluetoothd");
-		system("hciconfig hci0 down");
-		system("hciconfig hci0 reset");
-		system("hciconfig hci0 up");
-		system("hciconfig hci0 leadv 0");
-		system("bluetoothd &");
+#if defined(RTAX56_XD4)
+		if(nvram_match("HwId", "A") || nvram_match("HwId", "C")){
+			have_bt_device = 1;
+		}else{
+			have_bt_device = 0;
+		}
 #endif
-		for(retry = 0; retry < RETRY_MAX; retry++){
-			extern int check_bluetooth_device(const char *bt_dev);
-			if(check_bluetooth_device("hci0") == 0)
-				break;
-			sleep(1);
+#if defined(RTCONFIG_LANTIQ) || defined(RTAX95Q) || defined(RTAX56_XD4)
+		if(have_bt_device == 1){
+			system("killall bluetoothd");
+			system("hciconfig hci0 down");
+			system("hciconfig hci0 reset");
+			system("hciconfig hci0 up");
+			system("hciconfig hci0 leadv 0");
+			system("bluetoothd &");
 		}
-		if(retry < RETRY_MAX)
-		{
-			result = 'O';
-		}
-		else
-		{
-			result = 'X';
-			ret = 0;
+#endif
+		if(have_bt_device == 1){
+			for(retry = 0; retry < RETRY_MAX; retry++){
+				extern int check_bluetooth_device(const char *bt_dev);
+				if(check_bluetooth_device("hci0") == 0)
+					break;
+				sleep(1);
+			}
+			if(retry < RETRY_MAX)
+			{
+				result = 'O';
+			}
+			else
+			{
+				result = 'X';
+				ret = 0;
+			}
 		}
 	}
-	len = snprintf(p, remain, ",hci0=%c", result);
-	p += len;
-	remain -= len;
+	if(have_bt_device == 1){
+		len = snprintf(p, remain, ",hci0=%c", result);
+		p += len;
+		remain -= len;
+	}
 #endif
 #endif
 
 #if defined(RTCONFIG_EXTPHY_BCM84880)
 	/* Get extend 2.5G phy bcm84880 status */
-#if defined(RTAX86U) || defined(RTAX5700) || defined(RTAX68U)
-	if(!hnd_get_phy_status("eth5") ||
-			(nvram_get_int("ext_phy_model") == 0 && ethctl_phy_op("ext", EXTPHY_ADDR, 0x1e4037, 0, 0) == -1))
-#else
-	if(ethctl_get_link_status("eth5") == -1 || ethctl_phy_op("ext", EXTPHY_ADDR, 0x1e4037, 0, 0) == -1)
+	if(
+#if defined(RTAX86U) || defined(RTAX5700)
+		nvram_get_int("ext_phy_model") == 0 &&
 #endif
+			(ethctl_get_link_status("eth5") == -1 || ethctl_phy_op("ext", EXTPHY_ADDR, 0x1e4037, 0, 0) == -1))
 		result = 'X';
 	else
 		result = 'O';

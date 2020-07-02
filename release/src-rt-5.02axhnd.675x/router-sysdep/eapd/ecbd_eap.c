@@ -301,18 +301,16 @@ ecbd_app_handle_event(eapd_wksp_t *nwksp, uint8 *pData, int Len, char *from)
 	cb = ecbd->cb;
 	while (cb) {
 		if (!strcmp(cb->ifname, from)) {
-			if (nvram_match("ecbd_enable", "1")) {
-				if (isset(ecbd->bitvec, type)) {
-					/* prepend ifname,  we reserved IFNAMSIZ length already */
-					pData -= IFNAMSIZ;
-					Len += IFNAMSIZ;
-					memcpy(pData, event->ifname, IFNAMSIZ);
+			if (isset(ecbd->bitvec, type)) {
+				/* prepend ifname,  we reserved IFNAMSIZ length already */
+				pData -= IFNAMSIZ;
+				Len += IFNAMSIZ;
+				memcpy(pData, event->ifname, IFNAMSIZ);
 
-					/* send to ecbd use cb->ifname */
-					ecbd_app_sendup(nwksp, pData, Len, cb->ifname);
-				}
-				break;
+				/* send to ecbd use cb->ifname */
+				ecbd_app_sendup(nwksp, pData, Len, cb->ifname);
 			}
+			break;
 		}
 		cb = cb->next;
 	}

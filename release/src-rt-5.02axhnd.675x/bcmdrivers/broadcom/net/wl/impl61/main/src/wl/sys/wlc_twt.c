@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_twt.c 777318 2019-07-26 17:37:00Z $
+ * $Id: wlc_twt.c 779372 2019-09-26 08:16:26Z $
  */
 
 #ifdef WLTWT
@@ -132,8 +132,9 @@ typedef struct wlc_twt_rlm {
 } wlc_twt_rlm_t;
 
 #define TSB_USR_TRIG_SHIFT	0
-#define TSB_USR_SPDUR_MASK	0x1e
-#define TSB_USR_SPDUR_SHIFT	1
+#define TSB_USR_ANCD_SHIFT	1
+#define TSB_USR_SPDUR_MASK	0xf0
+#define TSB_USR_SPDUR_SHIFT	4
 #define TSB_USR_IDX_MASK	0xff00
 #define TSB_USR_IDX_SHIFT	8
 
@@ -215,6 +216,7 @@ struct wlc_twt_info {
 
 	uint8		dialog_token;		/* Global dialog token, increase on usage */
 	int		itwt_count;		/* Total number of active iTWT connections */
+	int		itwt_trig_count;	/* Total number of active trigger based iTWTs */
 	bool		rlm_scheduler_active;
 	int		rlm_prog_idx;		/* Next index of RLM to program next schedule */
 	int		rlm_read_idx;		/* Next index of RLM to process interrupt for */
@@ -288,12 +290,18 @@ static void wlc_twt_prepare_for_first_sp(wlc_twt_info_t *twti, scb_t *scb);
 static void wlc_twt_itwt_end_sp(void *arg);
 
 enum {
-	IOV_TWT = 0,
+	IOV_TWT		= 0,
+	IOV_TWT_PREINTR	= 1,
+	IOV_TWT_PRESTRT	= 2,
+	IOV_TWT_PRESTOP	= 3,
 	IOV_LAST
 };
 
 static const bcm_iovar_t twt_iovars[] = {
 	{ "twt", IOV_TWT, IOVF_RSDB_SET, 0, IOVT_BUFFER, 0 },
+	{ "twt_preintr", IOV_TWT_PREINTR, (0), 0, IOVT_BUFFER, 0 },
+	{ "twt_prestrt", IOV_TWT_PRESTRT, (0), 0, IOVT_BUFFER, 0 },
+	{ "twt_prestop", IOV_TWT_PRESTOP, (0), 0, IOVT_BUFFER, 0 },
 	{ NULL, 0, 0, 0, 0, 0 }
 };
 
@@ -699,14 +707,52 @@ wlc_twt_get_tsf(wlc_info_t *wlc, wlc_bsscfg_t *cfg, uint32 *tsf_l, uint32 *tsf_h
 /* ======== iovar dispatch ======== */
 
 static int
+wlc_twt_ucode_param_get(wlc_info_t *wlc, uint16 offset, uint16 *val)
+{
+	if (!wlc->clk) {
+		return BCME_NOCLK;
+	}
+	*val = wlc_read_shm(wlc, offset);
+#if defined(WL_PSMX)
+	if (offset == M_TWT_PRESTRT(wlc) && *val != wlc_read_shmx(wlc, MX_TWT_PRESTRT(wlc))) {
+		return BCME_ERROR;
+	}
+#endif // endif
+
+	return BCME_OK;
+}
+
+static int
+wlc_twt_ucode_param_set(wlc_info_t *wlc, uint16 offset, uint16 val)
+{
+	if (!wlc->clk) {
+		return BCME_NOCLK;
+	}
+	wlc_write_shm(wlc, offset, (uint16)val);
+#if defined(WL_PSMX)
+	if (offset == M_TWT_PRESTRT(wlc)) {
+		wlc_write_shmx(wlc, MX_TWT_PRESTRT(wlc), val);
+	}
+#endif // endif
+	return BCME_OK;
+}
+
+static int
 wlc_twt_doiovar(void *ctx, uint32 actionid, void *params, uint plen,
 	void *arg, uint alen, uint vsize, struct wlc_if *wlcif)
 {
 	wlc_twt_info_t *twti = ctx;
 	wlc_info_t *wlc = twti->wlc;
+	int32 int_val = 0;
+	int32 *ret_int_ptr = (int32 *)arg;
+	uint16 tmp_val = -1;
 	int err = BCME_OK;
 
 	BCM_REFERENCE(vsize);
+
+	if (plen >= (int)sizeof(int_val)) {
+		bcopy(params, &int_val, sizeof(int_val));
+	}
 
 	switch (actionid) {
 	case IOV_GVAL(IOV_TWT):
@@ -717,6 +763,33 @@ wlc_twt_doiovar(void *ctx, uint32 actionid, void *params, uint plen,
 	case IOV_SVAL(IOV_TWT):
 		err = wlc_iocv_iov_cmd_proc(wlc, ctx, twt_cmds, ARRAYSIZE(twt_cmds),
 			TRUE, params, plen, arg, alen, wlcif);
+		break;
+
+	case IOV_GVAL(IOV_TWT_PREINTR):
+		err = wlc_twt_ucode_param_get(wlc, M_PRETWT_US(wlc), &tmp_val);
+		*ret_int_ptr = (int32)tmp_val;
+		break;
+
+	case IOV_SVAL(IOV_TWT_PREINTR):
+		err = wlc_twt_ucode_param_set(wlc, M_PRETWT_US(wlc), (uint16)int_val);
+		break;
+
+	case IOV_GVAL(IOV_TWT_PRESTRT):
+		err = wlc_twt_ucode_param_get(wlc, M_TWT_PRESTRT(wlc), &tmp_val);
+		*ret_int_ptr = (int32)tmp_val;
+		break;
+
+	case IOV_SVAL(IOV_TWT_PRESTRT):
+		err = wlc_twt_ucode_param_set(wlc, M_TWT_PRESTRT(wlc), (uint16)int_val);
+		break;
+
+	case IOV_GVAL(IOV_TWT_PRESTOP):
+		err = wlc_twt_ucode_param_get(wlc, M_TWT_PRESTOP(wlc), &tmp_val);
+		*ret_int_ptr = (int32)tmp_val;
+		break;
+
+	case IOV_SVAL(IOV_TWT_PRESTOP):
+		err = wlc_twt_ucode_param_set(wlc, M_TWT_PRESTOP(wlc), (uint16)int_val);
 		break;
 
 	default:
@@ -1534,7 +1607,7 @@ wlc_twt_setup_itwt_complete(wlc_twt_info_t *twti, scb_t *scb, twt_indv_desc_t *i
 		scb_twt->next_sp_start = scb_twt->cur_sp_start;
 	}
 
-	WL_TWT(("%s id=%d\n", __FUNCTION__, indv->desc.id));
+	WL_TWT(("%s id=%d iTWT count = %d\n", __FUNCTION__, indv->desc.id, twti->itwt_count));
 
 	return wlc_twt_itwt_start(twti, scb, indv);
 }
@@ -1570,10 +1643,17 @@ wlc_twt_teardown_itwt(wlc_twt_info_t *twti, scb_t *scb, twt_indv_desc_t *indv, b
 		}
 		ASSERT(twti->itwt_count);
 		twti->itwt_count--;
+		twti->itwt_trig_count -= indv->trigger;
+
+		if (indv->trigger && twti->itwt_trig_count == 0) {
+			/* last trigger mode itwt should set original ul params */
+			wlc_musched_ul_twt_params(twti->wlc->musched, FALSE);
+		}
 	}
 	indv->state = WLC_TWT_STATE_INACTIVE;
 
-	WL_TWT(("%s id=%d, iTWT count = %d\n", __FUNCTION__, indv->desc.id, twti->itwt_count));
+	WL_TWT(("%s id=%d, iTWT count = %d trig count = %d\n", __FUNCTION__,
+		indv->desc.id, twti->itwt_count, twti->itwt_trig_count));
 
 	return wlc_twt_itwt_stop(twti, scb, indv, scb_removal);
 }
@@ -1633,6 +1713,7 @@ wlc_twt_parse_twt_setup_ie(twt_ie_indv_t *twt_ie, twt_indv_desc_t *indv)
 	/* Request type */
 	ie_param = (uint8 *)&twt_ie->request_type;
 
+	indv->desc.flow_flags = 0;
 	if (isclr(ie_param, TWT_REQ_TYPE_REQUEST_IDX)) {
 		WL_ERROR(("%s invalid IE, TWT request bit not set!\n", __FUNCTION__));
 	}
@@ -1895,6 +1976,7 @@ wlc_twt_af_setup_req_recv(wlc_twt_info_t *twti, scb_t *scb, twt_ie_indv_t *twt_i
 	uint32 wake_interval;
 	uint32 wake_duration;
 	uint32 noof_bits;
+	uint16 test;
 
 	/* Find the scb cubby, bail out if NULL */
 	if ((scb == NULL) || ((scb_twt = TWT_SCB(twti, scb)) == NULL)) {
@@ -1958,7 +2040,10 @@ wlc_twt_af_setup_req_recv(wlc_twt_info_t *twti, scb_t *scb, twt_ie_indv_t *twt_i
 	 * than max uint32 makes is not supported. But we have to make sure that in the request it
 	 * wasn't requested.
 	 */
-	noof_bits = 32 - CLZ(indv->desc.wake_interval_mantissa);
+	test = indv->desc.wake_interval_mantissa;
+	for (noof_bits = 0; test; test >>= 1) {
+		noof_bits++;
+	}
 	noof_bits += indv->desc.wake_interval_exponent;
 
 	if ((noof_bits > 31) || (!indv->desc.wake_interval_mantissa)) {
@@ -2878,25 +2963,27 @@ wlc_twt_itwt_rlm_scheduler_update_trigger(void *arg)
 						WLC_TSFL_TO_SCHEDID(indv->twt_l)));
 					ASSERT(0);
 				}
-				twt_rlm->usr_info[twt_rlm->usr_count] =
-					(scb_twt->rlm_id << TSB_USR_IDX_SHIFT) |
-					((indv->wake_duration - 1) << TSB_USR_SPDUR_SHIFT) |
-					(indv->trigger << TSB_USR_TRIG_SHIFT);
-				twt_rlm->usr_count++;
-
 				scb_twt->next_sp_start = twt_rlm->schedid;
 				if (!scb_twt->sp_started) {
 					scb_twt->cur_sp_start = scb_twt->next_sp_start;
 					wlc_twt_prepare_for_first_sp(twti, indv->scb);
 				}
+				twt_rlm->usr_info[twt_rlm->usr_count] =
+					(scb_twt->rlm_id << TSB_USR_IDX_SHIFT) |
+					((indv->wake_duration - 1) << TSB_USR_SPDUR_SHIFT) |
+					(indv->trigger << TSB_USR_TRIG_SHIFT);
 				if (!(indv->desc.flow_flags &
 					WL_TWT_FLOW_FLAG_UNANNOUNCED)) {
+					/* announced! */
+					twt_rlm->usr_info[twt_rlm->usr_count] |=
+						(1 << TSB_USR_ANCD_SHIFT);
 					wlc_hrt_add_timeout(indv->tx_close_timer,
 						delta_l +
 						WLC_SCHEDID_TO_TSFL(indv->wake_duration),
 						wlc_twt_itwt_end_sp,
 						indv);
 				}
+				twt_rlm->usr_count++;
 
 				/* Make sure SP gets updated to next interval */
 				wlc_uint64_add(&delta_h, &delta_l, 0, indv->wake_interval);
@@ -3028,9 +3115,17 @@ wlc_twt_itwt_start(wlc_twt_info_t *twti, scb_t *scb, twt_indv_desc_t *indv)
 		(1 << indv->desc.wake_interval_exponent);
 	wake_duration = ((uint32)indv->desc.wake_duration << 8); /* conversion from 256us unit */
 	indv->trigger = (indv->desc.flow_flags & WL_TWT_FLOW_FLAG_TRIGGER) ? 1 : 0;
+	twti->itwt_trig_count += indv->trigger;
 
-	WL_TWT(("%s SP interval is %d (usec), wake_duration is %d (usec), trigger=%d\n",
-		__FUNCTION__, wake_interval, wake_duration, indv->trigger));
+	if (indv->trigger && twti->itwt_trig_count == 1) {
+		/* first trigger mode itwt should set twt ul params */
+		wlc_musched_ul_twt_params(wlc->musched, TRUE);
+	}
+
+	WL_TWT(("%s SP interval is %d (usec), wake_duration is %d (usec),"
+		" trigger=%d trig count=%d\n",
+		__FUNCTION__, wake_interval, wake_duration, indv->trigger, twti->itwt_trig_count));
+
 	indv->wake_interval = WLC_SCHEDID_TO_TSFL(WLC_TSFL_TO_SCHEDID(wake_interval));
 	indv->wake_duration = WLC_TSFL_TO_SCHEDID(wake_duration);
 
@@ -3384,6 +3479,32 @@ wlc_twt_fill_link_entry(wlc_twt_info_t *twti, scb_t *scb, d11linkmem_entry_t *li
 	}
 	WL_TWT(("%s TWT active for this SCB %p\n", __FUNCTION__, scb));
 	link_entry->BFIConfig1 |= 0x8;		/* indicate this is TWT user */
+}
+
+bool
+wlc_twt_scb_is_trig_mode(wlc_twt_info_t *twti, scb_t *scb)
+{
+	twt_scb_t *scb_twt;
+	twt_indv_desc_t *indv;
+	uint8 i;
+	bool trigger_mode = FALSE;
+
+	if (twti == NULL) {
+		return trigger_mode;
+	}
+	scb_twt = TWT_SCB(twti, scb);
+	if (scb_twt == NULL) {
+		return trigger_mode;
+	}
+
+	for (i = 0; i < ARRAYSIZE(scb_twt->indv); i++) {
+		indv = &scb_twt->indv[i];
+		if (indv->state == WLC_TWT_STATE_ACTIVE && indv->trigger) {
+			trigger_mode = TRUE;
+		}
+	}
+
+	return trigger_mode;
 }
 
 /* wlc up/init callback, this function is registered to deal with reinit/big hammer handling.

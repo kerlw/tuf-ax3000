@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wbd_cli.c 771813 2019-02-08 06:08:00Z $
+ * $Id: wbd_cli.c 779283 2019-09-24 08:30:26Z $
  */
 
 #include <getopt.h>
@@ -70,6 +70,7 @@ typedef struct cmdargs {
 	chanspec_t chanspec;
 	int msglevel;
 	int flags;
+	int disable;
 } cmdargs_t;
 
 /* WBD STUB Command Types */
@@ -137,6 +138,7 @@ wbd_usage()
 			"	-e, --clear	Clear the entries. Used along with logs command\n"
 			"	-t  --test	Stub Testing\n"
 			"	-l, --level	Set Message Level\n"
+			"	-d, --disable	Enable or Disable : 0(Enable), 1(Disable)\n"
 			"	-h, --help	Help\n"
 			"\n"
 			"Master Commands are:\n"
@@ -150,6 +152,7 @@ wbd_usage()
 			"			Ex : wb_cli -m steer -a mac -b bssid\n"
 			"	logs		Displays log messages of Blanket\n"
 			"	msglevel	Set Message Level\n"
+			"	bhopt		Enable/Disable Backhaul Optimization\n"
 			"\n"
 			"Slave Commands are:\n"
 			"	version		Displays the version of WBD\n"
@@ -230,6 +233,7 @@ wbd_cli_parse_opt(int argc, char *argv[], cmdargs_t *cmdarg)
 		{"band",	required_argument,	0, 'g'},
 		{"test",	required_argument,	0, 't'},
 		{"level",	required_argument,	0, 'l'},
+		{"disable",	required_argument,	0, 'd'},
 		{"clear",	no_argument,		0, 'e'},
 		{"help",	no_argument,		0, 'h'},
 		{0,		0,			0, 0}
@@ -238,7 +242,7 @@ wbd_cli_parse_opt(int argc, char *argv[], cmdargs_t *cmdarg)
 
 	while (1) {
 		int option_index = 0;
-		c = getopt_long(argc, argv, "s:m:a:p:b:c:g:t:l:eh", long_options, &option_index);
+		c = getopt_long(argc, argv, "s:m:a:p:b:c:g:t:l:d:eh", long_options, &option_index);
 		if (c == -1) {
 			if (found == 0) {
 				wbd_usage();
@@ -288,6 +292,10 @@ wbd_cli_parse_opt(int argc, char *argv[], cmdargs_t *cmdarg)
 
 			case 'l' :
 				cmdarg->msglevel = strtoul(optarg, NULL, 0);
+				break;
+
+			case 'd' :
+				cmdarg->disable = strtoul(optarg, NULL, 0);
 				break;
 
 			default :
@@ -365,6 +373,13 @@ wbd_cli_validate_cmdarg(cmdargs_t *cmdarg)
 		}
 	}
 
+	/* Validate Arguments for backhaul optimization enable/disable command */
+	if (cmdarg->cmd == WBD_CMD_CLI_BHOPT) {
+		if (cmdarg->use_master == 0) {
+			ret = WBDE_CLI_INV_SLAVE_CMD;
+		}
+	}
+
 end:
 	if (ret != WBDE_OK) {
 		WBD_CLI_PRINT("Improper Arguments. Error : %s\n", wbderrorstr(ret));
@@ -397,6 +412,7 @@ wbd_cli_process(cmdargs_t *cmdarg)
 	clidata.band = cmdarg->band;
 	clidata.flags |= cmdarg->flags;
 	clidata.msglevel = cmdarg->msglevel;
+	clidata.disable = cmdarg->disable;
 
 	data = (char*)wbd_json_create_cli_cmd((void*)&clidata);
 	WBD_ASSERT_ARG(data, WBDE_JSON_ERROR);

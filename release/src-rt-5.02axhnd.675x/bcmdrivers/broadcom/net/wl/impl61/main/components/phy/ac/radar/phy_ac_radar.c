@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: phy_ac_radar.c 777256 2019-07-24 23:41:25Z $
+ * $Id: phy_ac_radar.c 779323 2019-09-25 09:41:32Z $
  */
 
 #include <typedefs.h>
@@ -245,9 +245,19 @@ static const wl_radar_thr2_t BCMATTACHDATA(wlc_phy_radar_thresh2_axphy_43684) = 
 	0xe, 0x1941, 0x19, 0x0, 0x14, 0x64, 0xf0, 0xfffb, 0x5
 };
 
+static const wl_radar_thr2_t BCMATTACHDATA(wlc_phy_radar_thresh2_axphy_atlas_2Gp5G) = {
+	WL_RADAR_THR_VERSION,
+	0x6a4, 0x30, 0x6a0, 0x30, 0x6a8, 0x30, 0x6a4, 0x30, 0x6a4, 0x30, 0x6ac, 0x30,
+	0x6b0, 0x30, 0x6ac, 0x30, 0xa, 0xa, 0xa, 0x258, 0x258, 0x258, 0x258, 0x7126, 0xc,
+	0xe, 0x1941, 0x19, 0x0, 0x14, 0x64, 0xf0, 0xfffb, 0x5
+};
+
 static void
 BCMATTACHFN(phy_radar_init_st)(phy_info_t *pi, phy_radar_st_t *st)
 {
+	bool is43684mch2 = ACMAJORREV_47(pi->pubpi->phy_rev) && CHSPEC_IS2G(pi->radio_chanspec) &&
+		!BF_ELNA_5G(pi->u.pi_acphy);
+
 	PHY_TRACE(("%s\n", __FUNCTION__));
 
 	/* 20Mhz channel radar thresholds */
@@ -255,8 +265,13 @@ BCMATTACHFN(phy_radar_init_st)(phy_info_t *pi, phy_radar_st_t *st)
 							? wlc_phy_radar_thresh_acphy_1core
 							: wlc_phy_radar_thresh_acphy_2cores;
 
-	st->rparams.radar_thrs2 = ACMAJORREV_47(pi->pubpi->phy_rev) ?
-		wlc_phy_radar_thresh2_axphy_43684 : wlc_phy_radar_thresh2_acphy;
+	if (ACMAJORREV_47(pi->pubpi->phy_rev)) {
+		st->rparams.radar_thrs2 = is43684mch2 ? wlc_phy_radar_thresh2_axphy_atlas_2Gp5G :
+			wlc_phy_radar_thresh2_axphy_43684;
+	} else {
+		st->rparams.radar_thrs2 = wlc_phy_radar_thresh2_acphy;
+	}
+
 	if (ACMAJORREV_32(pi->pubpi->phy_rev) ||
 		ACMAJORREV_33(pi->pubpi->phy_rev)) {
 		if (PHY_LESI_ON(pi))

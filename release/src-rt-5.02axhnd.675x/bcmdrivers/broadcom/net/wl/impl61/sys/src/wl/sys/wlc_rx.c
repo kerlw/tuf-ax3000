@@ -47,7 +47,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_rx.c 777731 2019-08-07 19:37:44Z $
+ * $Id: wlc_rx.c 780059 2019-10-15 02:58:47Z $
  *
  */
 #include <wlc_cfg.h>
@@ -8545,6 +8545,9 @@ wlc_sendup_chain(wlc_info_t *wlc, void *head)
 			chained_sendup = FALSE;
 #endif // endif
 
+		/* Handle HTC field of 802.11 header if available */
+		wlc_he_htc_recv(wlc, scb, rxh, h);
+
 		body_offset_diff = (body_offset - body_offset_sav);
 		BCM_REFERENCE(body_offset_diff);
 
@@ -8657,8 +8660,6 @@ skip_conv:
 			}
 #endif /* WL_LEAKY_AP_STATS */
 		}
-		/* Handle HTC field of 802.11 header if available */
-		wlc_he_htc_recv(wlc, scb, rxh, h);
 
 		prev = p;
 		p = next;

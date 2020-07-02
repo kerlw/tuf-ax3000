@@ -45,7 +45,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_scan.h 777088 2019-07-18 17:39:11Z $
+ * $Id: wlc_scan.h 779762 2019-10-07 07:12:37Z $
  */
 
 #ifndef _WLC_SCAN_H_
@@ -188,6 +188,9 @@ extern int wlc_scan(
 	void *act_arg,
 	struct ether_addr *sa_override
 );
+
+extern void wlc_scan_set_request_ex_cb(wlc_scan_info_t *wlc_scan_info, scancb_fn_t fn);
+extern void wlc_scan_request_ex_cb(void *arg, int status, wlc_bsscfg_t *cfg);
 
 #ifdef WL_SCAN_DFS_HOME
 extern int wlc_scan_on_dfs_chan(wlc_info_t *wlc, int chanspec_num, chanspec_t chanspec,

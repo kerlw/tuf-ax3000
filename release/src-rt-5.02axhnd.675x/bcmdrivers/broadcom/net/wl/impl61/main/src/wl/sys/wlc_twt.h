@@ -44,7 +44,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_twt.h 775205 2019-05-22 15:33:06Z $
+ * $Id: wlc_twt.h 779372 2019-09-26 08:16:26Z $
  */
 
 #ifndef _wlc_twt_h_
@@ -72,6 +72,7 @@ extern void wlc_twt_intr(wlc_twt_info_t *twti);
 extern bool wlc_twt_scb_get_schedid(wlc_twt_info_t *twti, scb_t *scb, uint16 *schedid);
 extern void wlc_twt_fill_link_entry(wlc_twt_info_t *twti, scb_t *scb,
 	d11linkmem_entry_t *link_entry);
+extern bool wlc_twt_scb_is_trig_mode(wlc_twt_info_t *twti, scb_t *scb);
 
 #else
 
@@ -87,6 +88,7 @@ extern void wlc_twt_fill_link_entry(wlc_twt_info_t *twti, scb_t *scb,
 #define wlc_twt_intr(a)
 #define wlc_twt_scb_get_schedid(a, b, c)	FALSE
 #define wlc_twt_fill_link_entry(a, b, c)
+#define wlc_twt_scb_is_trig_mode(a, b)		FALSE
 
 #endif /* WLTWT */
 

@@ -494,7 +494,9 @@ wet_ip_proc(wlc_wet_info_t *weth, wlc_bsscfg_t *cfg, void *sdu,
 	ipv4_hdlr_t *iphdlr;
 	uint8 *iaddr;
 	struct ether_addr *ea = NULL;
+	struct ether_addr mcast_ea;
 	int ret, ea_off = 0;
+	uint32 iaddr_dest;
 #ifdef BCMDBG_ERR
 	char eabuf[ETHER_ADDR_STR_LEN];
 #endif /* BCMDBG_ERR */
@@ -532,7 +534,7 @@ wet_ip_proc(wlc_wet_info_t *weth, wlc_bsscfg_t *cfg, void *sdu,
 	 * keep track of IP MAC mapping when sending frame.
 	 */
 	if (send) {
-		uint32 iaddr_dest, iaddr_src;
+		uint32 iaddr_src;
 		bool wet_table_upd = TRUE;
 
 		iaddr = iph + IPV4_SRC_IP_OFFSET;
@@ -568,13 +570,26 @@ wet_ip_proc(wlc_wet_info_t *weth, wlc_bsscfg_t *cfg, void *sdu,
 	/* no action for received bcast/mcast ethernet frame */
 	else if (!ETHER_ISMULTI(eh)) {
 		iaddr = iph + IPV4_DEST_IP_OFFSET;
-		if (wet_sta_find_ip(weth, iaddr, &sta) < 0) {
-			WL_ERROR(("wl%d: wet_ip_proc: unable to find STA %u.%u.%u.%u\n",
-				WLCUNIT(weth), iaddr[0], iaddr[1], iaddr[2],
-				iaddr[3]));
-			return -1;
+		iaddr_dest = ntoh32(*((uint32 *)(iaddr)));
+
+		/* Receive unicast frame with multicast ip, covert dest MAC
+		 * to ethernet multicast.
+		 */
+		if (IP_ISMULTI(iaddr_dest)) {
+			IPV4_MCAST_TO_ETHER_MCAST(iaddr_dest, mcast_ea.octet);
+			WL_INFORM(("%s: recv mcast %u.%u.%u.%u\n", __func__, iaddr[0],
+				iaddr[1], iaddr[2], iaddr[3]));
+			ea = &mcast_ea;
+		} else {
+			if (wet_sta_find_ip(weth, iaddr, &sta) < 0) {
+				WL_ERROR(("wl%d: wet_ip_proc: unable to find STA %u.%u.%u.%u\n",
+					WLCUNIT(weth), iaddr[0], iaddr[1], iaddr[2],
+					iaddr[3]));
+				return -1;
+			} else {
+				ea = &sta->mac;
+			}
 		}
-		ea = &sta->mac;
 		ea_off = ETHER_DEST_OFFSET;
 		eacopy(ea, eh + ea_off);
 	}
@@ -1264,7 +1279,7 @@ wlc_wet_send_proc(wlc_wet_info_t *weth, wlc_bsscfg_t *cfg, void *sdu, void **new
 	*new = pkt;
 
 	/* process frame */
-	return wet_eth_proc(weth, cfg, sdu, frame, length, 1) < 0 ? -1 : 0;
+	return wet_eth_proc(weth, cfg, pkt, frame, length, 1) < 0 ? -1 : 0;
 }
 
 /*

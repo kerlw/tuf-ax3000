@@ -48,7 +48,7 @@
  *
  * <<Broadcom-WL-IPTag/Proprietary:>>
  *
- * $Id: wlc_stf.c 776771 2019-07-09 08:59:02Z $
+ * $Id: wlc_stf.c 779729 2019-10-04 20:43:14Z $
  */
 
 /* XXX: Define wlc_cfg.h to be the first header file included as some builds
@@ -529,7 +529,6 @@ wlc_stf_doiovar(void *hdl, uint32 actionid,
 		bcopy((void*)((uintptr)p + sizeof(int_val)), &int_val2, sizeof(int_val));
 
 	bool_val = (int_val != 0) ? TRUE : FALSE;
-	bcopy(p, &srcfg_cmd_params, sizeof(sr_config_t));
 
 	switch (actionid) {
 		case IOV_GVAL(IOV_STF_SS):
@@ -1561,10 +1560,12 @@ wlc_stf_doiovar(void *hdl, uint32 actionid,
 		}
 
 		case IOV_GVAL(IOV_STF_SR_CFG):
+			bcopy(p, &srcfg_cmd_params, MIN(plen, sizeof(srcfg_cmd_params)));
 			err = wlc_stf_srcfg_cmd_get_dispatch(wlc, &srcfg_cmd_params, a, alen);
 			break;
 
 		case IOV_SVAL(IOV_STF_SR_CFG):
+			bcopy(p, &srcfg_cmd_params, MIN(plen, sizeof(srcfg_cmd_params)));
 			err = wlc_stf_srcfg_cmd_set_dispatch(wlc, &srcfg_cmd_params);
 			break;
 
@@ -4166,12 +4167,24 @@ BCMATTACHFN(wlc_stf_phy_chain_calc)(wlc_info_t *wlc)
 	wlc->stf->sr13_en_sw_txrxchain_mask =
 		((wlc->pub->boardflags4 & BFL4_SROM13_EN_SW_TXRXCHAIN_MASK) != 0);
 
+	wlc->stf->core3_p1c =
+		((wlc->pub->boardflags4 & BFL4_SROM13_CORE3_P1C) != 0) ||
+		(CHIPID(wlc->pub->sih->chip) == BCM4363_CHIP_ID);
+
 	/* Apply sw_txrxchain mask if present */
 	if (wlc->stf->sr13_en_sw_txrxchain_mask) {
 		sw_txchain =
 			(uint8)getintvar_slicespecific(wlc->hw, wlc->pub->vars, rstr_sw_txchain);
 		sw_rxchain =
 			(uint8)getintvar_slicespecific(wlc->hw, wlc->pub->vars, rstr_sw_rxchain);
+
+		if (wlc->stf->core3_p1c) {
+			/* XXX 3+1 configurations use sw_rxchain_mask=0xF and txchain 0x7.
+			 * Reduce sw_rxchain_mask here for proper function as 3x3
+			 */
+			sw_rxchain &= 7;
+			sw_txchain &= 7;
+		}
 
 		wlc->stf->hw_txchain_cap &= sw_txchain;
 		wlc->stf->hw_rxchain_cap &= sw_rxchain;
