@@ -15,9 +15,11 @@ sudo apt-get -y install build-essential asciidoc binutils bzip2 gawk gettext git
 
 3. 使用 `git clone https://github.com/MerlinRdev/tuf-ax3000` 命令下载好源代码，然后 `cd tuf-ax3000/release/src-rt-5.02axhnd.675x` 进入目录
 
-4. 输入 `make tuf-ax3000` 即可开始编译你要的固件了。
+4. 分别执行 `sudo mkdir /opt/toolchains/`,  `ln -sf $(pwd)/bcmdrivers/broadcom/net/wl/impl61/main/src/toolchains/crosstools-aarch64-gcc-5.3-linux-4.1-glibc-2.24-binutils-2.25 /opt/toolchains/`,  `ln -sf $(pwd)/bcmdrivers/broadcom/net/wl/impl61/main/src/toolchains/crosstools-aarch64-gcc-5.5-linux-4.1-glibc-2.26-binutils-2.28.1 /opt/toolchains/`,  `ln -sf $(pwd)/bcmdrivers/broadcom/net/wl/impl61/main/src/toolchains/crosstools-arm-gcc-5.3-linux-4.1-glibc-2.24-binutils-2.25 /opt/toolchains/`,  `ln -sf $(pwd)/bcmdrivers/broadcom/net/wl/impl61/main/src/toolchains/crosstools-arm-gcc-5.5-linux-4.1-glibc-2.26-binutils-2.28.1 /opt/toolchains/`,  `ln -sf $(pwd)/bcmdrivers/broadcom/net/wl/impl61/main/src/toolchains/crosstools-gcc-5.3-linux-4.1-uclibc-1.0.12-glibc-2.24-binutils-2.25 /opt/toolchains/` 
 
-5. 编译完成后输出固件路径：tuf-ax3000/release/src-rt-5.02axhnd.675x/image
+5. 输入 `make tuf-ax3000` 即可开始编译你要的固件了。
+
+6. 编译完成后输出固件路径：tuf-ax3000/release/src-rt-5.02axhnd.675x/image
 
 ## Donate
 
