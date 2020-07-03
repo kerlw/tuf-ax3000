@@ -11993,8 +11993,13 @@ static void sysinit(void)
 	init_nvram();  // for system indepent part after getting model
 #ifdef RTCONFIG_JFFS_NVRAM
 	if(RESTORE_DEFAULTS()) {
+#if defined(RTCONFIG_UBIFS)
+		nvram_set("ubifs_on", "1");
+		nvram_set("ubifs_clean_fs", "1");
+#else
 		nvram_set("jffs2_on", "1");
 		nvram_set("jffs2_clean_fs", "1");
+#endif
 	}
 	start_jffs2();
 #endif
