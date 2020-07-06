@@ -441,9 +441,11 @@ int merlinr_firmware_check_update_main(int argc, char *argv[])
 	curl_global_cleanup();
 
 GODONE:
-#if defined(SBRAC3200P) || defined(RTACRH17) || defined(RTAC3200) || defined(RTAC85P)
+#if (defined(RTACRH17) && !defined(RTCONFIG_AMAS)) || defined(RTAC3200) || defined(RTAC85P)
 	snprintf(info,sizeof(info),"3004_382_%s",nvram_get("extendno"));
-#elif defined(RTAC68U)
+#elif (defined(RTACRH17) && defined(RTCONFIG_AMAS)) || defined(RTAC95U) || defined(RTAX56_XD4) || defined(RTAX95Q)
+	snprintf(info,sizeof(info),"3004_386_%s",nvram_get("extendno"));
+#elif defined(RTAC68U) || defined(RTAC3100) || defined(RTAC88U)
 	snprintf(info,sizeof(info),"3004_385_%s",nvram_get("extendno"));
 #else
 	snprintf(info,sizeof(info),"3004_384_%s",nvram_get("extendno"));
