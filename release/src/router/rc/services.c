@@ -15086,84 +15086,135 @@ void setup_leds()
 
 	model = get_model();
 
+/*** Disable ***/
 	if (nvram_get_int("led_disable") == 1) {
-		if ((model == MODEL_RTAC56U) || (model == MODEL_RTAC56S) ||
-		    (model == MODEL_RTAC68U) || (model == MODEL_RTAC87U) ||
-		    (model == MODEL_RTAC3200) || (model == MODEL_RTAC88U) ||
-		    (model == MODEL_RTAC3100) || (model == MODEL_RTAC5300) ||
-#if defined(GTAC5300)
-			(model == MODEL_GTAC5300) || 
-#endif
-		    (model == MODEL_RTAC86U)) {
-			setAllLedOff();
-			if (model == MODEL_RTAC87U)
-				led_control_atomic(LED_5G, LED_OFF);
-		} else {        // TODO: Can other routers also use the same code?
-			led_control_atomic(LED_2G, LED_OFF);
-			led_control_atomic(LED_5G, LED_OFF);
-			led_control_atomic(LED_POWER, LED_OFF);
-			led_control_atomic(LED_SWITCH, LED_OFF);
-#if !defined(HND_ROUTER) 
-			led_control_atomic(LED_LAN, LED_OFF);
-#endif
-#ifdef RTCONFIG_LAN4WAN_LED
-			led_control_atomic(LED_LAN1, LED_OFF);
-			led_control_atomic(LED_LAN2, LED_OFF);
-			led_control_atomic(LED_LAN3, LED_OFF);
-			led_control_atomic(LED_LAN4, LED_OFF);
-#endif
-			led_control_atomic(LED_WAN, LED_OFF);
-		}
+		setAllLedOff();
+		nvram_set("AllLED", "0");
 #ifdef RTCONFIG_USB
 		stop_usbled();
-		led_control_atomic(LED_USB, LED_OFF);
 #endif
 
 	} else {
+/*** Enable ***/
+		nvram_set("AllLED", "1");
+
+		led_control(LED_POWER, LED_ON);
+
 #ifdef RTCONFIG_USB
 		start_usbled();
 #endif
 #ifdef RTCONFIG_LED_ALL
-		led_control_atomic(LED_ALL, LED_ON);
+		led_control(LED_ALL, LED_ON);
+#endif
+#if defined(RTCONFIG_RGBLED)
+		start_aurargb();
 #endif
 
-/* LAN */
-#if defined(HND_ROUTER) && defined(RTCONFIG_LAN4WAN_LED)
-		setLANLedOn();
-#endif
-
-/* WAN */
-#if defined(RTAC3200) || defined(RTCONFIG_BCM_7114) || defined(HND_ROUTER)
-#ifndef HND_ROUTER
+/* WAN/LAN */
+#if defined(RTAC3200) || defined(RTCONFIG_BCM_7114)
 		eval("et", "-i", "eth0", "robowr", "0", "0x18", "0x01ff");
 		eval("et", "-i", "eth0", "robowr", "0", "0x1a", "0x01ff");
-#else
+#elif defined(HND_ROUTER)
 		led_control(LED_WAN_NORMAL, LED_ON);
-#endif
+		setLANLedOn();
 #else
 		eval("et", "robowr", "0", "0x18", "0x01ff");
 		eval("et", "robowr", "0", "0x1a", "0x01ff");
 #endif
 
-/* Wifi */
-		if (nvram_match("wl1_radio", "1")
-#if defined(RTAC3200) || defined(RTAC5300)
-		    || nvram_match("wl2_radio", "1")
+#ifdef RTCONFIG_LAN4WAN_LED
+		LanWanLedCtrl();
 #endif
-		   ) {
-			led_control_atomic(LED_5G_FORCED, LED_ON);
-		}
-		if (nvram_match("wl0_radio", "1")) {
-			led_control_atomic(LED_2G, LED_ON);
-		}
-#ifdef RTCONFIG_QTN
-		setAllLedOn_qtn();
-#endif
-		led_control_atomic(LED_SWITCH, LED_ON);
-		led_control_atomic(LED_POWER, LED_ON);
-
-#if defined(RTAC3200) || defined(RTAC88U) || defined(RTAC3100) || defined(RTAC5300)
 		kill_pidfile_s("/var/run/wanduck.pid", SIGUSR2);
+
+
+/* Wifi */
+		if (nvram_match("wl0_radio", "1")) {
+#if defined(RTAC86U)
+			eval("wl", "ledbh", "9", "7");
+#elif defined(GTAC2900)
+			eval("wl", "ledbh", "9", "1");
+#elif defined(R8000P)
+			eval("wl", "-i", "eth5", "ledbh", "9", "7");
+#elif defined(GTAC5300)
+			eval("wl", "-i", "eth6", "ledbh", "9", "7");
+#elif defined(RTAX88U) || defined(GTAX11000)
+			eval("wl", "-i", "eth6", "ledbh", "15", "7");
+#elif defined(RTAX92U)
+			eval("wl", "-i", "eth5", "ledbh", "10", "7");
+#elif defined(RTAX95Q)
+			eval("wl", "-i", "eth4", "ledbh", "10", "7");
+#elif defined(RTAX56_XD4)
+			eval("wl", "-i", "wl0", "ledbh", "10", "7");
+#elif defined(RTAX55)
+			eval("wl", "-i", "eth2", "ledbh", "0", "25");
+#elif defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+			eval("wl", "-i", "eth5", "ledbh", "0", "25");
+#elif defined(RTAX86U) || defined(RTAX5700)
+			eval("wl", "-i", "eth6", "ledbh", "7", "7");
+#elif defined(RTAX68U)
+			eval("wl", "-i", "eth5", "ledbh", "7", "7");
+#elif defined(RTAX56U)
+			eval("wl", "-i", "eth5", "ledbh", "0", "25");
+#endif
+		}
+
+		if (nvram_match("wl1_radio", "1")) {
+#if defined(RTAC86U)
+			eval("wl", "-i", "eth6", "ledbh", "9", "7");
+#elif defined(GTAC2900)
+			eval("wl", "-i", "eth6", "ledbh", "9", "1");
+#elif defined(R8000P)
+			//eval("wl", "-i", "eth6", "ledbh", "9", "7");
+#elif defined(GTAC5300)
+			eval("wl", "-i", "eth7", "ledbh", "9", "7");
+#elif defined(RTAX88U) || defined(GTAX11000)
+			eval("wl", "-i", "eth7", "ledbh", "15", "7");
+#elif defined(RTAX92U)
+			eval("wl", "-i", "eth6", "ledbh", "10", "7");
+#elif defined(RTAX95Q)
+			eval("wl", "-i", "eth5", "ledbh", "10", "7");
+#elif defined(RTAX56_XD4)
+			eval("wl", "-i", "wl1", "ledbh", "10", "7");
+#elif defined(RTAX55)
+			eval("wl", "-i", "eth3", "ledbh", "0", "25");
+#elif defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+			eval("wl", "-i", "eth6", "ledbh", "15", "7");
+#elif defined(RTAX56U)
+			eval("wl", "-i", "eth6", "ledbh", "0", "25");
+#elif defined(RTAX86U) || defined(RTAX5700)
+			eval("wl", "-i", "eth7", "ledbh", "15", "7");
+#elif defined(RTAX68U)
+			eval("wl", "-i", "eth6", "ledbh", "7", "7");
+#endif
+		}
+#if defined(RTAC3200) || defined(RTAC5300) || defined(GTAC5300) || defined(GTAX11000) || defined(RTAX92U) || defined(RTAX95Q)
+		if (nvram_match("wl2_radio", "1")) {
+#if defined(RTAC3200)
+			eval("wl", "-i", "eth3", "ledbh", "10", "7");
+#elif defined(GTAC5300)
+			eval("wl", "-i", "eth8", "ledbh", "9", "7");
+#elif defined(GTAX11000)
+			eval("wl", "-i", "eth8", "ledbh", "15", "7");
+#elif defined(RTAX92U)
+			eval("wl", "-i", "eth7", "ledbh", "15", "7");
+#elif defined(RTAX95Q)
+			eval("wl", "-i", "eth6", "ledbh", "15", "7");
+#elif defined(RTAC5300)
+			eval("wl", "-i", "eth3", "ledbh", "9", "7");
+#endif
+		}
+#ifdef RTCONFIG_EXTPHY_BCM84880
+#if defined(RTAX86U) || defined(RTAX5700)
+		if(nvram_get_int("ext_phy_model") == 0){
+			if(nvram_get_int("wans_extwan")){
+				led_control(LED_LAN, LED_ON);
+			}
+
+			eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a832", "0x6");	// default. CTL LED3 MASK LOW
+			eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a835", "0x40");	// default. CTL LED4 MASK LOW
+		}
+#endif
 #endif
 	}
 }
