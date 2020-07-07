@@ -15204,6 +15204,7 @@ void setup_leds()
 			eval("wl", "-i", "eth3", "ledbh", "9", "7");
 #endif
 		}
+#endif
 #ifdef RTCONFIG_EXTPHY_BCM84880
 #if defined(RTAX86U) || defined(RTAX5700)
 		if(nvram_get_int("ext_phy_model") == 0){
