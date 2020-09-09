@@ -147,14 +147,23 @@ int dbclient_rm(dbclient* client, const char* key, int nk) {
     if(nk < 0) {
         return -1;
     }
-
     n1 = nk + 2 + 6;
     check_buf(client, n1 + HEADER_PREFIX);
     n2 = snprintf(client->buf, client->buf_max, "%s%07d remove %s\n", MAGIC, n1, key);
+#if 1
     client->buf[n2] = '\0';
     write(client->remote_fd, client->buf, n2);
 
     return 0;
+#else
+    client->buf[n2] = '\0';
+    if(0 == write_util(client, n1 + HEADER_PREFIX, 200)) {
+        ignore_result(client);
+        return 0;
+    }
+
+    return -1;
+#endif
 }
 
 int dbclient_bulk(dbclient* client, const char* command, const char* key, int nk, const char* value, int nv) {

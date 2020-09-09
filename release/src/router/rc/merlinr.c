@@ -81,13 +81,15 @@ void merlinr_init_done()
 {
 	_dprintf("############################ MerlinR init done #################################\n");
 #ifdef RTCONFIG_SOFTCENTER
-	if (!f_exists("/jffs/softcenter/scripts/ks_tar_intall.sh") && nvram_match("sc_mount","0")){
+	if (!f_exists("/jffs/softcenter/scripts/ks_tar_install.sh") && nvram_match("sc_mount","0")){
 		doSystem("/usr/sbin/jffsinit.sh &");
-		logmessage("软件中心", "开始安装......");
-		logmessage("软件中心", "1分钟后完成安装");
+		logmessage("Softcenter/软件中心", "Installing/开始安装......");
+		logmessage("Softcenter/软件中心", "Wait a minute/1分钟后完成安装");
 		_dprintf("....softcenter ok....\n");
-	} else if (f_exists("/jffs/softcenter/scripts/ks_tar_intall.sh") && nvram_match("sc_mount","0"))
+	} else if (f_exists("/jffs/softcenter/scripts/ks_tar_install.sh") && nvram_match("sc_mount","0"))
 		nvram_set("sc_installed","1");
+	//else if (!f_exists("/jffs/softcenter/scripts/ks_tar_intall.sh") && nvram_match("sc_mount","1"))
+		//nvram_set("sc_installed","0");
 	if(f_exists("/jffs/.asusrouter")){
 		unlink("/jffs/.asusrouter");
 		doSystem("sed -i '/softcenter-wan.sh/d' /jffs/scripts/wan-start");
@@ -95,10 +97,14 @@ void merlinr_init_done()
 		doSystem("sed -i '/softcenter-mount.sh/d' /jffs/scripts/post-mount");
 
 	}
+	doSystem("dbus set softcenter_firmware_version=`nvram get extendno|cut -d \"_\" -f2|cut -d \"-\" -f1|cut -c2-6`");
 #endif
 #if defined(RTCONFIG_QCA)
 	if(!nvram_get("bl_ver"))
 		nvram_set("bl_ver", "1.0.0.0");
+#elif defined(RTCONFIG_RALINK)
+	if(!nvram_get("bl_ver"))
+		nvram_set("bl_ver", nvram_get("blver"));
 #elif defined(RTCONFIG_LANTIQ)
 #if !defined(K3C)
 	if(!nvram_get("bl_ver"))
@@ -114,6 +120,8 @@ void merlinr_init_done()
 		nvram_set("modelname", "SBRAC1900P");
 #elif defined(SBRAC3200P)
 		nvram_set("modelname", "SBRAC3200P");
+#elif defined(EA6700)
+		nvram_set("modelname", "EA6700");
 #elif defined(R8000P) || defined(R7900P)
 		nvram_set("modelname", "R8000P");
 #elif defined(RTAC3100)
@@ -154,6 +162,8 @@ void merlinr_init_done()
 		nvram_set("modelname", "RTACRH26");
 #elif defined(RTAC85P)
 		nvram_set("modelname", "RTAC85P");
+#elif defined(RMAC2100)
+		nvram_set("modelname", "RMAC2100");
 #endif
 #if defined(R8000P) || defined(R7900P)
 	nvram_set("ping_target","www.taobao.com");
@@ -162,6 +172,8 @@ void merlinr_init_done()
 #if defined(TUFAX3000) && defined(MERLINR_VER_MAJOR_X)
 //tufax3000=ax82u,ax58u=ax3000
 	//enable_4t4r();
+#elif defined(MERLINR_VER_MAJOR_X) && defined(RTAC86U)
+	merlinr_patch_nvram();
 #elif defined(GTAC2900) && defined(MERLINR_VER_MAJOR_X)
 //ac86u <--> gtac2900
 	patch_ac86();
@@ -355,8 +367,10 @@ int merlinr_firmware_check_update_main(int argc, char *argv[])
 	nvram_set("webs_state_error", "0");
 	nvram_set("webs_state_odm", "0");
 	nvram_set("webs_state_url", "");
+#ifdef RTCONFIG_AMAS
 	nvram_set("cfg_check", "0");
 	nvram_set("cfg_upgrade", "0");
+#endif
 	unlink("/tmp/webs_upgrade.log");
 	unlink("/tmp/wlan_update.txt");
 	unlink("/tmp/release_note0.txt");
@@ -386,7 +400,7 @@ int merlinr_firmware_check_update_main(int argc, char *argv[])
 					//_dprintf("%s#%s\n",fwver,cur_fwver);
 					if(versioncmp((cur_fwver+1),(fwver+1))==1){
 						nvram_set("webs_state_url", "");
-#if (defined(RTAC82U) && !defined(RTCONFIG_AMAS)) || defined(RTAC3200) || defined(RTAC85P)
+#if (defined(RTAC82U) && !defined(RTCONFIG_AMAS)) || defined(RTAC3200) || defined(RTAC85P) || defined(RMAC2100)
 						snprintf(info,sizeof(info),"3004_382_%s_%s-%s",modelname,fwver,tag);
 #elif (defined(RTAC82U) && defined(RTCONFIG_AMAS)) || defined(RTAC95U) || defined(RTAX56_XD4) || defined(RTAX95Q)
 						snprintf(info,sizeof(info),"3004_386_%s_%s-%s",modelname,fwver,tag);
@@ -443,7 +457,7 @@ int merlinr_firmware_check_update_main(int argc, char *argv[])
 	curl_global_cleanup();
 
 GODONE:
-#if (defined(RTAC82U) && !defined(RTCONFIG_AMAS)) || defined(RTAC3200) || defined(RTAC85P)
+#if (defined(RTAC82U) && !defined(RTCONFIG_AMAS)) || defined(RTAC3200) || defined(RTAC85P) || defined(RMAC2100)
 	snprintf(info,sizeof(info),"3004_382_%s",nvram_get("extendno"));
 #elif (defined(RTAC82U) && defined(RTCONFIG_AMAS)) || defined(RTAC95U) || defined(RTAX56_XD4) || defined(RTAX95Q)
 	snprintf(info,sizeof(info),"3004_386_%s",nvram_get("extendno"));
@@ -470,46 +484,30 @@ GODONE:
 #if !defined(BLUECAVE)
 void exec_uu_merlinr()
 {
-	FILE *fpmodel, *fpmac, *fpuu, *fpurl, *fpmd5, *fpcfg;
+	FILE *fp;
 	char buf[128];
 	int download,i;
 	char *dup_pattern, *g, *gg;
-	char p[10][100];
+	char p[2][100];
 	if(nvram_get_int("sw_mode") == 1){
 		add_rc_support("uu_accel");
-		if ((fpmodel = fopen("/var/model", "w"))){
-			fprintf(fpmodel, nvram_get("productid"));
-			fclose(fpmodel);
-		}
-		if ((fpmac = fopen("/var/label_macaddr", "w"))){
-			char *etmac=nvram_get("et2macaddr");
-			toUpperCase(etmac);
-			fprintf(fpmac, etmac);
-			fclose(fpmac);
-		}
-		if ((fpuu = fopen("/var/uu_plugin_dir", "w"))){
-			fprintf(fpuu, "/jffs");
-			fclose(fpuu);
-		}
-		system("mkdir -p /tmp/uu");
+		mkdir("/tmp/uu", 0755);
 		download = system("wget -t 2 -T 30 --dns-timeout=120 --header=Accept:text/plain -q --no-check-certificate 'https://router.uu.163.com/api/script/monitor?type=asuswrt-merlin' -O /tmp/uu/script_url");
 		if (!download){
 			_dprintf("download uuplugin script info successfully\n");
-			if ((fpurl = fopen("/tmp/uu/script_url", "r"))!=NULL){
-				fgets(buf, 128, fpurl);
-				fclose(fpurl);
+			if ((fp = fopen("/tmp/uu/script_url", "r"))!=NULL){
+				fgets(buf, 128, fp);
+				fclose(fp);
 				unlink("/tmp/uu/script_url");
 				i=0;
 				g = dup_pattern = strdup(buf);
 				gg = strtok( g, "," );
 				while (gg != NULL)
-				//for(g = strsep(&dup_pattern, ","); g != NULL; g = strsep(&dup_pattern, ","))
 				{
 					if (gg!=NULL){
 						strcpy(p[i], gg);
 						i++;
 						++download;
-						//logmessage("K3", "download: %d",download);
 						gg = strtok( NULL, "," );
 					}
 				}
@@ -518,35 +516,31 @@ void exec_uu_merlinr()
 				{
 					_dprintf("URL: %s\n",p[0]);
 					_dprintf("MD5: %s\n",p[1]);
-					//logmessage("K3", "URL: %s,MD5: %s",p[0],p[1]);
 					if ( !doSystem("wget -t 2 -T 30 --dns-timeout=120 --header=Accept:text/plain -q --no-check-certificate %s -O /tmp/uu/uuplugin_monitor.sh", p[0]))
 					{
 						_dprintf("download uuplugin script successfully\n");
-						if ((fpcfg = fopen("/tmp/uu/uuplugin_monitor.config", "w"))){
-							fprintf(fpcfg, "router=asuswrt-merlin\n");
-							fprintf(fpcfg, "model=\n");
-							fclose(fpcfg);
+						if ((fp = fopen("/tmp/uu/uuplugin_monitor.config", "w"))){
+							fprintf(fp, "router=asuswrt-merlin\n");
+							fprintf(fp, "model=\n");
+							fclose(fp);
 						}
-						if((fpmd5=popen("md5sum /tmp/uu/uuplugin_monitor.sh | sed 's/[ ][ ]*/ /g' | cut -d' ' -f1", "r")))
+						if((fp=popen("md5sum /tmp/uu/uuplugin_monitor.sh | sed 's/[ ][ ]*/ /g' | cut -d' ' -f1", "r")))
 						{
 							memset(buf,'\0',sizeof(buf));
-							if((fread(buf, 1, 128, fpmd5)))
+							if((fread(buf, 1, 128, fp)))
 							{
 								buf[32]='\0';
 								buf[33]='\0';
-								//logmessage("K3", "MD5: %s,MD5: %s",buf,p[1]);
 								if ( !strcasecmp(buf, p[1]))
 								{
 									pid_t pid;
 									char *uu_argv[] = { "/tmp/uu/uuplugin_monitor.sh", NULL };
 									_dprintf("prepare to execute uuplugin stript...\n");
-									//logmessage("K3", "prepare to execute uuplugin stript...");
 									chmod("/tmp/uu/uuplugin_monitor.sh", 0755);
 									_eval(uu_argv, NULL, 0, &pid);
-									//eval("/tmp/uu/uuplugin_monitor.sh");
 								}
 							}
-							pclose(fpmd5);
+							pclose(fp);
 						}
 					}
 				}

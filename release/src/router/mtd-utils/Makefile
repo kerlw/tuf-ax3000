@@ -44,7 +44,7 @@ SCRIPTS =
 
 ifeq ($(UBIFS),y)
 BINS += mkfs.ubifs/mkfs.ubifs
-BINS += nanddump
+BINS += nanddump mtd_debug
 endif
 
 ifeq ($(UBI),y)
