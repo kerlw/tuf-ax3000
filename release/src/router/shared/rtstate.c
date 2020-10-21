@@ -11,6 +11,7 @@
 #include <shared.h>
 #ifdef RTCONFIG_BROOP
 #include <linux/netlink.h>
+#include <limits.h>
 #endif
 
 

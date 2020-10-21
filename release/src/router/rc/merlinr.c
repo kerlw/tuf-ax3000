@@ -15,6 +15,7 @@
  * MA 02111-1307 USA
  *
  * Copyright 2019-2020, paldier <paldier@hotmail.com>.
+ * Copyright 2019-2020, lostlonger<lostlonger.g@gmail.com>.
  * All Rights Reserved.
  * 
  *
@@ -59,7 +60,37 @@ void merlinr_insmod(){
 	eval("insmod", "xt_TPROXY");
 	eval("insmod", "xt_set");
 }
-
+#if defined(TUFAX3000) || defined(RTAX58U)
+void enable_4t4r_ax58()
+{
+//ensure that the hardware support 4t4r
+	if(!strcmp(nvram_get("1:sw_rxchain_mask"), "0xf") ){
+//4t4r
+		nvram_set("1:sw_txchain_mask", "0xf");
+		nvram_set("wl1_txchain", "15");
+		nvram_commit();
+	} else {
+//2t2r
+		nvram_set("1:sw_txchain_mask", "0x9");
+		nvram_set("wl1_txchain", "9");
+		nvram_commit();
+	}
+}
+void enable_4t4r()
+{
+//unlock 4t4r for all regions, not just china
+//ensure that the hardware support 4t4r
+	if(!strcmp(cfe_nvram_get("1:sw_rxchain_mask"), "0xf") && strcmp(cfe_nvram_get("1:sw_txchain_mask"), "0xf")){
+		if ( !pids("envrams") )
+		{
+		  system("/usr/sbin/envrams &> /dev/null");
+		  usleep(100000);
+		}
+		ATE_BRCM_SET("1:sw_txchain_mask", "0xf");
+		ATE_BRCM_COMMIT();
+	}
+}
+#endif
 void merlinr_init()
 {
 	_dprintf("############################ MerlinR init #################################\n");
@@ -71,7 +102,6 @@ void merlinr_init()
 	nvram_set("sc_services_sig", "0");	
 #endif
 #if defined(TUFAX3000)
-//only an idiot would use 160 in china
 	if(!nvram_get("wl1_bw_160"))
 		nvram_set("wl1_bw_160", "0");
 #endif
@@ -124,16 +154,24 @@ void merlinr_init_done()
 		nvram_set("modelname", "EA6700");
 #elif defined(R8000P) || defined(R7900P)
 		nvram_set("modelname", "R8000P");
-#elif defined(RTAC3100)
-		nvram_set("modelname", "RTAC3100");
+#elif defined(RAX20)
+		nvram_set("modelname", "RAX20");
+#elif defined(RAX80)
+		nvram_set("modelname", "RAX80");
+#elif defined(RAX200)
+		nvram_set("modelname", "RAX200");
 #elif defined(BLUECAVE)
 		nvram_set("modelname", "BLUECAVE");
 #elif defined(RTAC68U)
 		nvram_set("modelname", "RTAC68U");
-#elif defined(RTAC68P)
-		nvram_set("modelname", "RTAC68P");
 #elif defined(RTAC3200)
 		nvram_set("modelname", "RTAC3200");
+#elif defined(RTAC3100)
+		nvram_set("modelname", "RTAC3100");
+#elif defined(RTAC88U)
+		nvram_set("modelname", "RTAC88U");
+#elif defined(RTAC5300)
+		nvram_set("modelname", "RTAC5300");
 #elif defined(GTAC2900)
 		nvram_set("modelname", "GTAC2900");
 #elif defined(GTAC5300)
@@ -142,24 +180,28 @@ void merlinr_init_done()
 		nvram_set("modelname", "RTAC86U");
 #elif defined(RTACRH17)
 		nvram_set("modelname", "RTACRH17");
-#elif defined(TUFAX3000) || defined(RTAX58U)
-		nvram_set("modelname", "TUFAX3000");
+#elif defined(RTAX55)
+		nvram_set("modelname", "RTAX55");//ax55 and ax56 v2
 #elif defined(RTAX56U)
 		nvram_set("modelname", "RTAX56U");
+#elif defined(TUFAX3000)
+		nvram_set("modelname", "TUFAX3000");
+#elif defined(RTAX58U)
+		nvram_set("modelname", "RTAX58U");
+#elif defined(RTAX68U)
+		nvram_set("modelname", "RTAX68U");
+#elif defined(RTAX82U)
+		nvram_set("modelname", "RTAX82U")
+#elif defined(RTAX86U)
+		nvram_set("modelname", "RTAX86U")
 #elif defined(RTAX88U)
 		nvram_set("modelname", "RTAX88U");
+#elif defined(RTAX89U)
+		nvram_set("modelname", "RTAX89X");
 #elif defined(GTAX11000)
 		nvram_set("modelname", "GTAX11000");
-#elif defined(RAX20)
-		nvram_set("modelname", "RAX20");
-#elif defined(RAX80)
-		nvram_set("modelname", "RAX80");
-#elif defined(RAX200)
-		nvram_set("modelname", "RAX200");
 #elif defined(TUFAC1750)
 		nvram_set("modelname", "TUFAC1750");
-#elif defined(RTACRH26)
-		nvram_set("modelname", "RTACRH26");
 #elif defined(RTAC85P)
 		nvram_set("modelname", "RTAC85P");
 #elif defined(RMAC2100)
@@ -169,9 +211,8 @@ void merlinr_init_done()
 	nvram_set("ping_target","www.taobao.com");
 	nvram_commit();
 #endif
-#if defined(TUFAX3000) && defined(MERLINR_VER_MAJOR_X)
-//tufax3000=ax82u,ax58u=ax3000
-	//enable_4t4r();
+#if defined(TUFAX3000) || defined(RTAX58U)
+	enable_4t4r();
 #elif defined(MERLINR_VER_MAJOR_X) && defined(RTAC86U)
 	merlinr_patch_nvram();
 #elif defined(GTAC2900) && defined(MERLINR_VER_MAJOR_X)
@@ -551,12 +592,6 @@ void exec_uu_merlinr()
 }
 #endif
 
-#if !defined(RTAC68U) && !defined(GTAC5300) && !defined(GTAC2900) && !defined(RTAC86U)&& !defined(TUFAX3000)
-void start_sendfeedback(void)
-{
-
-}
-#endif
 #if defined(RTCONFIG_SOFTCENTER)
 void softcenter_eval(int sig)
 {

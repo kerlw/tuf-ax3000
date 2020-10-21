@@ -565,7 +565,7 @@ static int rctest_main(int argc, char *argv[])
 		else if (strcmp(argv[1], "gpior") == 0) {
 			printf("%d\n", get_gpio(atoi(argv[2])));
 		}
-#if defined(RTCONFIG_HND_ROUTER_AX_6710) || defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+#if defined(RTCONFIG_HND_ROUTER_AX_6710) || defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U) || defined(RTAX82_XD6)
 		else if (strcmp(argv[1], "gpio2r") == 0) {
 			printf("%d\n", get_gpio2(atoi(argv[2])));
 		}
@@ -631,10 +631,10 @@ static int rctest_main(int argc, char *argv[])
 }
 #endif
 
-#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RTCONFIG_LANTIQ) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX55)
+#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RTCONFIG_LANTIQ) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX55) || defined(RTAX1800)
 /* download firmware */
 #ifndef FIRMWARE_DIR
-#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55)
+#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55) || defined(RTAX1800)
 #define FIRMWARE_DIR	"/lib/firmware"
 #else
 #define FIRMWARE_DIR	"/tmp"
@@ -749,7 +749,7 @@ static int hotplug_main(int argc, char *argv[])
 			return coma_uevent();
 #endif /* LINUX_2_6_36 */
 #endif
-#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RTCONFIG_LANTIQ) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55)
+#if defined(RTCONFIG_SOC_IPQ8064) || defined(RTCONFIG_SOC_IPQ40XX) || defined(RTCONFIG_LANTIQ) || defined(RPAC51) || defined(MAPAC1750) || defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55) || defined(RTAX1800)
 		else if(!strcmp(argv[1], "firmware")) {
 			hotplug_firmware();
 		}
@@ -883,7 +883,7 @@ static const applets_t applets[] = {
 #ifdef RTCONFIG_NETOOL
 	{ "netool", 			netool_main			},
 #endif
-#if defined(RTCONFIG_RALINK) || defined(RTCONFIG_EXT_RTL8365MB) || defined(RTCONFIG_EXT_RTL8370MB) || defined(RTAX55)
+#if defined(RTCONFIG_RALINK) || defined(RTCONFIG_EXT_RTL8365MB) || defined(RTCONFIG_EXT_RTL8370MB) || defined(RTAX55) || defined(RTAX1800)
 	{ "rtkswitch",			config_rtkswitch		},
 #if defined(RTAC53) || defined(RTAC51UP)
 	{ "mtkswitch",			config_mtkswitch		},
@@ -933,6 +933,7 @@ static const applets_t applets[] = {
 #endif
 #ifdef RTAX82U
 	{ "ledg",			ledg_main			},
+	{ "ledbtn",			ledbtn_main			},
 #endif
 #ifdef BUILD_READMEM
 	{ "readmem",			readmem_main			},
@@ -1858,7 +1859,10 @@ int main(int argc, char **argv)
 	}
 #endif
 	else if (!strcmp(base, "add_multi_routes")) {
-		return add_multi_routes(0);
+		if(argc == 2)
+			return add_multi_routes(atoi(argv[1]));
+		else
+			return add_multi_routes(0);
 	}
 	else if (!strcmp(base, "led_ctrl")) {
 		return(led_control(atoi(argv[1]), atoi(argv[2])));

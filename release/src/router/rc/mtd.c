@@ -717,6 +717,7 @@ mtd_erase(const char *mtd)
 	return 0;
 }
 
+#ifndef RTCONFIG_URLFW
 static char *
 base64enc(const char *p, char *buf, int len)
 {
@@ -862,6 +863,7 @@ http_get(const char *server, char *buf, size_t count, off_t offset)
 {
 	return wget(METHOD_GET, server, buf, count, offset);
 }
+#endif /* !RTCONFIG_URLFW */
 
 /*
  * Write a file to an MTD device
@@ -886,10 +888,19 @@ mtd_write(const char *path, const char *mtd)
 	int ret = -1;
 
 	/* Examine TRX header */
+#ifdef RTCONFIG_URLFW
+	if ((fp = url_fopen(path, "rb")))
+		count = safe_fread(&trx, 1, sizeof(struct trx_header), fp);
+	else {
+		fprintf(stderr, "%s: Can't open path\n", path);
+		goto fail;
+	}
+#else /* !RTCONFIG_URLFW */
 	if ((fp = fopen(path, "r")))
 		count = safe_fread(&trx, 1, sizeof(struct trx_header), fp);
 	else
 		count = http_get(path, (char *) &trx, sizeof(struct trx_header), 0);
+#endif /* !RTCONFIG_URLFW */
 	if (count < sizeof(struct trx_header)) {
 		fprintf(stderr, "%s: File is too small (%ld bytes)\n", path, count);
 		goto fail;
@@ -945,10 +956,14 @@ mtd_write(const char *path, const char *mtd)
 			count = off = sizeof(struct trx_header);
 			memcpy(buf, &trx, sizeof(struct trx_header));
 		}
+#ifdef RTCONFIG_URLFW
+		count += safe_fread(&buf[off], 1, len - off, fp);
+#else /* !RTCONFIG_URLFW */
 		if (fp)
 			count += safe_fread(&buf[off], 1, len - off, fp);
 		else
 			count += http_get(path, &buf[off], len - off, erase_info.start + off);
+#endif /* !RTCONFIG_URLFW */
 		if (count < len) {
 			fprintf(stderr, "%s: Truncated file (actual %ld expect %ld)\n", path,
 				count - off, len - off);
@@ -1091,7 +1106,13 @@ bca_sys_upgrade(const char *path)
 		fp = freopen(NULL, "rb", stdin);
 	else
 #endif
+	{
+#ifdef RTCONFIG_URLFW
+		fp = url_fopen(path, "rb");
+#else /* !RTCONFIG_URLFW */
 		fp = fopen(path, "rb");
+#endif /* !RTCONFIG_URLFW */
+	}
 	if (fp == NULL) {
 		ret = errno;
 		_dprintf("*** Error(pid:%d): %s@%d Failed to open file %s: %s. Aborting\n",
@@ -1100,14 +1121,8 @@ bca_sys_upgrade(const char *path)
 	}
 	
 #ifdef RTCONFIG_PIPEFW
-	if (fstat(fileno(fp), &st) < 0) {
-		ret = errno;
-		_dprintf("*** Error(pid:%d): %s@%d Failed to stat file %s: %s. Aborting\n",
-			pid, __FUNCTION__, __LINE__, path, strerror(errno));
-		goto fail;
-	}
-
-	if (S_ISFIFO(st.st_mode) || S_ISSOCK(st.st_mode) || strcmp(path, "-") == 0) {
+	if ((strcmp(path, "-") == 0) ||
+	    (stat(path, &st) == 0 && (S_ISFIFO(st.st_mode) || S_ISSOCK(st.st_mode)))) {
 		nvram_set("pipe_path", path);
 		/* HTTPD parent process supposed to send the image size. reading it. */
 		r_count = safe_fread((void*)&imgsz, 1, sizeof(imgsz), fp);
@@ -1203,6 +1218,7 @@ bca_sys_upgrade(const char *path)
 	if (imgifHandle != NULL) {
 		if (imgif_close(imgifHandle, (ret != 0)) == 0) {
 			if (ret == 0) {
+				ret = 99;
 				_dprintf("\nDone. (written %d bytes, %d blocks with size %d\n",
 					ulimgsz, blknum, flash_info.eraseSize);
 				setBootImageState(BOOT_SET_NEW_IMAGE);
@@ -1215,6 +1231,21 @@ bca_sys_upgrade(const char *path)
 					} else
 						_dprintf("Fail to open /tmp/ate_upgrade_state\n");
 				}
+#ifdef RTCONFIG_PIPEFW
+				if (nvram_get_int("ate_upgrade_reset")) {
+					_dprintf("[ATE] Reset Default...\n");
+#ifndef HND_ROUTER
+					nvram_set("restore_defaults", "1");
+					nvram_set(ASUS_STOP_COMMIT, "1");
+#endif
+					ResetDefault();
+                                }
+
+				if (nvram_get_int("ate_upgrade_reboot")) {
+					_dprintf("[ATE] REBOOT...\n");
+					kill(1, SIGTERM);
+				}
+#endif
 			}
 		} else {
 			if (ret == 0) {

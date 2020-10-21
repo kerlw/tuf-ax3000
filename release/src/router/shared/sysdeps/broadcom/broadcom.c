@@ -243,9 +243,7 @@ int get_psta_status(int unit)
 
 	snprintf(prefix, sizeof(prefix), "wl%d_", unit);
 
-	if (!nvram_match(strcat_r(prefix, "mode", tmp), "psta") &&
-	    !nvram_match(strcat_r(prefix, "mode", tmp2), "psr") &&
-	    !nvram_match(strcat_r(prefix, "mode", tmp2), "wet"))
+	if (!is_psta(unit) && !is_psr(unit))
 		goto PSTA_ERR;
 
 	name = nvram_safe_get(strcat_r(prefix, "ifname", tmp));

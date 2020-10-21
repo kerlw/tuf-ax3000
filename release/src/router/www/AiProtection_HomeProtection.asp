@@ -145,9 +145,6 @@ window.onresize = function() {
 		cal_panel_block("alert_preference", 0.25);
 	}
 }
-<% get_AiDisk_status(); %>
-var AM_to_cifs = get_share_management_status("cifs");  // Account Management for Network-Neighborhood
-var AM_to_ftp = get_share_management_status("ftp");  // Account Management for FTP
 
 var ctf_disable = '<% nvram_get("ctf_disable"); %>';
 var ctf_fa_mode = '<% nvram_get("ctf_fa_mode"); %>';
@@ -166,10 +163,12 @@ function initial(){
 		$(".AiProtection_02").hide();
 		$(".AiProtection_03").hide();
 		$(".line_1").hide();
-		if(!isSupport("dpi_vp")){
-			$("#twoWayIPS_padding").hide();
-			$("#twoWayIPS_field").hide();
-		}
+	}
+
+	if(!isSupport("dpi_vp")){
+		$("#twoWayIPS_padding").hide();
+		$("#twoWayIPS_field").hide();
+		$("#vp_service_field").hide();
 	}
 
 	if(document.form.wrs_protect_enable.value == '1'){
@@ -1015,7 +1014,7 @@ function shadeHandle(flag){
 								<div id="wrs_service"></div>
 							</td>
 						</tr>
-						<tr>
+						<tr id="vp_service_field">
 							<th><#AiProtection_scan_item13#> -</th>
 							<td>
 								<div id="vp_service"></div>

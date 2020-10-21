@@ -149,6 +149,10 @@ extern bool softap_enabled;
 #include <dhd_blog.h>
 #endif // endif
 
+#ifdef DHD_DPSTA
+#include <dpsta.h>
+#endif
+
 /* Last connection success/failure status */
 uint32 dhd_conn_event;
 uint32 dhd_conn_status;
@@ -3073,6 +3077,8 @@ wl_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint16 pktlen,
 					blog_lock();
 					blog_notify(FLUSH, dev, (unsigned long)&params, 0);
 					blog_unlock();
+
+					dpsta_flush_stalist();
 				}
 			}
 		}

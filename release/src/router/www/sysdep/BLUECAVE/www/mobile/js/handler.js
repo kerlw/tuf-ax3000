@@ -540,7 +540,12 @@ apply.wireless = function(){
 	var wirelessValidator = function(band){
 		if(hasBlank([$("#wireless_ssid_" + band), $("#wireless_key_" + band)])) return false;
 		if(!validator.stringSSID(document.getElementById("wireless_ssid_" + band))) return false;
-		if(!validator.psk(document.getElementById("wireless_key_" + band))) return false;	
+		if(!validator.psk(document.getElementById("wireless_key_" + band))) return false;
+		
+		if(isSku("KR")){
+			if(!validator.psk_KR(document.getElementById("wireless_key_" + band))) return false;
+		}
+
 		if(isWeakString($("#wireless_key_" + band).val(), "wpa_key")){
 			if(!confirm("<#JS_common_passwd#>")){
 				$("#wireless_key_" + band).showTextHint("<#AiProtection_scan_note11#>"); 
@@ -558,10 +563,6 @@ apply.wireless = function(){
 		qisPostData.wl0_wpa_psk = $("#wireless_key_0").val();
 		qisPostData.wl0_auth_mode_x = "psk2";
 		qisPostData.wl0_crypto = "aes";
-		/*if(isSupport('WPA3Support')){
-			qisPostData.wl0_auth_mode_x = "psk2sae";
-			qisPostData.wl0_mfp = "1";
-		}*/
 	}
 
 	if(qisPostData.hasOwnProperty("wl1_ssid")){
@@ -571,10 +572,6 @@ apply.wireless = function(){
 		qisPostData.wl1_wpa_psk = ($("#wireless_key_1").length) ? $("#wireless_key_1").val() : qisPostData.wl0_wpa_psk;
 		qisPostData.wl1_auth_mode_x = "psk2";
 		qisPostData.wl1_crypto = "aes";
-		/*if(isSupport('WPA3Support')){
-			qisPostData.wl1_auth_mode_x = "psk2sae";
-			qisPostData.wl1_mfp = "1";
-		}*/
 	}
 
 	if(qisPostData.hasOwnProperty("wl2_ssid")){
@@ -584,10 +581,6 @@ apply.wireless = function(){
 		qisPostData.wl2_wpa_psk = ($("#wireless_key_2").length) ? $("#wireless_key_2").val() : qisPostData.wl0_wpa_psk;
 		qisPostData.wl2_auth_mode_x = "psk2";
 		qisPostData.wl2_crypto = "aes";
-		/*if(isSupport('WPA3Support')){
-			qisPostData.wl2_auth_mode_x = "psk2sae";
-			qisPostData.wl2_mfp = "1";
-		}*/
 	}
 
 	if(isSupport("11AX") && !isSupport("qis_hide_he_features")){
@@ -728,7 +721,7 @@ apply.yadnsDisable = function(){
 apply.yadnsSetting = function(){
 	httpApi.nvramSet((function(){
 		qisPostData.action_mode = "apply";
-		qisPostData.rc_service = "restart_yadns";
+		qisPostData.rc_service = getRestartService();
 		return qisPostData;
 	})(), (systemVariable.isNewFw == 0 || isSupport("amas_bdl")) ? goTo.Finish : goTo.Update);
 };
@@ -1651,7 +1644,7 @@ goTo.rpMode = function(){
 		qisPostData.wlc_dpsta = 1;
 	}
 	else{
-		if(isSdk("7") || isSdk("9")){
+		if(isSupport("amas")){
 			qisPostData.sw_mode = 3;
 			qisPostData.wlc_psta = 2;
 			qisPostData.wlc_dpsta = 0;
@@ -2264,6 +2257,13 @@ goTo.wlcKey = function(){
 	goTo.loadPage("wlcKey_setting", false);
 };
 goTo.wlcManual = function(){
+	if(isSupport('wpa3')){
+		$("#wlc_auth_mode_manual").append($('<option>', {
+			"value": "sae",
+			"text": "WPA3-Personal"
+		}))
+	}
+
 	systemVariable.selectedAP = [];
 	$(".manual_pap_setup").show();
 	genWLBandOption();
@@ -2611,6 +2611,8 @@ goTo.Upload = function(){
 }
 
 goTo.Finish = function(){
+	if(isSupport("GUNDAM_UI")) $("#gdContainer").show()
+
 	var restartService = getRestartService();
 	if(
 		!(restartService.indexOf("restart_wireless") != -1 && isWlUser) &&
@@ -2618,7 +2620,8 @@ goTo.Finish = function(){
 		restartService.indexOf("reboot") == -1 &&
 		restartService.indexOf("restart_all") == -1 &&
 		systemVariable.isNewFw == 0 &&
-		!isSupport("lantiq")
+		!isSupport("lantiq")  &&
+		!isSupport("GUNDAM_UI")
 	){
 		goTo.leaveQIS();
 		return false;
@@ -2658,7 +2661,23 @@ goTo.Finish = function(){
 	else{
 		setTimeout(function(){
 			var interval_isAlive = setInterval(function(){
-				httpApi.isAlive("", updateSubnet(systemVariable.lanIpaddr), function(){ clearInterval(interval_isAlive); goTo.leaveQIS();});
+				httpApi.isAlive("", updateSubnet(systemVariable.lanIpaddr), function(){
+					clearInterval(interval_isAlive); 
+					if($("#gdContainer").is(":visible")){
+						$("#GD-status").html("Finish!");
+
+						$('#summary_page').find(".tableContainer")
+							.replaceWith($("#gundam_page").children().hide())
+
+						$('#summary_page').find(".GD-content")
+							.fadeIn(1000)
+
+						setTimeout(goTo.leaveQIS, 8000);
+					}
+					else{
+						goTo.leaveQIS();
+					}
+				});
 			}, 2000);
 		}, 8000);
 	}
@@ -2868,7 +2887,8 @@ goTo.ResetModem = function(){
 
 goTo.Waiting = function(){
 	systemVariable.manualWanSetup = false;
-	var wandog_interval = parseInt(httpApi.nvramGet(["wandog_interval"], true).wandog_interval);
+	var wandog_interval_str = httpApi.nvramGet(["wandog_interval"], true).wandog_interval;
+	var wandog_interval = (wandog_interval_str == "") ? 5: parseInt(wandog_interval_str);
 	var errCount = 0;
 	var check_linkInternet_count = 0;
 	var MAX_WAN_Detection = wandog_interval * 4;

@@ -569,6 +569,12 @@ wl_heiovar_setint(char *ifname, char *iovar, char *subcmd, int val)
 		v32.val = (uint32)val;
 
 		subcmd_len = sizeof(v32.id) + sizeof(v32.len) + v32.len;
+	} else if (strcmp(subcmd, "enab") == 0) {
+		v32.id = WL_HE_CMD_ENAB;
+		v32.len = 4;
+		v32.val = (uint32)val;
+
+		subcmd_len = sizeof(v32.id) + sizeof(v32.len) + v32.len;
 	} else if (strcmp(subcmd, "bssaxmode") == 0) {
 		v32.id = WL_HE_CMD_AXMODE;
 		v32.len = 4;

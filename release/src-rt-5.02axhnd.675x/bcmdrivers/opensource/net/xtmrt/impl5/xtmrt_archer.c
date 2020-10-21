@@ -113,7 +113,7 @@ typedef struct xtm_queues_t
     int tx_notify_enable;
 
     /* buffer recycling thread */
-    int recycle_work_avail;
+    volatile unsigned long recycle_work_avail;
     wait_queue_head_t recycle_thread_wqh;
     struct task_struct *recycle_thread;
     bcm_async_queue_t recycleq;
@@ -1286,27 +1286,26 @@ int archer_xtm_rx_queue_write (int q_id, uint8_t **pData, int data_len, int ingr
         bcm_async_queue_entry_enqueue (&xtm_cpu_queues->rxq[q_id]);
 
         XTM_CPU_STATS_UPDATE(xtm_cpu_queues->rxq[q_id].stats.writes);
-        if (xtm_cpu_queues->rx_notify_enable)
-        {
-            BCMXTMRT_WAKEUP_RXWORKER(&g_GlobalInfo);
-        }
-        else if (xtm_cpu_queues->rx_notify_pending_disable)
-        {
-            xtm_cpu_queues->rx_notify_pending_disable = 0;
-        }
-
     }
     else
     {
         XTM_CPU_STATS_UPDATE(xtm_cpu_queues->rxq[q_id].stats.discards);
         rc = -1;
     }
+    if (xtm_cpu_queues->rx_notify_enable)
+    {
+        BCMXTMRT_WAKEUP_RXWORKER(&g_GlobalInfo);
+    }
+    else if (xtm_cpu_queues->rx_notify_pending_disable)
+    {
+        xtm_cpu_queues->rx_notify_pending_disable = 0;
+    }
     return rc;
 }
 
 #define XTM_CPU_QUEUE_WAKEUP_RECYCLE_WORKER(x) do {                    \
-        if ((x)->recycle_work_avail == 0) {                             \
-            (x)->recycle_work_avail = 1;                                \
+        if ((x)->recycle_work_avail == 0) {                            \
+            set_bit(0, &(x)->recycle_work_avail);                      \
             wake_up_interruptible(&((x)->recycle_thread_wqh)); }} while (0)
 
 void archer_xtm_recycle_queue_write(pNBuff_t pNBuff)
@@ -1319,8 +1318,6 @@ void archer_xtm_recycle_queue_write(pNBuff_t pNBuff)
         bcm_async_queue_entry_enqueue (&xtm_cpu_queues->recycleq);
 
         XTM_CPU_STATS_UPDATE(xtm_cpu_queues->recycleq.stats.writes);
-
-        XTM_CPU_QUEUE_WAKEUP_RECYCLE_WORKER(xtm_cpu_queues);
     }
     else
     {
@@ -1331,6 +1328,7 @@ void archer_xtm_recycle_queue_write(pNBuff_t pNBuff)
 #endif
         XTM_CPU_STATS_UPDATE(xtm_cpu_queues->recycleq.stats.discards);
     }
+    XTM_CPU_QUEUE_WAKEUP_RECYCLE_WORKER(xtm_cpu_queues);
 }
 
 static inline void xtm_cpu_queue_recycle_buffers (bcm_async_queue_t *recycleqp)
@@ -1376,7 +1374,7 @@ static int xtm_recycle_thread (void *arg)
         }
         else
         {
-            cpu_queues->recycle_work_avail = 0;
+            clear_bit(0, &cpu_queues->recycle_work_avail);
         }
     }
     return 0;

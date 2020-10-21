@@ -3744,7 +3744,8 @@ wlc_recv_mgmt_ctl(wlc_info_t *wlc, osl_t *osh, wlc_d11rxhdr_t *wrxh, void *p)
 			wlc_bss_mac_event(wlc, bsscfg, WLC_E_AUTH_REQ, &hdr->sa, 0, 0, 0, NULL, 0);
 
 #ifdef MFP
-			if (WLC_MFP_ENAB(wlc->pub) && SCB_MFP(scb) && SCB_AUTHENTICATED(scb)) {
+			if (WLC_MFP_ENAB(wlc->pub) && SCB_MFP(scb) && SCB_AUTHENTICATED(scb) &&
+				(alg == DOT11_OPEN_SYSTEM)) {
 #ifdef WLAMPDU
 				/* flush is needed on re-assoc, ampdu deactivation, etc. */
 				scb_ampdu_tx_flush(wlc->ampdu_tx, scb);

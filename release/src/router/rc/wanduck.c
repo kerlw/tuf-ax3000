@@ -3310,6 +3310,12 @@ _dprintf("nat_rule: start_nat_rules 4.\n");
 				}
 #endif
 #endif
+				link_wan_old = link_wan[wan_unit];
+				conn_state[wan_unit] = if_wan_phyconnected(wan_unit);
+if(test_log){
+_dprintf("wanduck(%d)(PHY state): PHY_RECONN=%d...\n", wan_unit, PHY_RECONN);
+_dprintf("wanduck(%d)(PHY state): %d...\n", wan_unit, conn_state[wan_unit]);
+}
 
 				current_state[wan_unit] = nvram_get_int(nvram_state[wan_unit]);
 
@@ -3330,13 +3336,6 @@ _dprintf("wanduck(%d): detect the modem to be reset...\n", wan_unit);
 				}
 #endif
 				else{
-					link_wan_old = link_wan[wan_unit];
-					conn_state[wan_unit] = if_wan_phyconnected(wan_unit);
-if(test_log){
-_dprintf("wanduck(%d)(PHY state): PHY_RECONN=%d...\n", wan_unit, PHY_RECONN);
-_dprintf("wanduck(%d)(PHY state): %d...\n", wan_unit, conn_state[wan_unit]);
-}
-
 #ifdef RTCONFIG_HND_ROUTER_AX
 					if(link_wan[wan_unit] != link_wan_old)
 						update_wan_leds(wan_unit, link_wan[wan_unit]);
@@ -4471,7 +4470,8 @@ _dprintf("nat_rule: stop_nat_rules 7.\n");
 		else if(conn_changed_state[current_wan_unit] == PHY_RECONN){
 #ifdef RTCONFIG_USB_MODEM
 			if(dualwan_unit__usbif(current_wan_unit)){
-				if(current_state[current_wan_unit] == WAN_STATE_INITIALIZING){
+				if(current_state[current_wan_unit] == WAN_STATE_INITIALIZING
+						|| (nvram_get_int(nvram_state[current_wan_unit]) == WAN_STATE_STOPPED && nvram_get_int(nvram_sbstate[current_wan_unit]) == WAN_STOPPED_REASON_NONE)){
 					if((modem_unit = get_modemunit_by_type(get_dualwan_by_unit(current_wan_unit))) == MODEM_UNIT_NONE){
 						_dprintf("%s 5: cannot get the modem unit!\n", __FUNCTION__);
 						goto WANDUCK_SELECT;

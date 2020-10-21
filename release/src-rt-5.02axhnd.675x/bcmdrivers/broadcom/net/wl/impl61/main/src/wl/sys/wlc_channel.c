@@ -5065,7 +5065,7 @@ wlc_get_regclass(wlc_cm_info_t *wlc_cmi, chanspec_t chanspec)
 			return (rcinfo->rctbl[i].rclass);
 	}
 
-	WL_ERROR(("wl%d: No regulatory class assigned for %s chanspec 0x%x\n",
+	WL_REGULATORY(("wl%d: No regulatory class assigned for %s chanspec 0x%x\n",
 		WLCWLUNIT(wlc_cmi->wlc), wlc_cm->country_abbrev, chanspec));
 
 	return 0;

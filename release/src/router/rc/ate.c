@@ -258,9 +258,19 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 		}
 		break;
 #endif
-#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U) || defined(RTAX82_XD6)
 	case MODEL_RTAX58U:
 		{
+#ifdef RTAX82_XD6
+			if (color == LED_COLOR_RED) {
+				setAllRedLedOn();
+			} else if (color == LED_COLOR_GREEN) {
+				setAllGreenLedOn();
+			} else if (color == LED_COLOR_BLUE) {
+				setAllBlueLedOn();
+			} else
+				bcm_cled_ctrl(BCM_CLED_OFF, BCM_CLED_STEADY_NOBLINK);
+#else
 			static enum led_id white_led[] = {
 				LED_POWER,
 #ifdef RTCONFIG_LAN4WAN_LED
@@ -300,22 +310,31 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 #ifdef RTAX82U
 			all_led[LED_COLOR_GREEN] = green_led;
 			all_led[LED_COLOR_BLUE] = blue_led;
-
 			LEDGroupReset(LED_ON);
 #endif
-
+#endif
 			if (color == LED_COLOR_WHITE) {
 				eval("wl", "-i", "eth5", "ledbh", "0", "1");	// wl 2.4G
+#if defined(RTAX82U) && !defined(RTCONFIG_BCM_MFG)
+				if (!nvram_get_int("LED_order"))
+				led_control(LED_5G, LED_ON);
+#endif
 				eval("wl", "-i", "eth6", "ledbh", "15", "1");	// wl 5G low
 			}
 			else {
 				eval("wl", "-i", "eth5", "ledbh", "0", "21");	// wl 2.4G
+#if defined(RTAX82U) && !defined(RTCONFIG_BCM_MFG)
+				if (!nvram_get_int("LED_order")) {
+					led_control(LED_5G, LED_OFF);
+					eval("wl", "-i", "eth6", "ledbh", "15", "1");
+				} else
+#endif
 				eval("wl", "-i", "eth6", "ledbh", "15", "0");	// wl 5G low
 			}
 		}
 		break;
 #endif
-#ifdef RTAX55
+#if defined(RTAX55) || defined(RTAX1800)
 	case MODEL_RTAX55:
 		{
 			static enum led_id red_led[] = {
@@ -409,6 +428,9 @@ static int setAllSpecificColorLedOn(enum ate_led_color color)
 				if(ext_phy_model == 0){
 					eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a832", "0x0");	// CTL LED3 MASK LOW
 					eval("ethctl", "phy", "ext", EXTPHY_ADDR_STR, "0x1a835", "0xffff");	// CTL LED4 MASK LOW
+				}
+				else{
+					eval("ethctl", "phy", "ext", "0x03", "0x1fd032", "0x0027");		// RTK LCR2 LED Control Reg
 				}
 #endif
 			}
@@ -1012,6 +1034,81 @@ int asus_ate_command(const char *command, const char *value, const char *value2)
 		return setAllSpecificColorLedOn(LED_COLOR_GREEN);
 #endif
 	}
+#ifdef RTAX82U
+	else if (!strcmp(command, "Set_Red1LedOn")) {
+		setAllLedOff();
+		cled_set(1, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP1_RED, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Red2LedOn")) {
+		setAllLedOff();
+		cled_set(7, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP2_RED, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Red3LedOn")) {
+		setAllLedOff();
+		cled_set(10, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP3_RED, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Red4LedOn")) {
+		setAllLedOff();
+		cled_set(23, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP4_RED, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Green1LedOn")) {
+		setAllLedOff();
+		cled_set(3, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP1_GREEN, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Green2LedOn")) {
+		setAllLedOff();
+		cled_set(8, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP2_GREEN, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Green3LedOn")) {
+		setAllLedOff();
+		cled_set(12, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP3_GREEN, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Green4LedOn")) {
+		setAllLedOff();
+		cled_set(17, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP4_GREEN, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Blue1LedOn")) {
+		setAllLedOff();
+		cled_set(4, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP1_BLUE, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Blue2LedOn")) {
+		setAllLedOff();
+		cled_set(9, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP2_BLUE, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Blue3LedOn")) {
+		setAllLedOff();
+		cled_set(15, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP3_BLUE, LED_ON);
+		puts("1");
+		return 0;
+	} else if (!strcmp(command, "Set_Blue4LedOn")) {
+		setAllLedOff();
+		cled_set(16, 0xa000, 0x0, 0x0, 0x0);
+		led_control(LED_GROUP4_BLUE, LED_ON);
+		puts("1");
+		return 0;
+	}
+#endif
 #ifdef RTCONFIG_BCMARM
 	else if (!strcmp(command, "Set_WanLedMode1")) {
 		return setWanLedMode1();
@@ -2507,6 +2604,22 @@ int asus_ate_command(const char *command, const char *value, const char *value2)
 		get_DateCode();
 		return 0;
 	}
+	else if (!strcmp(command, "Set_CoBrand")) {
+		int n = atoi(value);
+		if ((n >= 0) && (n <= 100))
+			set_cb(n);
+		else
+			puts("ATE_ERROR");
+		return 0;
+	}
+	else if (!strcmp(command, "Unset_CoBrand")) {
+		unset_cb();
+		return 0;
+	}
+	else if (!strcmp(command, "Get_CoBrand")) {
+		get_cb();
+		return 0;
+	}
 #endif
 	else
 	{
@@ -2577,7 +2690,7 @@ int ate_dev_status(void)
 			have_bt_device = 0;
 		}
 #endif
-#if defined(RTCONFIG_LANTIQ) || defined(RTAX95Q) || defined(RTAX56_XD4)
+#if defined(RTCONFIG_LANTIQ) || defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX82_XD6)
 		if(have_bt_device == 1){
 			system("killall bluetoothd");
 			system("hciconfig hci0 down");

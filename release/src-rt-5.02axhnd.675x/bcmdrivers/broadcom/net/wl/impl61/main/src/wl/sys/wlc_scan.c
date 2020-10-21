@@ -6700,7 +6700,7 @@ void wlc_scan_request_ex_cb(void *arg, int status, wlc_bsscfg_t *cfg)
 
 #ifdef WL_SCAN_DFS_HOME
 	/* On scan completion, get into ISM state if home channel is DFS */
-	if (WL11H_AP_ENAB(wlc) &&
+	if ((status != WLC_E_STATUS_ERROR) && WL11H_AP_ENAB(wlc) &&
 			wlc_radar_chanspec(wlc->cmi, wlc->home_chanspec)) {
 		wlc_set_dfs_cacstate(wlc->dfs, ON, cfg);
 	}

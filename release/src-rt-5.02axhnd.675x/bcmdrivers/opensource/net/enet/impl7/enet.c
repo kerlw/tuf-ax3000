@@ -483,7 +483,7 @@ inline int enetx_rx_isr(enetx_channel *chan)
     for (i = 0; i < chan->rx_q_count; i++)
         enetxapi_queue_int_disable(chan, i);
 
-    chan->rxq_cond = 1;
+    set_bit(0, &chan->rxq_cond);
     wake_up_interruptible(&chan->rxq_wqh);
 
     return 0;
@@ -760,7 +760,7 @@ int chan_thread_handler(void *data)
             if (!reschedule)
             {
                 work = 0;
-                chan->rxq_cond = 0;
+                clear_bit(0, &chan->rxq_cond);
                 for (i = 0; i < chan->rx_q_count; i++)
                 {
                     enetxapi_queue_int_enable(chan, i);

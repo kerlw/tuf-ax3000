@@ -326,7 +326,7 @@ $(version-pciefd):
 
 pciefd-cleangen:
 	@if [ -d $(FW_$(lastword $(PCIEFD_TARGETS_LIST))_SRCBASE)/wl/sys ]; then \
-		$(RM) -rf  $(PCIEFD_IMAGE_DIR)/*.bin; \
+		$(RM) -f  $(PCIEFD_EMBED_HEADER).tmp.*; \
 	fi
 
 ifeq ($(ALREADY_HAVE_RTECDC),)
@@ -335,7 +335,7 @@ pciefd: pciefd-cleangen $(obj-pciefd)
 	@#for i in $(wildcard $(PCIEFD_EMBED_HEADER).tmp.*) ; do \
 	#	cat $${i} >> $(PCIEFD_EMBED_HEADER); \
 	#	$(RM) -f $${i}; \
-        #done
+	#done
 	@$(RM) $(PCIEFD_EMBED_HEADER)
 	@$(RM) $(PCIEFD_EMBED_HEADER).tmp.*
 	@cp $(PCIEFD_EMBED_HEADER_TEMPLATE) $(PCIEFD_EMBED_HEADER)

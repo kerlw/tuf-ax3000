@@ -344,6 +344,9 @@ static const uint8 wf_5g_160m_chans[] =
 #define WF_NUM_5G_160M_CHANS \
 	(sizeof(wf_5g_160m_chans)/sizeof(uint8))
 
+/** 80MHz channels in 6GHz band */
+#define WF_NUM_6G_80M_CHANS 14
+
 /* convert bandwidth from chanspec to MHz */
 static uint
 bw_chspec_to_mhz(chanspec_t chspec)
@@ -407,8 +410,13 @@ wf_chspec_malformed(chanspec_t chanspec)
 			uint ch1_id, ch2_id;
 
 			/* channel number in 80+80 must be in range */
+#if defined(RTCONFIG_HND_ROUTER_AX) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
+			ch1_id = CHSPEC_CHAN0(chanspec);
+			ch2_id = CHSPEC_CHAN1(chanspec);
+#else
 			ch1_id = CHSPEC_CHAN1(chanspec);
 			ch2_id = CHSPEC_CHAN2(chanspec);
+#endif
 			if (ch1_id >= WF_NUM_5G_80M_CHANS || ch2_id >= WF_NUM_5G_80M_CHANS)
 				return TRUE;
 
@@ -425,8 +433,43 @@ wf_chspec_malformed(chanspec_t chanspec)
 			/* invalid bandwidth */
 			return TRUE;
 		}
+#if defined(RTCONFIG_HND_ROUTER_AX) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
+	} else if (CHSPEC_IS6G(chanspec)) {
+		if (CHSPEC_IS20(chanspec)) {
+			/* 6G 20MHz channel pattern [1, 5, 9 .. 233] */
+			if (CHSPEC_CHANNEL(chanspec) < CH_MIN_6G_CHANNEL ||
+				CHSPEC_CHANNEL(chanspec) > CH_MAX_6G_CHANNEL ||
+				((CHSPEC_CHANNEL(chanspec) - CH_MIN_6G_CHANNEL) % 4) != 0) {
+				return TRUE;
+			}
+		} else if (CHSPEC_IS40(chanspec)) {
+			/* 6G 40MHz channel pattern [3, 11, 19 .. 227] */
+			if (CHSPEC_CHANNEL(chanspec) < CH_MIN_6G_40M_CHANNEL ||
+				CHSPEC_CHANNEL(chanspec) > CH_MAX_6G_40M_CHANNEL ||
+				((CHSPEC_CHANNEL(chanspec) - CH_MIN_6G_40M_CHANNEL) % 8) != 0) {
+				return TRUE;
+			}
+		} else if (CHSPEC_IS80(chanspec)) {
+			/* 6G 80MHz channel pattern [7, 23, 39 .. 215] */
+			if (CHSPEC_CHANNEL(chanspec) < CH_MIN_6G_80M_CHANNEL ||
+				CHSPEC_CHANNEL(chanspec) > CH_MAX_6G_80M_CHANNEL ||
+				((CHSPEC_CHANNEL(chanspec) - CH_MIN_6G_80M_CHANNEL) % 16) != 0) {
+				return TRUE;
+			}
+		} else if (CHSPEC_IS160(chanspec)) {
+			/* 6G 160MHz channel pattern [15, 47, 79 .. 207] */
+			if (CHSPEC_CHANNEL(chanspec) < CH_MIN_6G_160M_CHANNEL ||
+				CHSPEC_CHANNEL(chanspec) > CH_MAX_6G_160M_CHANNEL ||
+				((CHSPEC_CHANNEL(chanspec) - CH_MIN_6G_160M_CHANNEL) % 32) != 0) {
+				return TRUE;
+			}
+		} else {
+			/* invalid 6G BW also excluding 80p80 */
+				return TRUE;
+		}
+#endif //RTCONFIG_HND_ROUTER_AX && !RTCONFIG_HND_ROUTER_AX_675X
 	} else {
-		/* must be 2G or 5G band */
+		/* invalid band */
 		return TRUE;
 	}
 	/* side band needs to be consistent with bandwidth */
@@ -469,10 +512,18 @@ wf_chspec_ctlchan(chanspec_t chspec)
 			bw_mhz = 80;
 
 			if (sb < 4) {
+#if defined(RTCONFIG_HND_ROUTER_AX) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
+				center_chan = CHSPEC_CHAN0(chspec);
+#else
 				center_chan = CHSPEC_CHAN1(chspec);
+#endif
 			}
 			else {
+#if defined(RTCONFIG_HND_ROUTER_AX) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
+				center_chan = CHSPEC_CHAN1(chspec);
+#else
 				center_chan = CHSPEC_CHAN2(chspec);
+#endif
 				sb -= 4;
 			}
 
@@ -488,6 +539,47 @@ wf_chspec_ctlchan(chanspec_t chspec)
 	}
 }
 
+#if defined(RTCONFIG_HND_ROUTER_AX) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
+/**
+ * This function returns the the 5GHz 80MHz center channel for the given chanspec 80MHz ID
+ *
+ * @param    chan_80MHz_id    80MHz chanspec ID
+ *
+ * @return   Return the center channel number, or 0 on error.
+ *
+ */
+static uint8
+wf_chspec_5G_id80_to_ch(uint8 chan_80MHz_id)
+{
+	if (chan_80MHz_id < WF_NUM_5G_80M_CHANS)
+		return wf_5g_80m_chans[chan_80MHz_id];
+
+	return 0;
+}
+
+/**
+ * This function returns the the 6GHz 80MHz center channel for the given chanspec 80MHz ID
+ *
+ * @param    chan_80MHz_id    80MHz chanspec ID
+ *
+ * @return   Return the center channel number, or 0 on error.
+ *
+ */
+static uint8
+wf_chspec_6G_id80_to_ch(uint8 chan_80MHz_id)
+{
+	uint8 ch = 0;
+
+	if (chan_80MHz_id < WF_NUM_6G_80M_CHANS) {
+	/* The 6GHz center channels have a spacing of 16
+	 * starting from the first 80MHz center
+	 */
+		ch = CH_MIN_6G_80M_CHANNEL + (chan_80MHz_id * 16);
+	}
+
+	return ch;
+}
+#endif
 /* given a chanspec and a string buffer, format the chanspec as a
  * string, and return the original pointer a.
  * Min buffer length must be CHANSPEC_STR_LEN.
@@ -505,9 +597,16 @@ wf_chspec_ntoa(chanspec_t chspec, char *buf)
 	band = "";
 
 	/* check for non-default band spec */
-	if ((CHSPEC_IS2G(chspec) && CHSPEC_CHANNEL(chspec) > CH_MAX_2G_CHANNEL) ||
-	    (CHSPEC_IS5G(chspec) && CHSPEC_CHANNEL(chspec) <= CH_MAX_2G_CHANNEL))
-		band = (CHSPEC_IS2G(chspec)) ? "2g" : "5g";
+	if (CHSPEC_IS2G(chspec) && CHSPEC_CHANNEL(chspec) > CH_MAX_2G_CHANNEL) {
+		band = "2g";
+	} else if (CHSPEC_IS5G(chspec) && CHSPEC_CHANNEL(chspec) <= CH_MAX_2G_CHANNEL) {
+		band = "5g";
+ 	}
+#if defined(RTCONFIG_HND_ROUTER_AX) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
+	else if (CHSPEC_IS6G(chspec)) {
+		band = "6g";
+	}
+#endif
 
 	/* ctl channel */
 	if (!(ctl_chan = wf_chspec_ctlchan(chspec)))
@@ -531,7 +630,11 @@ wf_chspec_ntoa(chanspec_t chspec, char *buf)
 		snprintf(buf, CHANSPEC_STR_LEN, "%s%d/%s%s", band, ctl_chan, bw, sb);
 #else
 		/* ctl sideband string instead of BW for 40MHz */
-		if (CHSPEC_IS40(chspec)) {
+		if (CHSPEC_IS40(chspec)
+#if defined(RTCONFIG_HND_ROUTER_AX) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
+			&& !CHSPEC_IS6G(chspec)
+#endif
+			) {
 			sb = CHSPEC_SB_UPPER(chspec) ? "u" : "l";
 			snprintf(buf, CHANSPEC_STR_LEN, "%s%d%s", band, ctl_chan, sb);
 		} else {
@@ -539,6 +642,25 @@ wf_chspec_ntoa(chanspec_t chspec, char *buf)
 		}
 #endif /* CHANSPEC_NEW_40MHZ_FORMAT */
 	} else {
+#if defined(RTCONFIG_HND_ROUTER_AX) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
+		/* 80+80 */
+		uint ch0;
+		uint ch1;
+
+		/* get the center channels for each frequency segment */
+		if (CHSPEC_IS5G(chspec)) {
+			ch0 = wf_chspec_5G_id80_to_ch(CHSPEC_CHAN0(chspec));
+			ch1 = wf_chspec_5G_id80_to_ch(CHSPEC_CHAN1(chspec));
+		} else if (CHSPEC_IS6G(chspec)) {
+			ch0 = wf_chspec_6G_id80_to_ch(CHSPEC_CHAN0(chspec));
+			ch1 = wf_chspec_6G_id80_to_ch(CHSPEC_CHAN1(chspec));
+		} else {
+			return NULL;
+		}
+
+		/* Outputs a max of CHANSPEC_STR_LEN chars including '\0'  */
+		snprintf(buf, CHANSPEC_STR_LEN, "%d/80+80/%d-%d", ctl_chan, ch0, ch1);
+#else
 		/* 80+80 */
 		uint chan1 = (chspec & WL_CHANSPEC_CHAN1_MASK) >> WL_CHANSPEC_CHAN1_SHIFT;
 		uint chan2 = (chspec & WL_CHANSPEC_CHAN2_MASK) >> WL_CHANSPEC_CHAN2_SHIFT;
@@ -549,6 +671,7 @@ wf_chspec_ntoa(chanspec_t chspec, char *buf)
 
 		/* Outputs a max of CHANSPEC_STR_LEN chars including '\0'  */
 		snprintf(buf, CHANSPEC_STR_LEN, "%d/80+80/%d-%d", ctl_chan, chan1, chan2);
+#endif
 	}
 
 	return (buf);
@@ -1320,6 +1443,7 @@ dump_bss_info(int eid, webs_t wp, int argc, char_t **argv, void *bi_generic)
 	retval += websWrite(wp, "SSID: \"%s\"\n", ssidbuf);
 
 //	retval += websWrite(wp, "Mode: %s\t", capmode2str(dtoh16(bi->capability)));
+	if (!is_router_mode() && !access_point_mode())
 	retval += websWrite(wp, "RSSI: %d dBm\t", (int16)(dtoh16(bi->RSSI)));
 
 	/*
@@ -1327,6 +1451,7 @@ dump_bss_info(int eid, webs_t wp, int argc, char_t **argv, void *bi_generic)
 	 * So print SNR for 109 version only.
 	 */
 	if (version == WL_BSS_INFO_VERSION) {
+		if (!is_router_mode() && !access_point_mode())
 		retval += websWrite(wp, "SNR: %d dB\t", (int16)(dtoh16(bi->SNR)));
 	}
 
@@ -2248,27 +2373,25 @@ ej_wl_status(int eid, webs_t wp, int argc, char_t **argv, int unit)
 		ret += ej_wl_sta_status(eid, wp, name);
 		return ret;
 	}
-	else if (nvram_match(strcat_r(prefix, "mode", tmp), "wet"))
-	{
-//		ret += websWrite(wp, "Mode	: Ethernet Bridge\n");
-#ifdef RTCONFIG_WIRELESSREPEATER
-		if ((sw_mode() == SW_MODE_REPEATER)
-			&& (nvram_get_int("wlc_band") == unit))
-			sprintf(prefix, "wl%d.%d_", unit, 1);
-#endif
-		ret += websWrite(wp, "Mode	: Repeater [ SSID local: \"%s\" ]\n", nvram_safe_get(strcat_r(prefix, "ssid", tmp)));
-//		ret += ej_wl_sta_status(eid, wp, name);
-//		return ret;
-	}
 #ifdef RTCONFIG_PROXYSTA
-	else if (nvram_match(strcat_r(prefix, "mode", tmp), "psta"))
+	else if (is_psta(unit))
 	{
 		if ((sw_mode() == SW_MODE_AP) &&
 			(nvram_get_int("wlc_psta") == 1) &&
 			(nvram_get_int("wlc_band") == unit))
-		ret += websWrite(wp, "Mode	: Media Bridge\n");
+		ret += websWrite(wp, "Mode      : Media Bridge\n");
 	}
 #endif
+	else if (nvram_match(strcat_r(prefix, "mode", tmp), "wet"))
+	{
+//		ret += websWrite(wp, "Mode	: Ethernet Bridge\n");
+		if (nvram_get_int("wlc_band") == unit)
+			sprintf(prefix, "wl%d.%d_", unit, 1);
+
+		ret += websWrite(wp, "Mode	: Repeater [ SSID local: \"%s\" ]\n", nvram_safe_get(strcat_r(prefix, "ssid", tmp)));
+//		ret += ej_wl_sta_status(eid, wp, name);
+//		return ret;
+	}
 
 #ifdef RTCONFIG_QTN
 	if (unit && rpc_qtn_ready())
@@ -2278,14 +2401,11 @@ ej_wl_status(int eid, webs_t wp, int argc, char_t **argv, int unit)
 	}
 #endif
 
-#ifdef RTCONFIG_WIRELESSREPEATER
-	if ((sw_mode() == SW_MODE_REPEATER)
-		&& (nvram_get_int("wlc_band") == unit))
+	if ((repeater_mode() || psr_mode()) && (nvram_get_int("wlc_band") == unit))
 	{
 		sprintf(name_vif, "wl%d.%d", unit, 1);
 		name = name_vif;
 	}
-#endif
 
 	if (!strlen(name))
 		goto exit;
@@ -2510,11 +2630,10 @@ wds_list:
 	}
 
 	for (i = 1; i < 4; i++) {
-#ifdef RTCONFIG_WIRELESSREPEATER
-		if ((sw_mode() == SW_MODE_REPEATER)
+		if ((repeater_mode() || psr_mode())
 			&& (unit == nvram_get_int("wlc_band")) && (i == 1))
 			break;
-#endif
+
 		sprintf(prefix, "wl%d.%d_", unit, i);
 		if (nvram_match(strcat_r(prefix, "bss_enabled", tmp), "1"))
 		{
@@ -3104,8 +3223,7 @@ static int ej_wl_rate(int eid, webs_t wp, int argc, char_t **argv, int unit)
 				sprintf(rate_buf, "%6.1f Mbps", (double) rate / 1000);
 		}
 #ifdef RTCONFIG_BCMWL6
-	} else if (nvram_match(strcat_r(prefix, "mode", tmp), "psta") ||
-		nvram_match(strcat_r(prefix, "mode", tmp), "psr")) {
+	} else if (is_psta(unit) || is_psr(unit)) {
 #if 0
 		char eabuf[32];
 #endif
@@ -3125,7 +3243,7 @@ static int ej_wl_rate(int eid, webs_t wp, int argc, char_t **argv, int unit)
 			goto ERROR;
 
 		memcpy(wlta, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
-		if (nvram_match(strcat_r(prefix, "mode", tmp), "psr"))
+		if (is_psr(unit))
 			wlta[0] |= 0x02;
 #if 0
 		dbg("%s TA: %s\n", name, ether_etoa((const unsigned char *)wlta, eabuf));
@@ -3771,14 +3889,12 @@ static int wl_sta_list(int eid, webs_t wp, int argc, char_t **argv, int unit) {
 	snprintf(prefix, sizeof(prefix), "wl%d_", unit);
 	name = nvram_safe_get(strcat_r(prefix, "ifname", tmp));
 
-#ifdef RTCONFIG_WIRELESSREPEATER
-	if ((sw_mode() == SW_MODE_REPEATER)
+	if ((repeater_mode() || psr_mode())
 		&& (nvram_get_int("wlc_band") == unit))
 	{
 		sprintf(name_vif, "wl%d.%d", unit, 1);
 		name = name_vif;
 	}
-#endif
 
 	if (!strlen(name))
 		goto exit;
@@ -3851,11 +3967,10 @@ static int wl_sta_list(int eid, webs_t wp, int argc, char_t **argv, int unit) {
 	}
 
 	for (i = 1; i < 4; i++) {
-#ifdef RTCONFIG_WIRELESSREPEATER
-		if ((sw_mode() == SW_MODE_REPEATER)
+		if ((repeater_mode() || psr_mode())
 			&& (unit == nvram_get_int("wlc_band")) && (i == 1))
 			break;
-#endif
+
 		sprintf(prefix, "wl%d.%d_", unit, i);
 		if (nvram_match(strcat_r(prefix, "bss_enabled", tmp), "1"))
 		{
@@ -3947,14 +4062,12 @@ static int wl_stainfo_list(int eid, webs_t wp, int argc, char_t **argv, int unit
 	snprintf(prefix, sizeof(prefix), "wl%d_", unit);
 	name = nvram_safe_get(strcat_r(prefix, "ifname", tmp));
 
-#ifdef RTCONFIG_WIRELESSREPEATER
-	if ((sw_mode() == SW_MODE_REPEATER)
+	if ((repeater_mode() || psr_mode())
 		&& (nvram_get_int("wlc_band") == unit))
 	{
 		sprintf(name_vif, "wl%d.%d", unit, 1);
 		name = name_vif;
 	}
-#endif
 
 	if (!strlen(name))
 		goto exit;
@@ -4000,11 +4113,10 @@ static int wl_stainfo_list(int eid, webs_t wp, int argc, char_t **argv, int unit
 	}
 
 	for (i = 1; i < 4; i++) {
-#ifdef RTCONFIG_WIRELESSREPEATER
-		if ((sw_mode() == SW_MODE_REPEATER)
+		if ((repeater_mode() || psr_mode())
 			&& (unit == nvram_get_int("wlc_band")) && (i == 1))
 			break;
-#endif
+
 		sprintf(prefix, "wl%d.%d_", unit, i);
 		if (nvram_match(strcat_r(prefix, "bss_enabled", tmp), "1"))
 		{
@@ -4125,14 +4237,12 @@ int ej_get_wlstainfo_list(int eid, webs_t wp, int argc, char_t **argv)
 		snprintf(prefix, sizeof(prefix), "wl%d_", unit);
 		name = nvram_safe_get(strcat_r(prefix, "ifname", tmp));
 
-#ifdef RTCONFIG_WIRELESSREPEATER
-		if ((sw_mode() == SW_MODE_REPEATER)
+		if ((repeater_mode() || psr_mode())
 			&& (nvram_get_int("wlc_band") == unit))
 		{
 			sprintf(name_vif, "wl%d.%d", unit, 1);
 			name = name_vif;
 		}
-#endif
 
 		if (!strlen(name))
 			goto exit;
@@ -4185,11 +4295,10 @@ int ej_get_wlstainfo_list(int eid, webs_t wp, int argc, char_t **argv)
 			websWrite(wp, "]");
 
 		for (i = 1; i < 4; i++) {
-#ifdef RTCONFIG_WIRELESSREPEATER
-			if ((sw_mode() == SW_MODE_REPEATER)
+			if ((repeater_mode() || psr_mode())
 				&& (unit == nvram_get_int("wlc_band")) && (i == 1))
 				break;
-#endif
+
 			sprintf(prefix, "wl%d.%d_", unit, i);
 			if (nvram_match(strcat_r(prefix, "bss_enabled", tmp), "1"))
 			{
@@ -4329,11 +4438,10 @@ int ej_wl_auth_list(int eid, webs_t wp, int argc, char_t **argv) {
 		}
 
 		for (i = 1; i < 4; i++) {
-#ifdef RTCONFIG_WIRELESSREPEATER
-			if ((sw_mode() == SW_MODE_REPEATER)
+			if ((repeater_mode() || psr_mode())
 				&& (unit == nvram_get_int("wlc_band")) && (i == 1))
 				break;
-#endif
+
 			sprintf(prefix, "wl%d.%d_", unit, i);
 			if (nvram_match(strcat_r(prefix, "bss_enabled", tmp), "1"))
 			{
@@ -4783,7 +4891,7 @@ wl_get_scan_results_escan(char *ifname, chanspec_t chanspec, int ctl_ch, int ctl
 	memset(params, 0, params_size);
 	params->params.bss_type = DOT11_BSSTYPE_INFRASTRUCTURE;
 	memcpy(&params->params.bssid, &ether_bcast, ETHER_ADDR_LEN);
-	params->params.scan_type = (nvram_match(strcat_r(prefix, "reg_mode", tmp), "h") && !nvram_match(strcat_r(prefix, "mode", tmp), "psta")) ? WL_SCANFLAGS_PASSIVE : 0;
+	params->params.scan_type = (nvram_match(strcat_r(prefix, "reg_mode", tmp), "h") && !is_psta(unit)) ? WL_SCANFLAGS_PASSIVE : 0;
 	params->params.nprobes = -1;
 	params->params.active_time = -1;
 	params->params.passive_time = -1;
@@ -4886,7 +4994,7 @@ wl_get_scan_results(char *ifname, chanspec_t chanspec, int ctl_ch, int ctl_ch_tm
 	memset(params, 0, params_size);
 	params->bss_type = DOT11_BSSTYPE_INFRASTRUCTURE;
 	memcpy(&params->bssid, &ether_bcast, ETHER_ADDR_LEN);
-	params->scan_type = (nvram_match(strcat_r(prefix, "reg_mode", tmp), "h") && !nvram_match(strcat_r(prefix, "mode", tmp), "psta")) ? WL_SCANFLAGS_PASSIVE : 0;
+	params->scan_type = (nvram_match(strcat_r(prefix, "reg_mode", tmp), "h") && !is_psta(unit)) ? WL_SCANFLAGS_PASSIVE : 0;
 	params->nprobes = -1;
 	params->active_time = -1;
 	params->passive_time = -1;
@@ -4981,8 +5089,7 @@ wl_scan(int eid, webs_t wp, int argc, char_t **argv, int unit)
 #endif
 
 	ctl_ch = wl_control_channel(unit);
-	if (nvram_match(strcat_r(prefix, "reg_mode", tmp), "h") &&
-		!nvram_match(strcat_r(prefix, "mode", tmp), "psta")) {
+	if (nvram_match(strcat_r(prefix, "reg_mode", tmp), "h") && !is_psta(unit)) {
 		if (wl_iovar_get(name, "chanspec", &chspec_cur, sizeof(chanspec_t)) < 0) {
 			dbg("get current chanpsec failed\n");
 			return 0;
@@ -5217,19 +5324,14 @@ ej_wl_auth_psta(int eid, webs_t wp, int argc, char_t **argv)
 
 	snprintf(prefix, sizeof(prefix), "wl%d_", unit);
 
-	if (!nvram_match(strcat_r(prefix, "mode", tmp), "psta") &&
-	    !nvram_match(strcat_r(prefix, "mode", tmp), "psr")
-#ifdef RTCONFIG_HND_ROUTER_AX
-	    && !nvram_match(strcat_r(prefix, "mode", tmp), "wet")
-#endif
-	)
+	if (!is_psta(unit) && !is_psr(unit))
 		goto PSTA_ERR;
 
 	name = nvram_safe_get(strcat_r(prefix, "ifname", tmp));
 
 	if (wl_ioctl(name, WLC_GET_SSID, &ssid, sizeof(ssid)))
 		goto PSTA_ERR;
-	else if (!nvram_match(strcat_r(prefix, "ssid", tmp), (const char *) ssid.SSID))
+	else if (strncmp(nvram_safe_get(strcat_r(prefix, "ssid", tmp)), (const char *) ssid.SSID, strlen(nvram_safe_get(strcat_r(prefix, "ssid", tmp)))))
 		goto PSTA_ERR;
 
 	if (wl_ioctl(name, WLC_GET_BSSID, &bssid, ETHER_ADDR_LEN) != 0)
@@ -5270,12 +5372,7 @@ ej_wl_auth_psta(int eid, webs_t wp, int argc, char_t **argv)
 
 	free(mac_list);
 PSTA_ERR:
-	if (nvram_match(strcat_r(prefix, "mode", tmp), "psta") ||
-	    nvram_match(strcat_r(prefix, "mode", tmp), "psr")
-#ifdef RTCONFIG_HND_ROUTER_AX
-            || nvram_match(strcat_r(prefix, "mode", tmp), "wet")
-#endif
-	) {
+	if (is_psta(unit) || is_psr(unit)) {
 		if (psta == 1)
 		{
 			if (psta_debug) dbg("connected\n");

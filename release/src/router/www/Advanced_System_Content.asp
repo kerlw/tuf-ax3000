@@ -95,7 +95,9 @@ else
 var le_enable = '<% nvram_get("le_enable"); %>';
 var orig_http_enable = '<% nvram_get("http_enable"); %>';
 
-function initial(){	
+var captcha_support = isSupport("captcha");
+
+function initial(){
 	//parse nvram to array
 	var parseNvramToArray = function(oriNvram) {
 		var parseArray = [];
@@ -241,7 +243,9 @@ function initial(){
 		$('input[name="usb_idle_timeout"]').prop("disabled", false);
 	}
 
-	$("#https_download_cert").css("display", (le_enable == "0" && orig_http_enable != "0")? "": "none");
+	$("#https_download_cert").css("display", (le_enable != "1" && orig_http_enable != "0")? "": "none");
+
+	$("#login_captcha_tr").css("display", captcha_support? "": "none");
 }
 
 var time_zone_tmp="";
@@ -916,14 +920,14 @@ function hide_https_lanport(_value){
 	}
 
 
-	if(le_enable == "0" && _value != "0"){
+	if(le_enable != "1" && _value != "0"){
 		$("#https_download_cert").css("display", "");
 		if(orig_http_enable == "0"){
-			$("#down_cert_btn").css("display", "none");
+			$("#download_cert_btn").css("display", "none");
 			$("#download_cert_desc").css("display", "");
 		}
 		else{
-			$("#down_cert_btn").css("display", "");
+			$("#download_cert_btn").css("display", "");
 			$("#download_cert_desc").css("display", "none");
 		}
 	}
@@ -1408,8 +1412,7 @@ function appendMonitorOption(obj){
 
 var isPingListOpen = 0;
 function showPingTargetList(){
-	var ttc = httpApi.nvramGet(["territory_code"]).territory_code;
-	if(ttc.search("CN") >= 0){
+	if(is_CN){
 		var APPListArray = [
 			["Baidu", "www.baidu.com"], ["QQ", "www.qq.com"], ["Taobao", "www.taobao.com"]
 		];
@@ -1464,7 +1467,7 @@ function reset_portconflict_hint(){
 }
 
 function save_cert_key(){
-	location.href = "cert_key.tar";
+	location.href = "cert.tar";
 }
 </script>
 </head>
@@ -1560,6 +1563,13 @@ function save_cert_key(){
 						<div style="margin:-25px 0px 5px 175px;"><input type="checkbox" name="show_pass_1" onclick="pass_checked(document.form.http_passwd2);pass_checked(document.form.v_password2);"><#QIS_show_pass#></div>
 						<span id="alert_msg2" style="color:#FC0;margin-left:8px;display:inline-block;"></span>
 					
+					</td>
+				</tr>
+				<tr id="login_captcha_tr" style="display:none">
+					<th><a class="hintstyle" href="javascript:void(0);" onClick="openHint(11,13)">Enable Login Captcha</a></th>
+					<td>
+						<input type="radio" value="1" name="captcha_enable" <% nvram_match("captcha_enable", "1", "checked"); %>><#checkbox_Yes#>
+						<input type="radio" value="0" name="captcha_enable" <% nvram_match("captcha_enable", "0", "checked"); %>><#checkbox_No#>
 					</td>
 				</tr>
 			</table>
@@ -1966,8 +1976,8 @@ function save_cert_key(){
 				<tr id="https_download_cert" style="display: none;">
 					<th>Download Certificate</th>
 					<td>
-						<input id="down_cert_btn" class="button_gen" onclick="save_cert_key();" type="button" value="<#btn_Export#>" />
-						<span id="download_cert_desc">Download and install SSL certificate on your browser to trust accessing your local domain “router.asus.com” with HTTPS protocol. To export certificate after applying setting. <a href="https://www.asus.com/support/FAQ/1034294" style="font-family:Lucida Console;text-decoration:underline;color:#FFCC00;" target="_blank">FAQ</a></span>
+						<input id="download_cert_btn" class="button_gen" onclick="save_cert_key();" type="button" value="<#btn_Export#>" />
+						<span id="download_cert_desc">Download and install SSL certificate on your browser to trust accessing your local domain “router.asus.com” with HTTPS protocol. To export certificate after applying setting.</span><a href="https://www.asus.com/support/FAQ/1034294" style="font-family:Lucida Console;text-decoration:underline;color:#FFCC00; margin-left: 5px;" target="_blank">FAQ</a>
 					</td>
 				</tr>
 			</table>

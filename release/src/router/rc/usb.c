@@ -3228,11 +3228,8 @@ start_samba(void)
 
 #if defined(SMP)
 #if defined(RTCONFIG_BCMARM) || defined(RTCONFIG_SOC_IPQ8064)
-#if 0
-	if(cpu_num > 1)
-		taskset_ret = cpu_eval(NULL, "1", "ionice", "-c1", "-n0", smbd_cmd, "-D", "-s", "/etc/smb.conf");
-	else
-		taskset_ret = eval("ionice", "-c1", "-n0", smbd_cmd, "-D", "-s", "/etc/smb.conf");
+#if defined(RTCONFIG_HND_ROUTER_AX_675X) && !defined(RTCONFIG_HND_ROUTER_AX_6710)
+	taskset_ret = -1;
 #else
 	if(!nvram_match("stop_taskset", "1")){
 		if(cpu_num > 1)

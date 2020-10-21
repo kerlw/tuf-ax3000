@@ -576,6 +576,8 @@ acs_channel_trigger(acs_chaninfo_t *c_info, char *ifname, unsigned char *addr)
 			return ret;
 		}
 
+		ACSD_PRINT("%s received event: MAC tx failures (exhaustion of 802.11 retries) exceeding threshold(s)\n", c_info->name);
+
 		ACSD_INFO("%s Performing CSA on chspec 0x%x\n",
 				c_info->name, c_info->selected_chspec);
 		if (!(ret = acs_csa_handle_request(c_info))) {
@@ -846,6 +848,8 @@ acsd_main_loop(struct timeval *tv)
 					break;
 				}
 
+				ACSD_PRINT("%s received event: DCS request\n", c_info->name);
+
 				if ((err = dcs_handle_request(ifname, &dcs_data,
 						DOT11_CSA_MODE_ADVISORY, DCS_CSA_COUNT,
 						CSA_BROADCAST_ACTION_FRAME)))
@@ -871,6 +875,8 @@ acsd_main_loop(struct timeval *tv)
 				if (chan_least_dwell &&
 						(pktdelay.chanim_stats.chan_idle <
 						 c_info->acs_ci_scan_chanim_stats)) {
+					ACSD_PRINT("%s received event: tx pkt delay suddently jump\n", c_info->name);
+
 					c_info->switch_reason = APCS_TXDLY;
 					acs_select_chspec(c_info);
 
@@ -1422,6 +1428,7 @@ acsd_watchdog(uint ticks)
 						 != BCME_OK)) {
 						ACSD_INFO("ifname:%s BGDFS Failed. Do Full MIMO"
 							"CAC\n", c_info->name);
+						ACSD_PRINT("%s: DCS request for failed BGDFS. Do full MIMO CAC\n", c_info->name);
 						acs_csa_handle_request(c_info);
 						bgdfs->acs_bgdfs_on_txfail = FALSE;
 					} else if (bgdfs->next_scan_chan != 0) {
@@ -1487,9 +1494,11 @@ acsd_watchdog(uint ticks)
 						!c_info->dyn160_enabled &&
 						bgdfs->idle) {
 					if (acs_upgrade_to160(c_info) == BCME_OK) {
-						ACSD_INFO("%s acs_upgrade_to160 picked 0x%x\n",
+						ACSD_INFO("%s acs_upgrade_to160 picked 0x%4x (%s)\n",
 								c_info->name,
-								c_info->selected_chspec);
+								c_info->selected_chspec,
+								wf_chspec_ntoa(c_info->selected_chspec, chanspecbuf));
+						ACSD_PRINT("%s: DCS request for successful upgrading to 160Mhz %s by full MIMO CAC\n", c_info->name, wf_chspec_ntoa(c_info->selected_chspec, chanspecbuf));
 						acs_csa_handle_request(c_info);
 					} else {
 						ACSD_ERROR("%s acs_upgrade_to160 Failed\n",
@@ -1538,6 +1547,17 @@ acsd_watchdog(uint ticks)
 			chanim_acs_record_t *start_record;
 			time_t now = uptime();
 
+			if (acs_check_assoc_scb(c_info)) {
+				ACSD_INFO("txop channel select: no channel switch while associated\n");
+				return;
+			}
+
+			if (acs_is_dfs_chanspec(c_info, c_info->selected_chspec)) {
+				ACSD_DEBUG("%s: Moving to DFS channel 0x%04x is not allowed using"
+					       "CSA\n", c_info->name, c_info->selected_chspec);
+				return;
+			}
+
 			start_idx = MODSUB(cur_idx, 1, CHANIM_ACS_RECORD);
 			start_record = &ch_info->record[start_idx];
 			ACSD_INFO("%s: prev timestamp1 %d cur time stamp1 %d score %d\n",
@@ -1580,14 +1600,14 @@ acsd_watchdog(uint ticks)
 					if (c_info->fallback_to_primary &&
 							CHSPEC_CHANNEL(c_info->selected_chspec) ==
 							CHSPEC_CHANNEL(c_info->cur_chspec)) {
-						ACSD_PRINT("%s selected 0x%04x & cur_chspec 0x%04x "
+						ACSD_INFO("%s selected 0x%04x & cur_chspec 0x%04x "
 							"are using the same control channel\n",
 							c_info->name, c_info->selected_chspec,
 							c_info->cur_chspec);
 						c_info->switch_reason_type = 0;
 						return;
 					}
-					ACSD_INFO("%s Performing CSA on chspec 0x%04x\n",
+					ACSD_PRINT("%s: txop channel select: Performing CSA on chspec 0x%04x\n",
 							c_info->name, c_info->selected_chspec);
 					if ((ret = acs_csa_handle_request(c_info))) {
 						return;

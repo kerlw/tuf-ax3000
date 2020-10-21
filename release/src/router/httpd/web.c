@@ -318,8 +318,6 @@ static int nvram_check_and_set(char *name, char *value);
 static int nvram_check_and_set_for_prefix(char *name, char *tmp, char *value);
 #define wan_prefix(unit, prefix)	snprintf(prefix, sizeof(prefix), "wan%d_", unit)
 
-#define nvram_default_safe_get(name) (nvram_default_get(name) ? : "")
-
 /*
 #define csprintf(fmt, args...) do{\
 	FILE *cp = fopen("/dev/console", "w");\
@@ -400,6 +398,7 @@ char ProductID[32]="";
 #ifdef RTCONFIG_LANTIQ
 int wave_app_flag=0;
 #endif
+int hook_get_json = 0;
 extern int redirect;
 extern int change_passwd;	// 2008.08 magic
 extern int reget_passwd;	// 2008.08 magic
@@ -479,6 +478,19 @@ void not_ej_initial_folder_var_file();
 static int is_re_node(char *client_mac, int check_path);
 int get_amas_info(struct json_object *json_object_ptr);
 #endif
+
+static int
+isValidtimestamp_noletter(char *timestamp)
+{
+	time_t ts;
+	char *ptr = NULL;
+
+	ts = (time_t)strtol(timestamp, &ptr, 10);
+	if((0 < ts && ts < 2145888000L) && (ptr && strlen(ptr) == 0))
+		return 1;
+	else
+		return 0;
+}
 
 #ifdef RTCONFIG_USB
 static void insert_hook_func(webs_t wp, char *fname, char *param)
@@ -1821,8 +1833,8 @@ ej_ddnsinfo(int eid, webs_t wp, int argc, char_t **argv)
 {
 	int ret;
 
-	ret = websWrite(wp, "[\"%s\", \"%s\", \"%s\", \"%s\"]",
-		nvram_safe_get("ddns_enable_x"),
+	ret = websWrite(wp, "[\"%d\", \"%s\", \"%s\", \"%s\"]",
+		nvram_get_int("ddns_enable_x"),
 		nvram_safe_get("ddns_server_x"),
 		nvram_safe_get("ddns_hostname_x"),
 		nvram_safe_get("ddns_return_code")
@@ -4662,7 +4674,7 @@ static int ej_update_variables(int eid, webs_t wp, int argc, char_t **argv) {
 				if(strcmp(action_script, "saveNvram"))
 				{
 #ifdef RTCONFIG_CFGSYNC
-					if (is_cfg_server_ready())
+					if (cfg_changed && is_cfg_server_ready())
 					{
 						/* trigger cfg_server to send notification */
 						kill_pidfile_s(CFG_SERVER_PID, SIGUSR2);
@@ -4678,7 +4690,7 @@ static int ej_update_variables(int eid, webs_t wp, int argc, char_t **argv) {
 #ifdef RTCONFIG_CFGSYNC
 				else if (strcmp(action_script, "saveNvram") == 0)
 				{
-					if (is_cfg_server_ready())
+					if (cfg_changed && is_cfg_server_ready())
 					{
 						/* trigger cfg_server to send notification */
 						kill_pidfile_s(CFG_SERVER_PID, SIGUSR2);
@@ -10791,7 +10803,7 @@ apply_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 
 		if(action_para && strlen(action_para) > 0) {
 #ifdef RTCONFIG_CFGSYNC
-			if (is_cfg_server_ready())
+			if (cfg_changed && is_cfg_server_ready())
 			{
 				json_object *cfg_root = NULL;
 
@@ -10893,6 +10905,7 @@ apply_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 			strncasecmp(system_cmd, "ether-wake", 10) == 0
 		)){
 #if defined(RTCONFIG_BCM_7114) || defined(HND_ROUTER)
+#if defined(RTCONFIG_BONDING) || defined(RTCONFIG_LACP)
 			char dstmac[18];
 			memset(dstmac, 0, sizeof(dstmac));
 			strncpy(dstmac, system_cmd + strlen("ether-wake -i br0 "), sizeof(dstmac)-1);
@@ -10904,10 +10917,11 @@ apply_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 #endif
 #elif defined(HND_ROUTER)
 			eval("ether-wake", "-i", "eth3", dstmac);
-#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+#ifdef RTAX82U
 			eval("ether-wake", "-i", "eth2", dstmac);
 #else
 			eval("ether-wake", "-i", "eth4", dstmac);
+#endif
 #endif
 #endif
 #endif
@@ -12340,6 +12354,11 @@ do_upgrade_post(char *url, FILE *stream, int len, char *boundary)
 #endif
 
 #ifdef RTCONFIG_PIPEFW
+	count = 0;
+	while (!nvram_get_int("stop_misc") && count++ < 15) {
+		dbg("wait stop_misc to complelte...\n");
+		sleep(1);
+	}
 	sys_upgrade_bca(stream, &len, boundary);
 #ifdef HND_ROUTER
 	len += ex_len;
@@ -13362,9 +13381,34 @@ err:
 static void
 do_upload_cert_key_cgi(char *url, FILE *stream)
 {
-	_dprintf("do_upload_cert_key_cgi\n");
+	//_dprintf("do_upload_cert_key_cgi\n");
 }
 #endif
+
+static void
+do_download_cert_key_cgi(char *url, FILE *stream)//for DUT
+{
+	eval("tar", "cf",
+		"/tmp/cert_key.tar",
+		"-C",
+		"/etc",
+		"cert.pem",
+		"key.pem"
+		);
+	do_file("/tmp/cert_key.tar", stream);
+}
+
+static void
+do_download_cert_cgi(char *url, FILE *stream)//for browser
+{
+	eval("tar", "cf",
+		"/tmp/cert.tar",
+		"-C",
+		"/etc",
+		"cert.crt"
+		);
+	do_file("/tmp/cert.tar", stream);
+}
 
 #ifdef RTCONFIG_SOFTCENTER
 static int ssupload = 0;
@@ -13648,21 +13692,6 @@ do_dbupload_cgi(char *url, FILE *stream)
 }
 #endif
 
-static void
-do_download_cert_key_cgi(char *url, FILE *stream)
-{
-	_dprintf("do_download_cert_key_cgi\n");
-	eval("tar", "cf",
-		"/tmp/cert_key.tar",
-		"-C",
-		"/etc",
-		"cert.pem",
-		"key.pem",
-		"server.pem",
-		"cert.crt"
-		);
-	do_file("/tmp/cert_key.tar", stream);
-}
 
 // Viz 2010.08
 static void
@@ -14943,81 +14972,90 @@ static void do_athX_state_cgi(char *url, FILE *stream)
 static void
 do_blocking_request_cgi(char *url, FILE *stream)
 {
-	struct json_object *root=NULL;
-	char *block_CName, *block_mac,*block_interval, *block_timestap;
-	char *block_mac_t, *block_timestap_t;
+	struct json_object *root = NULL, *nc_root = NULL;
+	char block_CName[32] = {0}, block_mac[18] = {0},block_interval[10] = {0}, block_timestamp[11] = {0};
+	char *block_mac_t = NULL, *block_timestamp_t = NULL;
 	char nvramTmp[4096]={0};
-	char *buf, *g, *p;
-	int retStatus=0;
-	char filename[128];
-	memset(filename, 0, 128);
+	char *buf = NULL, *g = NULL, *p = NULL;
+	int retStatus = 0;
+	char filename[128] = {0};
 
 	do_json_decode(&root);
-	block_CName = safe_get_cgi_json("CName", root);
-	block_mac = safe_get_cgi_json("mac", root);
-	block_interval = safe_get_cgi_json("interval", root);
-	block_timestap = safe_get_cgi_json("timestap", root);
+	strlcpy(block_CName, safe_get_cgi_json("CName", root), sizeof(block_CName));
+	strlcpy(block_mac, safe_get_cgi_json("mac", root), sizeof(block_mac));
+	strlcpy(block_interval, safe_get_cgi_json("interval", root), sizeof(block_interval));
+	strlcpy(block_timestamp, safe_get_cgi_json("timestap", root), sizeof(block_timestamp));
 
+	if(!isValidMacAddress(block_mac)){
+		goto FINISH;
+	}
+	if(!isValidtimestamp_noletter(block_timestamp)){
+		goto FINISH;
+	}
+
+	if(!isValidtimestamp_noletter(block_interval)){
+		goto FINISH;
+	}
 
 	time_t now = uptime();
 	time(&now);
 
-	//_dprintf("%s: block_CName = %s, block_mac = %s, block_timestr = \"%ld\", block_timestap = %s\n", __func__, block_CName, block_mac, now, block_timestap);
-	if(abs((unsigned long)(now + 3600) - atol(block_timestap)) > 20 || strstr(nvram_safe_get("MULTIFILTER_MAC"), block_mac) == NULL){
+	//_dprintf("%s: block_CName = %s, block_mac = %s, block_timestr = \"%ld\", block_timestamp = %s\n", __func__, block_CName, block_mac, now, block_timestamp);
+	if(abs((unsigned long)(now + 3600) - atol(block_timestamp)) > 20 || strstr(nvram_safe_get("MULTIFILTER_MAC"), block_mac) == NULL){
 		_dprintf("blocking_request_cgi: not valid blocking request\n");
-		if (root != NULL) 
-			json_object_put(root);
-		return;
+		goto FINISH;
 	}
 	g = buf = strdup(nvram_safe_get("MULTIFILTER_TMP_T"));
 	while (buf) {
 		if ((p = strsep(&g, "<")) == NULL) break;
-		if((vstrsep(p, ">", &block_mac_t, &block_timestap_t)) != 2) continue;
-		if((now-atol(block_timestap_t)) > 0){
+		if((vstrsep(p, ">", &block_mac_t, &block_timestamp_t)) != 2) continue;
+		if((now-atol(block_timestamp_t)) > 0){
 			continue;
 		}else{
 			if(!strcmp(block_mac_t, block_mac))
 				retStatus = 1; //find blocking mac alive
 
-			strcat(nvramTmp, "<");
-			strcat(nvramTmp, block_mac_t);
-			strcat(nvramTmp, ">");
-			strcat(nvramTmp, block_timestap_t);
+			strlcat(nvramTmp, "<", sizeof(nvramTmp));
+			strlcat(nvramTmp, block_mac_t, sizeof(nvramTmp));
+			strlcat(nvramTmp, ">", sizeof(nvramTmp));
+			strlcat(nvramTmp, block_timestamp_t, sizeof(nvramTmp));
 		}
 	}
 	free(buf);
 
 	if(retStatus == 0){
-		strcat(nvramTmp, "<");
-		strcat(nvramTmp, block_mac);
-		strcat(nvramTmp, ">");
-		strcat(nvramTmp, block_timestap);
+		strlcat(nvramTmp, "<", sizeof(nvramTmp));
+		strlcat(nvramTmp, block_mac, sizeof(nvramTmp));
+		strlcat(nvramTmp, ">", sizeof(nvramTmp));
+		strlcat(nvramTmp, block_timestamp, sizeof(nvramTmp));
 	}
 
 	nvram_set("MULTIFILTER_TMP_T", nvramTmp);
-	nvram_commit();
 
-	json_object *nc_root = json_object_new_object();
+	nc_root = json_object_new_object();
 
 	if (nc_root == NULL) {
 		_dprintf("[%s(%d)]new json object error", __FUNCTION__, __LINE__);
 		char nt_tmp[MAX_EVENT_INFO_LEN];
-		snprintf(nt_tmp, sizeof(nt_tmp), "{\"CName\":\"%s\", \"MacAddress\":\"%s\", \"Interval\":\"%s\", \"TimeStamp\":\"%s\"}", block_CName, block_mac, block_interval, block_timestap);
+		snprintf(nt_tmp, sizeof(nt_tmp), "{\"CName\":\"%s\", \"MacAddress\":\"%s\", \"Interval\":\"%s\", \"TimeStamp\":\"%s\"}", block_CName, block_mac, block_interval, block_timestamp);
 		SEND_NT_EVENT(ADMIN_LOGIN_FAIL_LAN_WEB_EVENT, nt_tmp);
 	} else {
 		json_object_object_add(nc_root, "CName", json_object_new_string(block_CName));
 		json_object_object_add(nc_root, "MacAddress", json_object_new_string(block_mac));
 		json_object_object_add(nc_root, "Interval", json_object_new_string(block_interval));
-		json_object_object_add(nc_root, "TimeStamp", json_object_new_string(block_timestap));
+		json_object_object_add(nc_root, "TimeStamp", json_object_new_string(block_timestamp));
 		SEND_NT_EVENT(PERMISSION_FROM_TIME_SCHEDULE_EVENT, json_object_to_json_string(nc_root));
 	}
-
-	json_object_put(root);
-	json_object_put(nc_root);
 
 	memset(filename, 0, 128);
 	snprintf(filename, sizeof(filename), "blocking.asp?mac=%s", block_mac);
 	websRedirect(stream, filename);
+
+FINISH:
+	if(root)
+		json_object_put(root);
+	if(nc_root)
+	json_object_put(nc_root);
 }
 
 static void
@@ -15911,6 +15949,9 @@ END:
 #endif
 
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
+#ifdef RTCONFIG_CAPTCHA
+unsigned int login_fail_num = 0;
+#endif
 static int
 login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 		char_t *url, char_t *path, char_t *query)
@@ -15927,8 +15968,8 @@ login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 	memset(filename, 0, sizeof(filename));
 	memset(asus_token, 0, sizeof(asus_token));
 #ifdef RTCONFIG_CAPTCHA
-	int captcha_right = 0;
-	char *cpatcha_t;
+	int captcha_right = 1;
+	char *captcha_t;
 	unsigned char captcha_text[6];
 #endif
 
@@ -15951,8 +15992,8 @@ login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 		*authpass++ = '\0';
 
 #ifdef RTCONFIG_CAPTCHA
-	cpatcha_t = websGetVar(wp, "login_captcha","");
-	l = b64_decode( &(cpatcha_t[0]), (unsigned char*) captcha_text, sizeof(captcha_text) );
+	captcha_t = websGetVar(wp, "login_captcha","");
+	l = b64_decode( &(captcha_t[0]), (unsigned char*) captcha_text, sizeof(captcha_text) );
 	captcha_text[l] = '\0';
 #endif
 
@@ -15973,6 +16014,9 @@ login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 			last_login_timestamp = 0;
 			lock_flag &= ~(LOCK_LOGIN_LAN);
 			login_error_status = 0;
+#ifdef RTCONFIG_CAPTCHA
+			login_fail_num = 0;
+#endif
 		}
 		if(login_try >= DEFAULT_LOGIN_MAX_NUM){
 			lock_flag |= LOCK_LOGIN_LAN;
@@ -15994,6 +16038,9 @@ login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 			last_login_timestamp_wan= 0;
 			lock_flag &= ~(LOCK_LOGIN_WAN);
 			login_error_status = 0;
+#ifdef RTCONFIG_CAPTCHA
+			login_fail_num = 0;
+#endif
 		}
 		if(login_try_wan>= DEFAULT_LOGIN_MAX_NUM){
 			lock_flag |= LOCK_LOGIN_WAN;
@@ -16028,25 +16075,27 @@ login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 	}
 
 #ifdef RTCONFIG_CAPTCHA
-	if( (cur_login_ip_type? login_try_wan: login_try) < CAPTCHA_MAX_LOGIN_NUM ||
-		((cur_login_ip_type? login_try_wan: login_try) >= CAPTCHA_MAX_LOGIN_NUM && is_captcha_match(captcha_text)) )
-	{
-		captcha_right = 1;
-	}
-	else{
-		captcha_right = 0;
-		HTTPD_DBG("Wrong captcha!\n");
-		websWrite(wp,"Connection: close\r\n" );
-		websWrite(wp,"\r\n" );
-		login_error_status = WRONGCAPTCHA;
-		if(fromapp_flag != 0){
-				websWrite(wp, "{\n\"error_status\":\"%d\"\n}\n", login_error_status);
-		}else{
-			websWrite(wp,"<HTML><HEAD>\n" );
-			websWrite(wp,"<script>parent.location.href='/Main_Login.asp';</script>\n");
-			websWrite(wp,"</HEAD></HTML>\n" );
+	if(!nvram_match("captcha_enable", "0")){
+		if( login_fail_num < CAPTCHA_MAX_LOGIN_NUM ||
+			(login_fail_num >= CAPTCHA_MAX_LOGIN_NUM && is_captcha_match(captcha_text)) )
+		{
+			captcha_right = 1;
 		}
-		return 0;
+		else{
+			captcha_right = 0;
+			HTTPD_DBG("Wrong captcha!\n");
+			websWrite(wp,"Connection: close\r\n" );
+			websWrite(wp,"\r\n" );
+			login_error_status = WRONGCAPTCHA;
+			if(fromapp_flag != 0){
+					websWrite(wp, "{\n\"error_status\":\"%d\"\n}\n", login_error_status);
+			}else{
+				websWrite(wp,"<HTML><HEAD>\n" );
+				websWrite(wp,"<script>parent.location.href='/Main_Login.asp';</script>\n");
+				websWrite(wp,"</HEAD></HTML>\n" );
+			}
+			return 0;
+		}
 	}
 #endif
 
@@ -16059,6 +16108,10 @@ login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 		)
 	{
 		HTTPD_DBG("authpass!\n");
+#ifdef RTCONFIG_CAPTCHA
+		login_fail_num = 0;
+		HTTPD_DBG("authpass: login_fail_num = %d\n", login_fail_num);
+#endif
 		if (fromapp_flag == FROM_BROWSER){
 			if(!cur_login_ip_type)
 			{
@@ -16071,6 +16124,12 @@ login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 				last_login_timestamp_wan = 0;
 			}
 			set_referer_host();
+		}
+
+		if(fromapp_flag == FROM_DUTUtil && !nvram_get_int("app_access"))
+		{
+			nvram_set("app_access", "1");
+			//nvram_commit();
 		}
 
 		generate_token(asus_token, sizeof(asus_token));
@@ -16113,6 +16172,12 @@ login_cgi(webs_t wp, char_t *urlPrefix, char_t *webDir, int arg,
 		}
 		return 1;
 	}else{
+#ifdef RTCONFIG_CAPTCHA
+		if(!nvram_match("captcha_enable", "0") && fromapp_flag != FROM_DUTUtil){
+			login_fail_num++;
+		}
+		HTTPD_DBG("authfail: login_fail_num = %d\n", login_fail_num);
+#endif
 		websWrite(wp,"Connection: close\r\n" );
 		websWrite(wp,"\r\n" );
 		if(!cur_login_ip_type)
@@ -16249,6 +16314,7 @@ do_appGet_cgi(char *url, FILE *stream)
 	char *substr = NULL;
 	char * delim = ";";
 
+	hook_get_json = 1;
 	char *pattern = websGetVar(wp, "hook","");
 	char *dup_pattern = strdup(pattern);
 	char *sepstr = dup_pattern;
@@ -16268,6 +16334,7 @@ do_appGet_cgi(char *url, FILE *stream)
 
 	websWrite(stream,"\n}\n" );
 	free(dup_pattern);
+	hook_get_json = 0;
 }
 
 #ifdef RTCONFIG_SOFTCENTER
@@ -16946,7 +17013,7 @@ do_enable_remote_control_cgi(char *url, FILE *stream)
 	memset(ddns_name, 0, sizeof(ddns_name));
 	memset(service_buf, 0, sizeof(service_buf));
 
-	if (nvram_match("ddns_enable_x", "0")){
+	if (!nvram_get_int("ddns_enable_x")){
 		nvram_set("ddns_enable_x", "1");
 		rc_ddns = 1;
 	}
@@ -17537,19 +17604,19 @@ do_amazon_wss_cgi(char *url, FILE *stream)
 
 	if(!isValidEnableOption(wss_enable, 1)){
 		HTTPD_DBG("invalid enabled option\n");
-		ret = 4001;
+		ret = HTTP_INVALID_ENABLE_OPT;
 		goto FINISH;
 	}
 
 	if(!isValidEnableOption(do_rc, 1)){
 		HTTPD_DBG("invalid enabled option\n");
-		ret = 4002;
+		ret = HTTP_INVALID_ENABLE_OPT;
 		goto FINISH;
 	}
 
 	if(num_of_mssid_support(0) < 2){
 		HTTPD_DBG("mssid is not support\n");
-		ret = 4003;
+		ret = HTTP_INVALID_SUPPORT;
 		goto FINISH;
 	}
 
@@ -17812,6 +17879,11 @@ do_del_client_data_cgi(char *url, FILE *stream) {
 	char qos_bw_rulelist[CKN_STR2048]={0}, qos_bw_rulelist_buf[CKN_STR2048]={0};
 	char wollist[CKN_STR1024]={0}, wollist_buf[CKN_STR1024]={0};
 	char sta_binding_list[CKN_STR4096]={0}, sta_binding_list_buf[CKN_STR4096]={0};
+#ifdef RTCONFIG_BWDPI
+	int wrs_rulelist_ret = 0, wrs_app_rulelist_ret = 0;
+	char wrs_rulelist[CKN_STR2048]={0}, wrs_rulelist_buf[CKN_STR2048]={0};
+	char wrs_app_rulelist[CKN_STR2048]={0}, wrs_app_rulelist_buf[CKN_STR2048]={0};
+#endif
 	char prefix[8]={0}, tmp[100]={0}, wl_maclist_name[32]={0}, wl_maclist_name1[32]={0}, wl_maclist[CKN_STR2048]={0}, wl_maclist_buf[CKN_STR2048]={0};
 	struct json_object *root=NULL, *clients=NULL;
 	struct json_object *mac_list_array = json_object_new_array();
@@ -17896,6 +17968,21 @@ do_del_client_data_cgi(char *url, FILE *stream) {
 		nvram_set("wollist", wollist_buf);
 		strlcat(rc_service, "restart_time;", sizeof(rc_service));
 	}
+
+#ifdef RTCONFIG_BWDPI
+	strlcpy(wrs_rulelist, nvram_safe_get("wrs_rulelist"), sizeof(wrs_rulelist));
+	wrs_rulelist_ret = delete_client_in_group_list(maclist, 1, wrs_rulelist, wrs_rulelist_buf, sizeof(wrs_rulelist_buf));
+	if(wrs_rulelist_ret)
+		nvram_set("wrs_rulelist", wrs_rulelist_buf);
+
+	strlcpy(wrs_app_rulelist, nvram_safe_get("wrs_app_rulelist"), sizeof(wrs_app_rulelist));
+	wrs_app_rulelist_ret = delete_client_in_group_list(maclist, 1, wrs_app_rulelist, wrs_app_rulelist_buf, sizeof(wrs_app_rulelist_buf));
+	if(wrs_app_rulelist_ret)
+		nvram_set("wrs_app_rulelist", wrs_app_rulelist_buf);
+
+	if(wrs_rulelist_ret || wrs_app_rulelist_ret)
+	strlcat(rc_service, "restart_wrs;restart_firewall;apply_amaslib;", sizeof(rc_service));
+#endif
 
 	strlcpy(sta_binding_list, nvram_safe_get("sta_binding_list"), sizeof(wollist));
 	sta_binding_list_ret = delete_client_in_sta_binding_list(maclist, sta_binding_list, sta_binding_list_buf, sizeof(sta_binding_list_buf));
@@ -18016,6 +18103,60 @@ static void
 do_bandwidth_monitor_ej(char *url, FILE *stream) {
 	if(dump_dpi_support(INDEX_BANDWIDTH_MONITOR))
 		do_ej(url, stream);
+}
+#endif
+
+#ifdef RTAX82U
+static void
+do_set_ledg_cgi(char *url, FILE *stream) {
+
+	int ret=0, ledg_scheme=0;
+	char ledg_rgb_name[16]={0};
+	char *ledg_rgb=NULL;
+	struct json_object *root = NULL;
+
+	do_json_decode(&root);
+	ledg_scheme = safe_atoi(safe_get_cgi_json("ledg_scheme", root));
+	ledg_rgb = safe_get_cgi_json("ledg_rgb", root);
+
+	if(ledg_scheme < 0 || ledg_scheme > 10){
+		ret = HTTP_INVALID_INPUT;
+		goto FINISH;
+	}
+
+	switch(ledg_scheme) {
+		case LEDG_SCHEME_STEADY_RED:
+		case LEDG_SCHEME_PULSATING:
+		case LEDG_SCHEME_SCROLLING:
+		case LEDG_SCHEME_GRADIENT:
+			if(strlen(ledg_rgb)){
+				snprintf(ledg_rgb_name, sizeof(ledg_rgb_name), "ledg_rgb%d", ledg_scheme);
+				nvram_set(ledg_rgb_name, ledg_rgb);
+			}
+		case LEDG_SCHEME_OFF:
+		case LEDG_SCHEME_COLOR_CYCLE:
+		case LEDG_SCHEME_RAINBOW:
+		case LEDG_SCHEME_WATER_FLOW:
+		case LEDG_SCHEME_CUSTOM:
+		case LEDG_SCHEME_BLINKING:
+		case LEDG_SCHEME_MAX:
+			if(nvram_get_int("ledg_scheme"))
+				nvram_set_int("ledg_scheme_old", nvram_get_int("ledg_scheme"));
+			nvram_set_int("ledg_scheme", ledg_scheme);
+			ret = HTTP_OK;
+			break;
+		default:
+				goto FINISH;
+	}
+
+	nvram_commit();
+	kill_pidfile_s("/var/run/ledg.pid", SIGTSTP);
+
+FINISH:
+	if(root)
+		json_object_put(root);
+
+	websWrite(stream, "{\"statusCode\":\"%d\"}", ret);
 }
 #endif
 
@@ -18158,6 +18299,7 @@ struct mime_handler mime_handlers[] = {
 	{ "upload_cert_key.cgi*", "text/html", no_cache_IE7, do_upload_cert_key, do_upload_cert_key_cgi, do_auth },
 #endif
 	{ "cert_key.tar", "application/force-download", NULL, do_html_post_and_get, do_download_cert_key_cgi, do_auth },
+	{ "cert.tar", "application/force-download", NULL, do_html_post_and_get, do_download_cert_cgi, do_auth },
 #if defined(RTCONFIG_IFTTT) || defined(RTCONFIG_ALEXA)
 	{ "get_IFTTTPincode.cgi", "text/html", no_cache_IE7, do_html_post_and_get, do_get_IFTTTPincode_cgi, do_auth },
 	{ "send_IFTTTPincode.cgi", "text/html", no_cache_IE7, do_html_post_and_get, do_send_IFTTTPincode_cgi, do_auth },
@@ -18245,6 +18387,9 @@ struct mime_handler mime_handlers[] = {
 	{ "internet_ctrl.cgi*", "text/html", no_cache_IE7, do_html_post_and_get, do_internet_ctrl_cgi, do_auth },
 #endif
 	{ "del_client_data.cgi*", "text/html", no_cache_IE7, do_html_post_and_get, do_del_client_data_cgi, do_auth },
+#if defined(RTAX82U)
+	{ "set_ledg.cgi*", "text/html", no_cache_IE7, do_html_post_and_get, do_set_ledg_cgi, do_auth },
+#endif
 	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
@@ -21200,7 +21345,7 @@ int ej_webdavInfo(int eid, webs_t wp, int argc, char **argv) {
 	websWrite(wp, "webdavInfo=['%s',", nvram_safe_get("enable_webdav"));
 	websWrite(wp, "'%s',", nvram_safe_get("st_webdav_mode"));
 	websWrite(wp, "'%s',", nvram_safe_get("webdav_http_port"));
-	websWrite(wp, "'%s',", nvram_safe_get("ddns_enable_x"));
+	websWrite(wp, "'%d',", nvram_get_int("ddns_enable_x"));
 	websWrite(wp, "'%s',", nvram_safe_get("ddns_hostname_x"));
 	websWrite(wp, "'%s',", nvram_safe_get("wan0_ipaddr"));
 	websWrite(wp, "'%s',", nvram_safe_get(""));
@@ -22418,6 +22563,19 @@ ej_bwdpi_monitor_nonips(int eid, webs_t wp, int argc, char_t **argv)
 	date = websGetVar(wp, "date", "");
 
 	bwdpi_monitor_nonips(type, date, &retval, wp);
+
+	return retval;
+}
+
+static int
+ej_bwdpi_maclist_db(int eid, webs_t wp, int argc, char_t **argv)
+{
+	int retval = 0;
+	char *type = NULL;
+
+	type = websGetVar(wp, "type", "");
+
+	bwdpi_maclist_db(type, &retval, wp);
 
 	return retval;
 }
@@ -25135,8 +25293,8 @@ ej_login_error_info(int eid, webs_t wp, int argc, char **argv)
 	json_object_object_add(item,"error_status", json_object_new_int(login_error_status));
 
 #ifdef RTCONFIG_CAPTCHA
-	/* error number */
-	json_object_object_add(item,"error_num", json_object_new_int(cur_login_ip_type? login_try_wan: login_try));
+	/* number of login fail */
+	json_object_object_add(item,"error_num", json_object_new_int(login_fail_num));
 #endif
 
 	/* url */
@@ -25558,7 +25716,7 @@ static int ej_get_label_mac(int eid, webs_t wp, int argc, char **argv){
 
 static int ej_get_lan_hwaddr(int eid, webs_t wp, int argc, char **argv){
 
-	if(check_user_agent(user_agent) == FROM_BROWSER)
+	if(check_user_agent(user_agent) == FROM_BROWSER && hook_get_json == 0)
 		websWrite(wp, "%s", get_lan_hwaddr());
 	else
 		websWrite(wp, "\"%s\"", get_lan_hwaddr());
@@ -26391,6 +26549,7 @@ struct ej_handler ej_handlers[] = {
 	{ "bwdpi_monitor_info", ej_bwdpi_monitor_info},
 	{ "bwdpi_monitor_ips", ej_bwdpi_monitor_ips},
 	{ "bwdpi_monitor_nonips", ej_bwdpi_monitor_nonips},
+	{ "bwdpi_maclist_db", ej_bwdpi_maclist_db},
 #else
 	{ "bwdpi_engine_status", ej_bwdpi_engine_status},
 #endif
@@ -26753,19 +26912,13 @@ struct log_pass_url_list log_pass_handlers[] = {
 void switch_ledg(int action)
 {
 	switch(action) {
-		case LEDG_QIS_READY:
-			nvram_set_int("ledg_color", 0);
-			nvram_set_int("ledg_mode", LEDG_STEADY_MODE);
-			break;
 		case LEDG_QIS_RUN:
-			nvram_set_int("ledg_color", 2);
-			nvram_set_int("ledg_mode", LEDG_PULSATING_WITH_DELAY_MODE);
+			nvram_set_int("ledg_scheme", LEDG_SCHEME_COLOR_CYCLE);
 			break;
 		case LEDG_QIS_FINISH:
 			if (nvram_match("x_Setting", "1") && !nvram_match("ledg_qis_finish", "1")){
 				nvram_set_int("ledg_qis_finish", 1);
-				nvram_set_int("ledg_color", 2);
-				nvram_set_int("ledg_mode", LEDG_BLINKING_MODE);
+				nvram_set_int("ledg_scheme", LEDG_SCHEME_BLINKING);
 				break;
 			}
 		default:

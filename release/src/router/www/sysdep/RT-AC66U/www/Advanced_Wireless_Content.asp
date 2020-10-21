@@ -152,6 +152,15 @@ function initial(){
 		}
 	}
 
+	if(wl_unit == '2' && band5g2_support){
+		if(document.form.acs_band3.value == '1'){
+			document.form.acs_dfs_checkbox.checked = true;
+		}
+		else{
+			document.form.acs_dfs_checkbox.checked = false;
+		}
+	}
+
 	if(wl_info[wl_unit].dfs_support){
 		if(document.form.wl_channel.value  == '0'){
 			document.getElementById('dfs_checkbox').style.display = "";
@@ -163,14 +172,6 @@ function initial(){
 		if(document.form.wl_channel.value  == '0' && wl_unit == '1'){
 			document.getElementById('acs_band3_checkbox').style.display = "";
 		}		
-	}
-	else if(wl_unit == '2' && band5g2_support){
-		if(document.form.acs_band3.value == '1'){
-			document.form.acs_dfs_checkbox.checked = true;
-		}
-		else{
-			document.form.acs_dfs_checkbox.checked = false;
-		}
 	}
 	else if(country == "US" || country == "SG"){		//display checkbox of band1 channel under 5GHz
 		if(based_modelid == "RT-AC68U" || based_modelid == "RT-AC68A" || based_modelid == "4G-AC68U" || based_modelid == "DSL-AC68U"

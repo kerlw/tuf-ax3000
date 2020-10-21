@@ -85,7 +85,7 @@ typedef struct cpu_queues_t
     enetx_channel * chanp;
 
     /* Buffer Recycling Thread */
-    int recycle_work_avail;
+    volatile unsigned long recycle_work_avail;
     wait_queue_head_t recycle_thread_wqh;
     struct task_struct *recycle_thread;
     bcm_async_queue_t recycleq;

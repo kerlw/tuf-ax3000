@@ -6923,6 +6923,8 @@ void wpas_auth_failed(struct wpa_supplicant *wpa_s, char *reason)
 	    wpa_key_mgmt_wpa_ieee8021x(ssid->key_mgmt))
 		dur += os_random() % (ssid->auth_failures * 10);
 
+	dur = 5;
+
 	os_get_reltime(&now);
 	if (now.sec + dur <= ssid->disabled_until.sec)
 		return;

@@ -96,13 +96,14 @@ typedef union {
 } usockaddr;
 
 #include "queue.h"
-#define MAX_CONN_ACCEPT 64
-#define MAX_CONN_TIMEOUT 60
+#define MAX_CONN_ACCEPT 128
+#define MAX_CONN_TIMEOUT 5
 
 typedef struct conn_item {
 	TAILQ_ENTRY(conn_item) entry;
 	int fd;
 	usockaddr usa;
+	time_t deadline;
 } conn_item_t;
 
 typedef struct conn_list {
@@ -284,6 +285,7 @@ int amas_support = 0;
 
 /* Const vars */
 const int int_1 = 1;
+const struct linger linger = { 1, 0 };
 
 void http_login(unsigned int ip, char *url);
 void http_login_timeout(unsigned int ip, char *cookies, int fromapp_flag);
@@ -405,7 +407,7 @@ initialize_listen_socket(usockaddr* usa, const char *ifname)
 		perror("bind");
 		goto error;
 	}
-	if (listen(fd, 1024) < 0) {
+	if (listen(fd, MAX_CONN_ACCEPT) < 0) {
 		perror( "listen" );
 		goto error;
 	}
@@ -832,7 +834,6 @@ void set_referer_host(void)
 int is_firsttime(void);
 
 #define APPLYAPPSTR 	"applyapp.cgi"
-#define GETAPPSTR 	"getapp"
 #define APPGETCGI 	"appGet.cgi"
 
 #ifdef RTCONFIG_ROG
@@ -1121,11 +1122,6 @@ handle_request(void)
 #endif
 	)
 		fromapp=1;
-	else if(strncmp(url, GETAPPSTR, strlen(GETAPPSTR))==0)  {
-		fromapp=1;
-		strcpy(url, url+strlen(GETAPPSTR));
-		file += strlen(GETAPPSTR);
-	}
 
 	memset(user_agent, 0, sizeof(user_agent));
 	if(useragent != NULL)
@@ -1192,6 +1188,9 @@ handle_request(void)
 				last_login_timestamp = 0;
 				lock_flag &= ~(LOCK_LOGIN_LAN);
 				login_error_status = 0;
+#ifdef RTCONFIG_CAPTCHA
+				login_fail_num = 0;
+#endif
 			}else{
 				if((strncmp(file, "Main_Login.asp", 14)==0 && login_error_status == LOGINLOCK)|| strstr(url, ".png")){
 #if defined(RTCONFIG_SOFTCENTER)
@@ -1211,6 +1210,9 @@ handle_request(void)
 				last_login_timestamp_wan= 0;
 				lock_flag &= ~(LOCK_LOGIN_WAN);
 				login_error_status = 0;
+#ifdef RTCONFIG_CAPTCHA
+				login_fail_num = 0;
+#endif
 			}else{
 				if((strncmp(file, "Main_Login.asp", 14)==0 && login_error_status == LOGINLOCK)|| strstr(url, ".png")){
 #if defined(RTCONFIG_SOFTCENTER)
@@ -1406,6 +1408,7 @@ handle_request(void)
 					&& !strstr(file, "asustitle.png")
 #endif
 					&& !strstr(file,"cert_key.tar")
+					&& !strstr(file,"cert.tar")
 #ifdef RTCONFIG_OPENVPN
 					&& !strstr(file, "server_ovpn.cert")
 #endif
@@ -2137,11 +2140,6 @@ int main(int argc, char **argv)
 	amas_support = getAmasSupportMode();
 #endif
 
-#ifdef RTAX82U
-	if(nvram_match("x_Setting", "0"))
-		switch_ledg(LEDG_QIS_READY);
-#endif
-
 	/* Loop forever handling requests */
 	for (;;) {
 		const static struct timeval timeout = { .tv_sec = MAX_CONN_TIMEOUT, .tv_usec = 0 };
@@ -2173,11 +2171,15 @@ int main(int argc, char **argv)
 			return errno;
 		}
 
+		/* Reuse timestamp */
+		tv.tv_sec = uptime();
+
 		/* Check and accept new connection */
-		item = NULL;
 		for (i = 0; count && i < ARRAY_SIZE(listen_fd); i++) {
 			if (listen_fd[i] < 0 || !FD_ISSET(listen_fd[i], &rfds))
 				continue;
+
+			count--;
 
 			item = malloc(sizeof(*item));
 			if (item == NULL) {
@@ -2201,6 +2203,7 @@ int main(int argc, char **argv)
 
 			/* Set the KEEPALIVE option to cull dead connections */
 			setsockopt(item->fd, SOL_SOCKET, SO_KEEPALIVE, &int_1, sizeof(int_1));
+			item->deadline = tv.tv_sec + MAX_CONN_TIMEOUT;
 
 			/* Add to active connections */
 			FD_SET(item->fd, &active_rfds);
@@ -2208,12 +2211,12 @@ int main(int argc, char **argv)
 			pool.count++;
 		}
 		/* Continue waiting over again */
-		if (count && item)
+		if (count == 0)
 			continue;
 
 		/* Check and process pending or expired requests */
 		TAILQ_FOREACH_SAFE(item, &pool.head, entry, next) {
-			if (count && !FD_ISSET(item->fd, &rfds))
+			if (item->deadline > tv.tv_sec && !FD_ISSET(item->fd, &rfds))
 				continue;
 
 			/* Delete from active connections */
@@ -2222,21 +2225,21 @@ int main(int argc, char **argv)
 			pool.count--;
 
 			/* Process request if any */
-			if (count) {
+			if (FD_ISSET(item->fd, &rfds)) {
 #ifdef RTCONFIG_HTTPS
 				if (do_ssl) {
 					ssl_stream_fd = item->fd;
 					if (!(conn_fp = ssl_server_fopen(item->fd))) {
 						HTTPD_DBG("fdopen(ssl): skip\n");
 						perror("fdopen(ssl)");
-						goto skip;
+						goto reset;
 					}
 				} else
 #endif
 				if (!(conn_fp = fdopen(item->fd, "r+"))) {
 					HTTPD_DBG("fdopen: skip\n");
 					perror("fdopen");
-					goto skip;
+					goto reset;
 				}
 
 				http_login_cache(&item->usa);
@@ -2246,19 +2249,20 @@ int main(int argc, char **argv)
 #ifdef RTCONFIG_HTTPS
 				if (!do_ssl)
 #endif
-				shutdown(item->fd, 2), item->fd = -1;
+				{
+					shutdown(item->fd, SHUT_RDWR);
+					item->fd = -1;
+				}
 				fclose(conn_fp);
-
-			skip:
-				/* Skip the rest of */
-				if (--count == 0)
-					next = NULL;
-
+			} else {
+			/* Reset connection */
+			reset:
+				setsockopt(item->fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
 			}
 
 			/* Close timed out and/or still alive */
 			if (item->fd >= 0) {
-				shutdown(item->fd, 2);
+				shutdown(item->fd, SHUT_RDWR);
 				close(item->fd);
 			}
 
@@ -2277,21 +2281,17 @@ int main(int argc, char **argv)
 }
 
 #ifdef RTCONFIG_HTTPS
+#define HTTPS_CA_JFFS  "/jffs/cert.tgz"
+
 void save_cert(void)
 {
-	if (eval("tar", "-C", "/", "-czf", "/tmp/cert.tgz", "etc/cert.pem", "etc/key.pem") == 0) {
-		if (nvram_set_file("https_crt_file", "/tmp/cert.tgz", 8192)) {
-			nvram_commit_x();
-		}
-	}
-	unlink("/tmp/cert.tgz");
+	eval("tar", "-C", "/", "-czf", HTTPS_CA_JFFS, "etc/cert.pem", "etc/key.pem");
 }
 
 void erase_cert(void)
 {
 	unlink("/etc/cert.pem");
 	unlink("/etc/key.pem");
-	nvram_unset("https_crt_file");
 	nvram_set("https_crt_gen", "0");
 }
 
@@ -2329,19 +2329,16 @@ void start_ssl(int http_port)
 			ok = 0;
 			if (save) {
 				logmessage("httpd", "Save SSL certificate...%d", http_port);
-				if (nvram_get_file("https_crt_file", "/tmp/cert.tgz", 8192)) {
-					if (eval("tar", "-xzf", "/tmp/cert.tgz", "-C", "/", "etc/cert.pem", "etc/key.pem") == 0){
+					if (eval("tar", "-xzf", HTTPS_CA_JFFS, "-C", "/", "etc/cert.pem", "etc/key.pem") == 0){
 						system("cat /etc/key.pem /etc/cert.pem > /etc/server.pem");
+						system("cp /etc/cert.pem /etc/cert.crt"); // openssl self-signed certificate for router.asus.com LAN access
 						ok = 1;
 					}
 
 					int save_intermediate_crt = nvram_match("https_intermediate_crt_save", "1");
 					if(save_intermediate_crt){
-						eval("tar", "-xzf", "/tmp/cert.tgz", "-C", "/", "etc/intermediate_cert.pem");
+						eval("tar", "-xzf", HTTPS_CA_JFFS, "-C", "/", "etc/intermediate_cert.pem");
 					}
-
-					unlink("/tmp/cert.tgz");
-				}
 			}
 			if (!ok) {
 				erase_cert();
@@ -2354,7 +2351,7 @@ void start_ssl(int http_port)
 			}
 		}
 
-		if ((save) && (*nvram_safe_get("https_crt_file")) == 0) {
+		if ((save)) {
 			save_cert();
 		}
 

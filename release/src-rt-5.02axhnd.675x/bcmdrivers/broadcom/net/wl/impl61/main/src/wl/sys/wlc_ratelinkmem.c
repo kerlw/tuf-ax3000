@@ -146,6 +146,9 @@
 
 #define RATE_STORE_IDX(idx)			((idx) & (MAX_RATE_ENTRIES-1))
 
+#define C_RTMCTL_RST_NBIT    12 // reset current rmem idx
+#define	C_RTMCTL_UNLOCK_NBIT 14 // unlock rmem idx
+
 typedef enum {
 	RATE_ENTRY_STATE_UNINITED	= 0,
 	RATE_ENTRY_STATE_ACTIVE		= 1
@@ -351,6 +354,7 @@ wlc_ratelinkmem_rate_entry_dump(wlc_info_t *wlc, d11ratemem_rev128_entry_t *rate
 #define RTLKMEM_DUMP_FLAG_LINKONLY	0x2
 #define RTLKMEM_DUMP_FLAG_RATEONLY	0x4
 #define RTLKMEM_DUMP_FLAG_PARSED	0x8
+#define RTLKMEM_DUMP_FLAG_PINGPONG      0x10
 /** dump raw link and rate mem for index */
 static void
 wlc_ratelinkmem_dump_raw_bytes(wlc_info_t *wlc, uint16 index, struct bcmstrbuf *b, uint8 flags)
@@ -359,7 +363,7 @@ wlc_ratelinkmem_dump_raw_bytes(wlc_info_t *wlc, uint16 index, struct bcmstrbuf *
 	uint32 bp_addr;
 	uint erate[D11_RATE_MEM_HW_BLOCK_SIZE/4];
 	uint elink[WLC_RLM_LINK_ENTRY_SIZE_FULL/4];
-	char name[32];
+	char name[48];
 	d11linkmem_entry_t * link_entry = (d11linkmem_entry_t *) elink;
 	d11ratemem_rev128_entry_t * rate_entry = (d11ratemem_rev128_entry_t *) erate;
 	const int link_size = D11REV_IS(wlc->pub->corerev, 128) ?
@@ -370,13 +374,19 @@ wlc_ratelinkmem_dump_raw_bytes(wlc_info_t *wlc, uint16 index, struct bcmstrbuf *
 		return;
 	}
 	if ((flags & RTLKMEM_DUMP_FLAG_LINKONLY) == 0) {
+		if ((flags & RTLKMEM_DUMP_FLAG_PINGPONG) != 0) {
+			W_REG(wlc->osh, D11_PSM_RATEMEM_DBG(wlc), (uint16)4); // ping
+			snprintf(name, sizeof(name), "RateMem Block (Ping): %d Size:%dB",
+					(int) index, (int) D11_RATE_MEM_HW_BLOCK_SIZE);
+		} else {
+			snprintf(name, sizeof(name), "RateMem Block: %d Size:%dB", (int) index,
+					(int) D11_RATE_MEM_HW_BLOCK_SIZE);
+		}
 		bp_addr = D11_RATE_MEM_ENTRY_ADDR_BME_VIEW(wlc, index);
 		for  (i = 0; i < D11_RATE_MEM_HW_BLOCK_SIZE / 4; i++) {
 			si_backplane_access(wlc->pub->sih, bp_addr, 4, erate + i, TRUE);
 			bp_addr += 4;
 		}
-		snprintf(name, sizeof(name), "RateMem Block: %d Size:%dB", (int) index,
-			(int) D11_RATE_MEM_HW_BLOCK_SIZE);
 		if ((flags & RTLKMEM_DUMP_FLAG_RAWDUMP) != 0) {
 			bcm_bprbytes(b, name,
 			             D11_RATE_MEM_ENTRY_ADDR_BME_VIEW(wlc, index),
@@ -384,6 +394,24 @@ wlc_ratelinkmem_dump_raw_bytes(wlc_info_t *wlc, uint16 index, struct bcmstrbuf *
 		}
 		if ((flags & RTLKMEM_DUMP_FLAG_PARSED) != 0) {
 			wlc_ratelinkmem_rate_entry_dump(wlc, rate_entry, b);
+		}
+		if ((flags & RTLKMEM_DUMP_FLAG_PINGPONG) != 0) {
+			W_REG(wlc->osh, D11_PSM_RATEMEM_DBG(wlc), (uint16)0xc); // pong
+			bp_addr = D11_RATE_MEM_ENTRY_ADDR_BME_VIEW(wlc, index);
+			for  (i = 0; i < D11_RATE_MEM_HW_BLOCK_SIZE / 4; i++) {
+				si_backplane_access(wlc->pub->sih, bp_addr, 4, erate + i, TRUE);
+				bp_addr += 4;
+			}
+			snprintf(name, sizeof(name), "RateMem Block (Pong): %d Size:%dB",
+					(int) index, (int) D11_RATE_MEM_HW_BLOCK_SIZE);
+			if ((flags & RTLKMEM_DUMP_FLAG_RAWDUMP) != 0) {
+				bcm_bprbytes(b, name,
+						D11_RATE_MEM_ENTRY_ADDR_BME_VIEW(wlc, index),
+						(uchar *) erate, D11_RATE_MEM_HW_BLOCK_SIZE);
+			}
+			if ((flags & RTLKMEM_DUMP_FLAG_PARSED) != 0) {
+				wlc_ratelinkmem_rate_entry_dump(wlc, rate_entry, b);
+			}
 		}
 	}
 
@@ -582,6 +610,9 @@ wlc_ratelinkmem_dump_parse_args(wlc_info_t *wlc, uint8 bmp[], bool *dump_all, ui
 				case 'P':
 					*flags |= RTLKMEM_DUMP_FLAG_PARSED;
 					break;
+				case 'p':
+					*flags |= RTLKMEM_DUMP_FLAG_PINGPONG;
+					break;
 				case 'i':
 					while (*++p != '\0') {
 						val = bcm_strtoul(p, &p, 0);
@@ -656,9 +687,16 @@ wlc_ratelinkmem_module_dump(void *ctx, struct bcmstrbuf *b)
 			bcm_bprintf(b, "-P\tDump parsed version of HW content\n");
 			bcm_bprintf(b, "-R\tDump rateentry only (i.e. don't dump link entry)\n");
 			bcm_bprintf(b, "-L\tDump linkentry only (i.e. don't dump rate entry)\n");
+			bcm_bprintf(b, "-p\tDump both ping and pong ratemem entry (For macdbg only,"
+				" avoid using runtime)\n");
 			return BCME_OK;
 		}
 	}
+
+	if (flags & RTLKMEM_DUMP_FLAG_RAWDUMP && wlc->pub->up) {
+		wlc_suspend_mac_and_wait(wlc);
+	}
+
 	for (i = 0; i < D11_MAX_RATELINK_ENTRIES; i++) {
 		if (dump_all || isset(entry_bitmap, i)) {
 			if (flags & RTLKMEM_DUMP_FLAG_RAWDUMP) {
@@ -673,6 +711,15 @@ wlc_ratelinkmem_module_dump(void *ctx, struct bcmstrbuf *b)
 			}
 		}
 	}
+
+	if (flags & RTLKMEM_DUMP_FLAG_PINGPONG && wlc->clk) {
+		W_REG(wlc->osh, D11_PSM_RATEMEM_DBG(wlc), (uint16)0); // reset
+	}
+
+	if (flags & RTLKMEM_DUMP_FLAG_RAWDUMP && wlc->pub->up) {
+		wlc_enable_mac(wlc);
+	}
+
 	return BCME_OK;
 }
 #endif // endif
@@ -774,6 +821,14 @@ wlc_ratelinkmem_init_indices(wlc_info_t *wlc, scb_t *scb, scb_ratelinkmem_info_t
 			wlc->pub->unit, __FUNCTION__, amt_index, ETHER_TO_MACF(scb->ea)));
 	}
 	// ASSERT(!(link_entry.BssColor_valid & (1 << D11_REV128_LMEMVLD_NBIT)));
+
+	if (wlc->clk) {
+		wlc_suspend_mac_and_wait(wlc);
+		W_REG(wlc->osh, D11_PSM_RATEMEM_CTL(wlc),
+		      (uint16) ((1 << C_RTMCTL_RST_NBIT) | (1 << C_RTMCTL_UNLOCK_NBIT) |
+				scbh->rate_link_index));
+		wlc_enable_mac(wlc);
+	}
 
 #ifdef DONGLEBUILD
 	memset(&rlm_evdata, 0, sizeof(rlm_evdata));
@@ -1542,6 +1597,12 @@ wlc_ratelinkmem_delete_link_entry(wlc_info_t *wlc, scb_t *scb)
 
 	/* clear update pending */
 	wlc_mctrlx(wlc, MCTLX_UPDPEND, 0);
+
+	if (wlc->clk) {
+		W_REG(wlc->osh, D11_PSM_RATEMEM_CTL(wlc),
+		      (uint16) ((1 << C_RTMCTL_RST_NBIT) | (1 << C_RTMCTL_UNLOCK_NBIT) |
+				scbh->rate_link_index));
+	}
 
 	wlc_enable_mac(wlc);
 

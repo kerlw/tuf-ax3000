@@ -138,14 +138,15 @@ int rtkswitch_ioctl(int val, int val2)
 	case 25:
 	case 34:	/* Set VoIP port. Cherry Cho added in 2011/6/30. */
 	case 35:
+	case 99:
+	case 100:
+#endif
 	case 36:	/* Set Vlan VID. */
 	case 37:	/* Set Vlan PRIO. */
 	case 38:	/* Initialize VLAN. Cherry Cho added in 2011/7/15. */
 	case 39:	/* Create VLAN. Cherry Cho added in 2011/7/15. */
 	case 40:
-	case 99:
-	case 100:
-#endif
+
 		p = &value;
 		value = (unsigned int)val2;
 		break;

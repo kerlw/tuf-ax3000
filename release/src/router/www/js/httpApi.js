@@ -413,6 +413,10 @@ var httpApi ={
 				retData.wanType = wanTypeList.noWan;
 			}
 		}
+		else if(wanInfo.wan0_state_t == "4" && wanInfo.wan0_sbstate_t == "4"){
+			retData.wanType = wanTypeList.dhcp;
+			retData.isIPConflict = true;
+		}
 		else{
 			retData.wanType = wanTypeList.check;
 			if(this.detRetryCnt > 0){
@@ -981,5 +985,19 @@ var httpApi ={
 				value: "Check Now"
 			}))			
 			.appendTo("body").submit().remove();
+	},
+
+	"set_ledg" : function(postData, parmData){
+		var asyncDefault = true;
+		$.ajax({
+			url: '/set_ledg.cgi',
+			dataType: 'json',
+			data: postData,
+			async: asyncDefault,
+			error: function(){},
+			success: function(response){
+				if(parmData != undefined && parmData.callBack) parmData.callBack.call(response);
+			}
+		});
 	}
 }

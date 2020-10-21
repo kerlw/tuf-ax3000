@@ -681,6 +681,7 @@ extern void setLEDGroupOn(void);
 extern void setLEDGroupOff(void);
 extern void cled_set(int gpio, uint32_t config0, uint32_t config1, uint32_t config2, uint32_t config3);
 extern void LEDGroupReset(int mode);
+extern void setAllLedNormal(void);
 #endif
 extern void activateLANLed();
 extern int mtd_erase_image_update();
@@ -692,6 +693,9 @@ extern int hw_vht_cap();
 extern int hw_he_cap();
 #endif
 extern int wl_control_channel(int unit);
+#ifdef RTCONFIG_BCMARM
+extern void config_mssid_isolate(char *ifname, int vif);
+#endif
 #ifdef RTCONFIG_AMAS
 enum {
 	AB_FLAG_NONE		= 0,
@@ -727,6 +731,9 @@ extern void dump_WlGetDriverStats(int fb, int count);
 #ifdef RTCONFIG_HND_ROUTER_AX
 extern void dfs_cac_check(void);
 #endif
+extern int set_cb_flag(int flag);
+extern int unset_cb_flag(void);
+extern int get_cb_flag(void);
 #endif
 
 #ifdef RTCONFIG_WIFI_SON
@@ -891,7 +898,7 @@ extern void lan_down(char *lan_ifname);
 extern void stop_lan_wl(void);
 extern void start_lan_wl(void);
 extern void restart_wl(void);
-extern void lanaccess_mssid_ban(const char *ifname_in);
+extern void lanaccess_mssid(const char *ifname_in, int mode);
 extern void lanaccess_wl(void);
 #ifdef RTCONFIG_FBWIFI
 extern void stop_fbwifi_check();
@@ -1121,6 +1128,9 @@ extern int mtd_write(const char *path, const char *mtd);
 extern int mtd_write_main(int argc, char *argv[]);
 extern int mtd_unlock_erase_main(int argc, char *argv[]);
 #endif
+#ifdef RTCONFIG_URLFW
+extern FILE *url_fopen(const char *path, const char *mode);
+#endif /* RTCONFIG_URLFW */
 
 // jffs2.c
 #if defined(RTCONFIG_UBIFS)
@@ -1184,6 +1194,7 @@ extern int psta_monitor_main(int argc, char *argv[]);
 // ledg.c
 #ifdef RTAX82U
 extern int ledg_main(int argc, char *argv[]);
+extern int ledbtn_main(int argc, char *argv[]);
 #endif
 #if defined(RTCONFIG_AMAS) && (defined(RTCONFIG_BCMWL6) || defined(RTCONFIG_LANTIQ) || defined(RTCONFIG_QCA))
 // obd.c
@@ -1620,6 +1631,10 @@ extern void stop_sshd(void);
 extern void start_wtfast(void);
 extern void stop_wtfast(void);
 #endif
+#ifdef RTCONFIG_TCPLUGIN
+extern void start_qmacc(void);
+extern void stop_qmacc(void);
+#endif
 extern void start_hotplug2(void);
 extern void stop_services(void);
 extern void stop_services_mfg(void);
@@ -2000,7 +2015,7 @@ extern void vlan_subnet_filter_forward(FILE *fp, char *wan_if);
 extern int check_exist_subnet_access_rule(int index, int subnet_group_tmp);
 extern void vlan_subnet_deny_input(FILE *fp);
 extern void vlan_subnet_deny_forward(FILE *fp);
-extern void vlan_lanaccess_mssid_ban(const char *limited_ifname, char *ip, char *netmask);
+extern void vlan_lanaccess_mssid(const char *limited_ifname, char *ip, char *netmask, int mode);
 extern void vlan_lanaccess_wl(void);
 extern int get_vlan_info_by_lanX(char *lan_prefix, int *vid, int *prio, int *portlist);
 extern void vlan_if_allow_list_set(unsigned int wan_allow_list, unsigned int lan_allow_list, unsigned int wl_allow_list);

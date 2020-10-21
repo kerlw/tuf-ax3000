@@ -244,7 +244,7 @@
 .event-cancel{
 	width: 20px;
 	height: 20px;
-	background: url('images/gameprofile/cancel.svg');
+	background: url('images/gameprofile/cancel.svg') no-repeat center;
 	border: 1px solid #842500;
 	background-color:#262626;
 	border-radius: 50%;
@@ -315,6 +315,10 @@ function initial(){
 	else if(rog_support){
 		$("#pingMap").show();
 		if (aura_support) {
+			if(based_modelid == 'GT-AC2900'){
+				$("#aura_event").show();
+			}
+
 			$("#aura_field").show();
 		}
 		else {
@@ -1260,7 +1264,7 @@ function hideEventTriggerDesc(){
 										</div>
 
 										<div class="aura-scheme-container">
-											<div class="aura-scheme">
+											<div id="aura_event" class="aura-scheme" style="display:none">
 												<div id="_event" class="aura-icon aura-icon-event" onclick="changeRgbMode(this);"></div>
 												<div class="aura-desc"><#AURA_Event#></div>
 												<div style="width:16px;height:16px;background: url('images/New_ui/helpicon.png');margin: 5px auto 0 auto;cursor:pointer;" onclick="showEventTriggerDesc();"></div>

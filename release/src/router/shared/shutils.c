@@ -2364,3 +2364,38 @@ found_next:
         }
         return NULL;
 }
+
+/* Compare two space-separated/null-terminated lists(str1 and str2)
+ * NOTE : The individual names in the list should not exceed NVRAM_MAX_VALUE_LEN
+ *
+ * @param      str1    space-separated/null-terminated list
+ * @param      str2    space-separated/null-terminated list
+ *
+ * @return     0 if both strings are same else return -1
+ */
+int
+compare_lists(char *str1, char *str2)
+{
+       char name[NVRAM_MAX_VALUE_LEN + 1], *next_str;
+
+       /* Check for arg and len */
+       if (!str1 || !str2 || (strlen(str1) != strlen(str2))) {
+               return -1;
+       }
+
+       /* First check whether each element in str1 list is present in str2's list */
+       foreach(name, str1, next_str) {
+               if (find_in_list(str2, name) == NULL) {
+                       return -1;
+               }
+       }
+
+       /* Now check whether each element in str2 list is present in str1's list */
+       foreach(name, str2, next_str) {
+               if (find_in_list(str1, name) == NULL) {
+                       return -1;
+               }
+       }
+
+       return 0;
+}

@@ -4531,8 +4531,8 @@ wlc_phy_set_reg_on_reset_majorrev32_33_37_47_51_129(phy_info_t *pi)
 		MOD_PHYREG(pi, Core3TxControl, loft_comp_shift, 1);
 	} else if (ACMAJORREV_51(pi->pubpi->phy_rev)) {
 		MOD_PHYREG(pi, SlnaControl, inv_btcx_prisel_polarity, 1);
-		MOD_PHYREG(pi, Core1TxControl, loft_comp_shift, 1);
-		MOD_PHYREG(pi, Core2TxControl, loft_comp_shift, 1);
+		MOD_PHYREG(pi, Core1TxControl, loft_comp_shift, 2);
+		MOD_PHYREG(pi, Core2TxControl, loft_comp_shift, 2);
 	}
 
 	/* [4365] need to reduce FSTR threshold by 12dB to resolve

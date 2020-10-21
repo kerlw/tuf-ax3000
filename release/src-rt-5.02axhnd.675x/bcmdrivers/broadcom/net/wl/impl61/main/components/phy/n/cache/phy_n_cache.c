@@ -217,7 +217,7 @@ wlc_phy_cal_cache_restore_nphy(phy_type_cache_ctx_t * cache_ctx)
 	}
 
 	if (!ctx->valid) {
-		PHY_ERROR(("wl%d: %s: Chanspec 0x%x found, but not valid in phycal cache\n",
+		PHY_CAL(("wl%d: %s: Chanspec 0x%x found, but not valid in phycal cache\n",
 		           pi->sh->unit, __FUNCTION__, pi->radio_chanspec));
 		return BCME_ERROR;
 	}

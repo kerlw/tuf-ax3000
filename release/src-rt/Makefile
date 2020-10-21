@@ -74,15 +74,17 @@ export BCM_CHIP := $(BRCM_CHIP)
 else
 export BCM_CHIP := $(CUR_CHIP_PROFILE)
 endif
-else
+export PREBUILT_TAIL := $(BCM_CHIP)-$(PROFILE_ARCH)
+else # non-675x
 export PROFILE ?= 94908HND
+export BRCM_CHIP := 4908
 export BCM_CHIP := 4908
-endif
+endif # HND_ROUTER_AX_675X
 export SRCBASE := $(shell pwd | sed 's/\(.*src-rt-.*hnd.*\).*/\1\/bcmdrivers\/broadcom\/net\/wl\/bcm9$(BCM_CHIP)\/main\/src/')
 export SRC_ROOT := $(HND_SRC)/../src
 export BUSYBOX := busybox-1.24.1
 export BUSYBOX_DIR := $(SRCBASE)/router/busybox-1.24.1/busybox-1.24.1
-else
+else # non-hnd
 export SRCBASE := $(shell pwd)
 ifeq ($(or $(BCM7),$(BCM_7114),$(BCM9)),y)
 export SRC_ROOT := $(SRCBASE)/../../src
@@ -91,7 +93,7 @@ export SRC_ROOT := $(SRCBASE)/../src
 endif
 export BUSYBOX := busybox-1.17.4
 export BUSYBOX_DIR := $(SRCBASE)/router/$(BUSYBOX)
-endif
+endif # HND_ROUTER
 export SRCBASEDIR := $(shell pwd | sed 's/.*release\///g')
 RELEASEDIR := $(shell (cd $(SRC_ROOT)/.. && pwd -P))
 export PATH := $(RELEASEDIR)/tools:$(SRCBASE)/ctools:$(PATH)
@@ -105,7 +107,7 @@ endif
 #K3C/K3/SBRAC1900P/SBRAC3200P/R7000/R8000/R7900P/R8000P/RTACRH17/RTAC85P/GTAC2900/GTAC5300/RTAC86U/RTAC68U/RTAC3100/RTAC3200/RTAC68P/BLUECAVE
 export MERLINR_NAME := TUFAX3000
 export MERLINR_VER_MAJOR :=R
-export MERLINR_VER_MINOR :=5.1.2
+export MERLINR_VER_MINOR :=5.1.3b
 export MERLINR_VER := $(MERLINR_VER_MAJOR)$(MERLINR_VER_MINOR)
 export MERLINRVER := $(MERLINR_NAME)_$(MERLINR_VER)
 
@@ -209,6 +211,7 @@ export BCMEX7 := _arm_94908hnd
 export DHD_DIR := dhd
 export DONGLE_DIR := 4365
 endif
+export NIC_DIR := main
 export BOARD_ID := $(shell cat $(PROFILE_FILE) | grep BRCM_BOARD_ID | awk -F '\"' '{print $$2}')
 endif
 
@@ -397,17 +400,32 @@ default:
 ifeq ($(HND_ROUTER),y)
 cfe_sysdep:
 	if [ -d $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME) ]; then \
-		cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
-		cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}ram.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
-		cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}rom.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
-		if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}ram_emmc.bin ]; then \
-			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}ram_emmc.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
-		fi; \
-		if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}rom_emmc.bin ]; then \
-			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}rom_emmc.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
-		fi; \
-		if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/precfe${BRCM_CHIP}rom.bin ]; then \
-			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/precfe${BRCM_CHIP}rom.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+		if [ "$(BCM_MFG)" = "y" ] && [ "$(BUILD_NAME)" = "RT-AX82U" ]; then \
+			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/cfe${BRCM_CHIP}.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/cfe${BRCM_CHIP}ram.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/cfe${BRCM_CHIP}rom.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/cfe${BRCM_CHIP}ram_emmc.bin ]; then \
+				cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/cfe${BRCM_CHIP}ram_emmc.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			fi; \
+			if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/cfe${BRCM_CHIP}rom_emmc.bin ]; then \
+				cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/cfe${BRCM_CHIP}rom_emmc.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			fi; \
+			if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/precfe${BRCM_CHIP}rom.bin ]; then \
+				cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)_mfg/precfe${BRCM_CHIP}rom.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			fi; \
+		else \
+			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}ram.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}rom.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}ram_emmc.bin ]; then \
+				cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}ram_emmc.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			fi; \
+			if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}rom_emmc.bin ]; then \
+				cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/cfe${BRCM_CHIP}rom_emmc.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			fi; \
+			if [ -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/precfe${BRCM_CHIP}rom.bin ]; then \
+				cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/$(BUILD_NAME)/precfe${BRCM_CHIP}rom.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
+			fi; \
 		fi; \
 	else \
 		cp -f $(SRCBASE)/../../../../../../../targets/cfe/sysdeps/default/cfe4908.bin $(SRCBASE)/../../../../../../../targets/cfe/. ; \
@@ -441,6 +459,13 @@ wl_sysdep:
 			cp -f $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(DONGLE_DIR)/src/wl/sysdeps/default/clm/src/wlc_clm_data.c $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(DONGLE_DIR)/src/wl/clm/src/. ; \
 		elif [ -d $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(DONGLE_DIR)/components/clm-api/sysdeps/default/clm-api ]; then \
 			cp -f $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(DONGLE_DIR)/components/clm-api/sysdeps/default/clm-api/src/wlc_clm_data.c $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(DONGLE_DIR)/components/clm-api/src/. ; \
+		fi; \
+	fi;
+	if [ -d $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(NIC_DIR)/components/clm-api/sysdeps/$(BUILD_NAME) ]; then \
+                cp -f $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(NIC_DIR)/components/clm-api/sysdeps/$(BUILD_NAME)/clm-api/src/wlc_clm_data.c $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(NIC_DIR)/components/clm-api/src/. ; \
+	else \
+		if [ -d $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(NIC_DIR)/components/clm-api/sysdeps/default ]; then \
+			cp -f $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(NIC_DIR)/components/clm-api/sysdeps/default/clm-api/src/wlc_clm_data.c $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(NIC_DIR)/components/clm-api/src/. ; \
 		fi; \
 	fi;
 	if [ -d $(SRCBASE)/../../../bcm9$(BRCM_CHIP)/$(DHD_DIR)/src/shared/sysdeps/$(BUILD_NAME) ]; then \
@@ -1252,6 +1277,10 @@ define RouterOptions
 	if [ "$(PIPEFW)" = "y" ] ; then \
 		sed -i "/RTCONFIG_PIPEFW/d" $(1); \
 		echo "RTCONFIG_PIPEFW=y" >>$(1); \
+	fi; \
+	if [ "$(URLFW)" = "y" ] ; then \
+		sed -i "/RTCONFIG_URLFW/d" $(1); \
+		echo "RTCONFIG_URLFW=y" >>$(1); \
 	fi; \
 	if [ "$(AURASYNC)" = "y" ]; then \
 		sed -i "/RTCONFIG_AURASYNC/d" $(1); \
@@ -4429,11 +4458,7 @@ ifeq ($(BUILD_NAME),)
 endif
 ifeq ($(HND_ROUTER),y)
 	@echo BRCM_BOARD_ID=$(BRCM_BOARD_ID)
-ifeq ($(HND_ROUTER_AX_675X),y)
-	@rm -f bcmdrivers/broadcom/net/wl/bcm9$(BCM_CHIP) && ln -sf impl61 bcmdrivers/broadcom/net/wl/bcm9$(BCM_CHIP)
-else
-	@rm -f bcmdrivers/broadcom/net/wl/bcm9$(BCM_CHIP) && ln -sf impl51 bcmdrivers/broadcom/net/wl/bcm9$(BCM_CHIP)
-endif
+	@cd bcmdrivers/broadcom/net/wl/ && ln -sf impl$(BCM_WLIMPL) bcm9$(BRCM_CHIP) && cd $(HND_SRC)
 	@rm -f $(PROFILE_FILE_PUB) && ln -sf $(PROFILE_FILE) $(PROFILE_FILE_PUB)
 	@rm -f $(SRCBASE)/.config && ln -sf $(HND_SRC)/.config $(SRCBASE)/.config
 	@rm -f $(LINUXDIR)/.config

@@ -453,6 +453,12 @@ function initial(){
 
 	if((isFirefox || isOpera) && document.getElementById("FormTitle"))
 		document.getElementById("FormTitle").className = "FormTitle";
+
+	if(!adaptiveqos_support){
+		$('#qos_desc').html('<#EzQoS_desc_QoS#>');
+		$('label[for="trad_type"]').html('<#EzQoS_type_QoS#>')
+		$('#bandwidth_setting_tr').hide();
+	}
 }
 
 function device_object(name, mac, type, type_name, description, group_array){
@@ -1609,7 +1615,7 @@ function setGroup(name){
 														<#EzQoS_desc#>
 														<ul>
 															<li id="function_int_desc"><#EzQoS_desc_Adaptive#></li>
-															<li><#EzQoS_desc_Traditional#></li>
+															<li id="qos_desc"><#EzQoS_desc_Traditional#></li>
 															<li><#EzQoS_desc_Bandwidth_Limiter#></li>
 														</ul>
 														<#EzQoS_desc_note#>

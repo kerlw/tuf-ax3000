@@ -396,6 +396,16 @@ extern int remove_from_list(const char *name, char *list, int listsize);
 */
 extern int add_to_list(const char *name, char *list, int listsize);
 
+/* Compare two space-separated/null-terminated lists(str1 and str2)
+ * NOTE : The individual names in the list should not exceed NVRAM_MAX_VALUE_LEN
+ *
+ * @param      str1    space-separated/null-terminated list
+ * @param      str2    space-separated/null-terminated list
+ *
+ * @return     0 if both strings are same else return -1
+ */
+extern int compare_lists(char *str1, char *str2);
+
 extern char *_find_in_list(const char *haystack, const char *needle, char deli);
 extern char *find_in_list(const char *haystack, const char *needle);
 

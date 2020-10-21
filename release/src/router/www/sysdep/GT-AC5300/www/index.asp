@@ -373,6 +373,14 @@ function initial(){
 		
 		if(wanlink_ipaddr == '0.0.0.0' || wanlink_ipaddr == '')
 			document.getElementById("wanIP_div").style.display = "none";
+
+		if(wan_bonding_support && orig_bond_wan == "1"){
+			document.getElementById("wanAggr_div").style.display = "block";
+			document.getElementById('single_wan_line').style.display = "none";
+			document.getElementById('primary_wan_line').style.display = "";
+			document.getElementById('secondary_wan_line').style.display = "";
+			$("#background_div").css("background-image", "url('images/New_ui/networkmap/networkmap_bg2.png')")
+		}
 	}
 
 	if(smart_connect_support){
@@ -1433,21 +1441,16 @@ function hideEditBlock(){
 
 function oui_query(mac){
 	var queryStr = mac.replace(/\:/g, "").splice(6,6,"");
-	$.ajax({
-	    url: 'https://services11.ieee.org/RST/standards-ra-web/rest/assignments/download/?registry=MA-L&format=html&text='+ queryStr,
-		type: 'GET',
-		success: function(response) {
+
+	$.getJSON("http://nw-dlcdnet.asus.com/plugin/js/ouiDB.json", function(data){
+		if(data != "" && data[queryStr] != undefined){
 			if(document.getElementById("edit_client_block").style.display == "none") return true;
-			if(response.search("Sorry!") == -1) {
-				if(response.search(queryStr) != -1) {
-					var retData = response.split("pre")[1].split("(hex)")[1].split(queryStr)[0].split("<b>");
-					document.getElementById('manufacturer_field').value = retData[0].trim();
-					document.getElementById('manufacturer_field').title = "";
-					if(retData[0].trim().length > 38) {
-						document.getElementById('manufacturer_field').value = retData[0].trim().substring(0, 36) + "..";
-						document.getElementById('manufacturer_field').title = retData[0].trim();
-					}
-				}
+			var vendor_name = data[queryStr].trim();
+			document.getElementById('manufacturer_field').value = vendor_name;
+			document.getElementById('manufacturer_field').title = "";
+			if(vendor_name.length > 38) {
+				document.getElementById('manufacturer_field').value = vendor_name.substring(0, 36) + "..";
+				document.getElementById('manufacturer_field').title = vendor_name;
 			}
 		}
 	});
@@ -2487,13 +2490,13 @@ function notice_apply(){
 		<div id="tabMenu"></div>
 		<div id="NM_shift" style="margin-top:-140px;"></div>
 		<div id="NM_table" class="NM_table" >
-		<div id="NM_table_div" style="background-color:rgba(0,0,0,.5);height:805px;">
-			<div style="width:51%;float:left;background:url('images/New_ui/networkmap/networkmap_bg.png') no-repeat rgba(0,0,0,.5);background-position-x: 4px; height:805px;">
+		<div id="NM_table_div" style="background-color:rgba(0,0,0,.5);height:810px;">
+			<div id="background_div" style="width:51%;float:left;background:url('images/New_ui/networkmap/networkmap_bg.png') no-repeat rgba(0,0,0,.5);background-position-x: 4px; height:810px;">
 			<table id="_NM_table" border="0" cellpadding="0" cellspacing="0" style="opacity:.95;margin-left:-30px;" >
 				<tr>
 					<td width="40px" rowspan="11" valign="center"></td>
 					<!--== Dual WAN ==-->
-					<td id="primary_wan_icon" width="160px;" align="center" class="NM_radius" onclick="showstausframe('Internet_primary');" style="display:none;height:180px">
+					<td id="primary_wan_icon" width="160px;" align="center" class="NM_radius" onclick="showstausframe('Internet_primary');" style="display:none;height:140px; padding-top: 10px;">
 						<a href="/device-map/internet.asp" target="statusframe"><div id="iconInternet_primary" onclick="clickEvent(this);"></div></a>
 						<div id="first_wan_title"><#dualwan_primary#>:</div>
 						<div id="primary_pap_concurrent" style="display:none">
@@ -2505,7 +2508,7 @@ function notice_apply(){
 					</td>
 					<td id="dual_wan_gap" width="40px" style="display:none">
 					</td>
-					<td id="secondary_wan_icon" width="160px;" align="center" class="NM_radius" onclick="showstausframe('Internet_secondary');" style="display:none;height:180px">
+					<td id="secondary_wan_icon" width="160px;" align="center" class="NM_radius" onclick="showstausframe('Internet_secondary');" style="display:none;height:140px; padding-top: 10px;">
 						<a href="/device-map/internet.asp" target="statusframe"><div id="iconInternet_secondary" onclick="clickEvent(this);"></div></a>
 						<div id="second_wan_title"><#dualwan_secondary#>:</div>
 						<div id="secondary_pap_concurrent" style="display:none">
@@ -2516,10 +2519,10 @@ function notice_apply(){
 						<div style="padding:5px"><strong id="secondary_status"></strong></div>
 					</td>
 					<!--== single WAN ==-->
-					<td id="single_wan_icon" align="right" class="NM_radius_left" style="height:180px" onclick="showstausframe('Internet');">
+					<td id="single_wan_icon" align="right" class="NM_radius_left" style="height:147px" onclick="showstausframe('Internet');">
 						<a href="/device-map/internet.asp" target="statusframe"><div id="iconInternet" onclick="clickEvent(this);"></div></a>
 					</td>
-					<td id="single_wan_status" colspan="2" class="NM_radius_right" onclick="" style="padding:5px;cursor:auto;width:180px;height:170px">
+					<td id="single_wan_status" colspan="2" class="NM_radius_right" onclick="" style="padding:5px;cursor:auto;width:180px;height:143px">
 						<div>
 							<span id="NM_connect_title" style="font-size:12px;font-family: Verdana, Arial, Helvetica, sans-serif;"><#statusTitle_Internet#>:</span>
 							<br>
@@ -2547,23 +2550,27 @@ function notice_apply(){
 							<span style="font-size:14px;font-family: Verdana, Arial, Helvetica, sans-serif;">RSSI:</span>
 							<strong id="rssi_status" class="index_status" style="font-size:14px;"></strong>
 						</div>
+						<div id="wanAggr_div" style="margin-top:5px;display:none;">
+							<span style="font-size:14px;font-family: Verdana, Arial, Helvetica, sans-serif; color: #FFCC00;">WAN Aggregation:</span>
+							<strong id="wan_bonding_status" class="index_status" style="font-size:14px;"></strong>
+						</div>
 					</td>
 				</tr>
-				<tr style="display:none">
+				<tr>
 					<!--==line of dual wan==-->
-					<td id="primary_wan_line"  height="35px" style="display:none;">
+					<td id="primary_wan_line">
 						<div id="primary_line" class="primary_wan_connected"></div>
 					</td>
-					<td id="secondary_wan_line" colspan="2" height="35px"  style="display:none;">
+					<td id="secondary_wan_line" colspan="2" style="display:none;">
 						<div id="secondary_line" class="secondary_wan_connected"></div>
 					</td>
 					<!--==line of single wan==-->
-					<td id="single_wan_line" colspan="3" align="center" height="35px">
+					<td id="single_wan_line" colspan="3" align="center">
 						<div id="single_wan" class="single_wan_connected"></div>
 					</td>
 				</tr>			
 				<tr>
-					<td style="height:150px;" colspan="3">
+					<td style="height:130px;" colspan="3">
 					<div style="width:350px;">
 						<div style="display:table-cell;width:100px;text-align: center;">
 							<div>

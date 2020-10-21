@@ -1,7 +1,7 @@
 /*
  * Wireless interface translation utility functions
  *
- * Copyright (C) 2019, Broadcom. All Rights Reserved.
+ * Copyright (C) 2020, Broadcom. All Rights Reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,7 +18,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wlif_utils.c 778128 2019-08-23 04:08:44Z $
+ * $Id: wlif_utils.c 783826 2020-02-11 06:24:47Z $
  */
 
 #include <typedefs.h>
@@ -2108,40 +2108,41 @@ wl_wlif_parse_hapd_config(char *ifname, wlif_wps_nw_creds_t *creds)
 	return 0;
 }
 
-// Routine to create a detached thread
+// Routine to create a joinable/detached thread
 int
-wl_wlif_create_thrd(wlif_thrd_func fptr, void *arg)
+wl_wlif_create_thrd(pthread_t *thread_id, wlif_thrd_func fptr, void *arg, bool is_detached)
 {
-	pthread_t thread;
 	pthread_attr_t attr;
 	int ret = -1;
 
-	if (!fptr) {
+	if (!fptr || !thread_id) {
+		cprintf("Err : shared %s invalid thread params \n", __func__);
 		goto exit;
 	}
 
-	ret = pthread_attr_init(&attr);
-	if (ret != 0) {
-		cprintf("Err : shared %s %d pthread_attr_init failed \n", __func__, __LINE__);
-		goto exit;
+	if (is_detached) {
+		ret = pthread_attr_init(&attr);
+		if (ret != 0) {
+			cprintf("Err : shared %s pthread_attr_init failed \n", __func__);
+			goto exit;
+		}
+
+		ret = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+		if (ret != 0) {
+			cprintf("Err : shared %s %d shared pthread_attr_setdetachstat failed\n",
+				__func__, __LINE__);
+			pthread_attr_destroy(&attr);
+			goto exit;
+		}
 	}
 
-	ret = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-	if (ret != 0) {
-		cprintf("Err : shared %s %d shared pthread_attr_setdetachstat failed\n",
-			__func__, __LINE__);
-		pthread_attr_destroy(&attr);
-		goto exit;
-	}
-
-	ret = pthread_create(&thread, &attr, fptr, arg);
-	if (ret != 0) {
+	if ((ret = pthread_create(thread_id, is_detached ? &attr : NULL, fptr, arg)) != 0) {
 		cprintf("Err : shared %s %d pthread_create failed \n", __func__, __LINE__);
-		pthread_attr_destroy(&attr);
-		goto exit;
 	}
 
-	pthread_attr_destroy(&attr);
+	if (is_detached) {
+		pthread_attr_destroy(&attr);
+	}
 
 exit:
 	return ret;
@@ -2696,6 +2697,7 @@ int
 wl_wlif_map_configure_backhaul_sta_interface(wlif_bss_t *bss_in, wlif_wps_nw_creds_t *creds)
 {
 	char *list = nvram_safe_get("lan_ifnames");
+	char *bh_sta_list = nvram_safe_get("map_bhsta_ifnames");
 	wlif_bss_list_t	bss_list;
 	wlif_bss_t *bss = NULL;
 	int idx = 0, ret = -1;
@@ -2719,13 +2721,16 @@ wl_wlif_map_configure_backhaul_sta_interface(wlif_bss_t *bss_in, wlif_wps_nw_cre
 	}
 
 	wl_wlif_map_get_candidate_bhsta_bsslist(list, &bss_list, skip_ifname);
-	wl_wlif_select_bhsta_from_bsslist(&bss_list, creds->ssid, bh_ifname, sizeof(bh_ifname));
-	if (bh_ifname[0] != '\0') {
-		cprintf("Info: shared %s selected backhaul station ifname "
-			" %s for backhaul ssid %s\n", __func__, bh_ifname, creds->ssid);
+
+	/* If the backhaul STA list is present, just apply the backhaul STA credentials in all the
+	 * interfaces in the list
+	 */
+	if (strlen(bh_sta_list) > 0) {
+		cprintf("Info: shared %s apply backhaul SSID in ifnames %s\n", __func__,
+			creds->ssid, bh_sta_list);
 		for (idx = 0; idx < bss_list.count; idx++) {
 			bss = &bss_list.bss[idx];
-			if (!strcmp(bss->ifname, bh_ifname)) {
+			if (find_in_list(bh_sta_list, bss->ifname)) {
 				// apply the settings received from wps;
 				wl_wlif_apply_map_backhaul_creds(bss, creds);
 				nvram_set("map_onboarded", "1");
@@ -2738,12 +2743,34 @@ wl_wlif_map_configure_backhaul_sta_interface(wlif_bss_t *bss_in, wlif_wps_nw_cre
 		}
 		ret = 0;
 	} else {
-		cprintf("Err: shared %s multiap backhaul ifname not found for "
-			"backhaul ssid = %s \n", __func__, creds->ssid);
-		// In case of failure restore ap_scan parameter to 1 in supplicant.
-		for (idx = 0; idx < bss_list.count; idx++) {
-			bss = &bss_list.bss[idx];
-			wl_wlif_wpa_supplicant_update_ap_scan(bss->ifname, bss->nvifname, 1);
+		wl_wlif_select_bhsta_from_bsslist(&bss_list, creds->ssid, bh_ifname,
+			sizeof(bh_ifname));
+		if (bh_ifname[0] != '\0') {
+			cprintf("Info: shared %s selected backhaul station ifname "
+				" %s for backhaul ssid %s\n", __func__, bh_ifname, creds->ssid);
+			for (idx = 0; idx < bss_list.count; idx++) {
+				bss = &bss_list.bss[idx];
+				if (!strcmp(bss->ifname, bh_ifname)) {
+					// apply the settings received from wps;
+					wl_wlif_apply_map_backhaul_creds(bss, creds);
+					nvram_set("map_onboarded", "1");
+					nvram_unset("wps_on_sta");
+				} else {
+					// uneset  the map settings and change mode from sta to AP
+					nvram_set(strcat_r(bss->nvifname, "_mode", tmp), "ap");
+					nvram_unset(strcat_r(bss->nvifname, "_map", tmp));
+				}
+			}
+			ret = 0;
+		} else {
+			cprintf("Err: shared %s multiap backhaul ifname not found for "
+				"backhaul ssid = %s \n", __func__, creds->ssid);
+			// In case of failure restore ap_scan parameter to 1 in supplicant.
+			for (idx = 0; idx < bss_list.count; idx++) {
+				bss = &bss_list.bss[idx];
+				wl_wlif_wpa_supplicant_update_ap_scan(bss->ifname, bss->nvifname,
+					1);
+			}
 		}
 	}
 

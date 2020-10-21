@@ -1529,8 +1529,6 @@ wlc_chanctxt_create_txqueue(wlc_info_t *wlc, wlc_bsscfg_t *cfg, chanspec_t chans
 
 	/* check to see if a context for this chanspec already exist */
 	if (new_chanctxt == NULL) {
-		wlc_lq_chanim_create_bss_chan_context(wlc, chanspec, 0);
-
 		/* context for this chanspec doesn't exist, create a new one */
 		WL_MQ(("wl%d.%d: %s: allocate new context\n",
 			wlc->pub->unit, WLC_BSSCFG_IDX(cfg), __FUNCTION__));
@@ -1544,6 +1542,7 @@ wlc_chanctxt_create_txqueue(wlc_info_t *wlc, wlc_bsscfg_t *cfg, chanspec_t chans
 	ASSERT(new_chanctxt != NULL);
 	if (new_chanctxt == NULL)
 		return NULL;
+	wlc_lq_chanim_create_bss_chan_context(wlc, chanspec, new_chanctxt->chanspec);
 
 	/* assign context to cfg */
 	wlc_chanctxt_switch_queue(wlc, cfg, new_chanctxt, oldqi_stopped_flag);

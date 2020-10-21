@@ -1135,7 +1135,7 @@ struct tc {
 };
 
 struct tc tc_list[] = {
-#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U) || defined(RTAX82_XD6)
 	{ "US", 0 },
 	{ "TW", 0 },
 	{ "AA", 1 },
@@ -1172,7 +1172,7 @@ struct txpwr_policy {
 };
 
 struct txpwr_policy txpwr_policy_all[][TXPWR_POLICY_NUM] = {
-#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U) || defined(RTAX82_XD6)
 {{{ 21.0, 21.0, 21.0, 21.0, 21.0, 23.0 }}, {{ 20, 10, 10, 10, 10, 20 }}, {{ 10, 10, 10, 10, 0, 0 }}},	// US, TW
 {{{ 21.0, 21.0, 21.0, 0.0, 21.0, 23.0 }}, {{ 20, 10, 10, 0, 10, 20 }}, {{ 10, 10, 0, 0, 0, 0 }}},	// AA
 {{{ 18.0, 18.0, 17.0, 0.0, 17.0, 23.0 }}, {{ 20, 10, 10, 0, 10, 20 }}, {{ 15, 15, 0, 0, 0, 0 }}},	// CA
@@ -1213,7 +1213,7 @@ int get_tc_index(void)
 static void
 acs_candidate_score_txpwr(ch_candidate_t *candi, acs_chaninfo_t* c_info)
 {
-#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U) || defined(RTAX56_XD4)
+#if defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U) || defined(RTAX56_XD4) || defined(RTAX82_XD6)
 	chanspec_t chspec = candi->chspec;
 	acs_channel_t chan;
 	int tc_index = get_tc_index();
@@ -2017,7 +2017,7 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 						(c_info->rs_info.reg_11h &&
 						c_info->country_is_edcrs_eu &&
 						acs_is_dfs_weather_chanspec(c_info,
-						candi[i].chspec)))) {
+						candi[i].chspec) && !nvram_get_int("acs_dfs_weather")))) {
 					/* invalidate the candidate for the current trial */
 					candi[i].reason |= ACS_INVALID_DFS;
 				}
@@ -2025,7 +2025,7 @@ acs_invalidate_candidates(acs_chaninfo_t *c_info, ch_candidate_t *candi, int bw)
 				if (c_info->country_is_edcrs_eu) {
 					/* Invalidate weather radar channel on bootup in ETSI region
 					*/
-					if (acs_is_dfs_weather_chanspec(c_info, candi[i].chspec)) {
+					if (acs_is_dfs_weather_chanspec(c_info, candi[i].chspec) && !nvram_get_int("acs_dfs_weather")) {
 						candi[i].reason |= ACS_INVALID_DFS;
 					}
 				}

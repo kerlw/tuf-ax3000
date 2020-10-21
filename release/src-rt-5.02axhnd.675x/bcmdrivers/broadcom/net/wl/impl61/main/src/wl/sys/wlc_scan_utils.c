@@ -411,7 +411,7 @@ wlc_scan_request_ex(
 	if (cb && fn != NULL) {
 		WL_SCAN(("wl%d: %s, can not scan due to error %d\n",
 		          wlc->pub->unit, __FUNCTION__, err));
-		wlc_scan_request_ex_cb(arg, WLC_E_STATUS_ERROR, cfg);
+		(fn)(arg, WLC_E_STATUS_ERROR, cfg);
 	}
 
 	return err;

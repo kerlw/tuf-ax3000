@@ -3799,7 +3799,7 @@ _wl_sched_macdbg_dump(wl_task_t *task)
 	}
 
 	/* ratelinkmem dump */
-	if (_wl_macdbg_dump_name(wl, "ratelinkmem", "[-I0,255 -r]", dumpbuf) == BCME_OK) {
+	if (_wl_macdbg_dump_name(wl, "ratelinkmem", "[-I0,255 -r -p]", dumpbuf) == BCME_OK) {
 		dumpnum++;
 	}
 
@@ -5573,6 +5573,8 @@ wl_event(wl_info_t *wl, char *ifname, wlc_event_t *e)
 					blog_lock();
 					blog_notify(FLUSH, dev, (unsigned long)&params, 0);
 					blog_unlock();
+
+					dpsta_flush_stalist();
 				}
 			}
 		}

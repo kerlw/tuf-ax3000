@@ -227,7 +227,7 @@ static const struct led_btn_table_s {
 	{ "led_sig1_gpio",		&led_gpio_table[LED_SIG1] },
 	{ "led_sig2_gpio",		&led_gpio_table[LED_SIG2] },
 #endif		
-#if defined(RTAX95Q) || defined(RTAX56_XD4)
+#if defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX82_XD6)
 	{ "bt_rst_gpio",        &led_gpio_table[BT_RESET] },
 	{ "bt_disable_gpio",    &led_gpio_table[BT_DISABLE] },
 	{ "led_rgb1_red_gpio",	&led_gpio_table[LED_RGB1_RED] },
@@ -1186,7 +1186,7 @@ int lanport_status(void)
 
 #elif defined(RTCONFIG_QCA)
 	return rtkswitch_lanPorts_phyStatus();
-#elif defined(RTAX55)
+#elif defined(RTAX55) || defined(RTAX1800)
 	return rtkswitch_lanPorts_phyStatus();
 #else
 	char word[100], *next;
@@ -1282,7 +1282,7 @@ int lanport_ctrl(int ctrl)
 		system("/usr/bin/switch_cli GSW_MDIO_DATA_WRITE nAddressDev=5 nAddressReg=0 nData=0x1c00");
 	}
 	return 1;
-#elif defined(RTAX55)
+#elif defined(RTAX55) || defined(RTAX1800)
 	if (ctrl)
 		rtkswitch_LanPort_linkUp();
 	else

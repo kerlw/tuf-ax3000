@@ -207,6 +207,11 @@ config RTCONFIG_DDNS
 	bool "Dynamic DNS"
 	default y
 
+config RTCONFIG_INADYN
+	bool "Dynamic DNS"
+	depends on RTCONFIG_DDNS
+	default n
+
 config RTCONFIG_L7
 	bool "Layer 7 Netfilter"
 	default y
@@ -1789,6 +1794,10 @@ config RTCONFIG_PIPEFW
 	bool "pipe-write fw to flash directly, don't store in mem"
 	default n
 
+config RTCONFIG_URLFW
+	bool "url-download fw to flash directly"
+	default n
+
 config RTCONFIG_AURASYNC
 	bool "AURASYNC support"
 	default n
@@ -1949,6 +1958,10 @@ config RTCONFIG_CAPTCHA
 	bool "Web UI supprts captcha"
 	default n
 
+config RTCONFIG_BCMRGBLED
+	bool "Brcm RGB LED"
+	default n
+
 config RTCONFIG_SOFTCENTER
 	bool "softcenter"
 	default n
@@ -1956,4 +1969,3 @@ config RTCONFIG_SOFTCENTER
 config RTCONFIG_SMARTDNS
 	bool "smart dns"
 	default n
-

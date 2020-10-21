@@ -21,11 +21,6 @@
 <script>function initial(){
 	show_menu();
 	update_pppoerelay_option();
-
-	if(!usb_support){
-		document.form.vts_ftpport.parentNode.parentNode.style.display = "none";
-		document.form.vts_ftpport.disabled = true;
-	}
 }
 
 function update_pppoerelay_option(){
@@ -171,7 +166,7 @@ function applyRule(){
 										</td>
 										</tr>
 										<tr>
-											<th>FTP_ALG Port<!-- untranslated --></th>
+											<th>FTP ALG Port<!-- untranslated --></th>
 											<td>
 												<input type="text" maxlength="5" name="vts_ftpport" class="input_6_table" value="<% nvram_get("vts_ftpport"); %>" onkeypress="return validator.isNumber(this,event);" autocorrect="off" autocapitalize="off">
 											</td>

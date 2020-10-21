@@ -385,9 +385,6 @@ static struct cmdline_option option_data[] =
     { "passive-ftp", 0, OPT_BOOLEAN, "passiveftp", -1 },
     { "password", 0, OPT_VALUE, "password", -1 },
     { IF_SSL ("pinnedpubkey"), 0, OPT_VALUE, "pinnedpubkey", -1 },
-#ifdef HAVE_PIPEFW
-    { "pipefw", 'y', OPT_BOOLEAN, "pipefw", -1 },
-#endif
     { "post-data", 0, OPT_VALUE, "postdata", -1 },
     { "post-file", 0, OPT_VALUE, "postfile", -1 },
     { "prefer-family", 0, OPT_VALUE, "preferfamily", -1 },
@@ -759,10 +756,6 @@ Download:\n"),
 #ifdef ENABLE_XATTR
     N_("\
        --xattr                     turn on storage of metadata in extended file attributes\n"),
-#endif
-#ifdef HAVE_PIPEFW
-    N_("\
-  -y,  --pipefw                    prepend content length for firmware piping\n"),
 #endif
     "\n",
 

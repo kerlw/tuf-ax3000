@@ -115,15 +115,32 @@ int _bcm_cled_ctrl(int rgb, int cled_mode)
 	char LED_BEHAVIOR_READ[BCM_CLED_MODE_END][20] =
 			{"3e000\n", "3d000\n", "3e018\n", "3e002\n", ""};
 
-	bcm_cled_rgb_led_s led1 =
-		{ {"/proc/bcm_cled/led14/config0", "/proc/bcm_cled/led15/config0", "/proc/bcm_cled/led16/config0"},
-		 {"0x00000000", "0x00000000", "0x00000000"},
-		 {"/proc/bcm_cled/led14/config1", "/proc/bcm_cled/led15/config1", "/proc/bcm_cled/led16/config1"},
-		 {"0x00000000", "0x00000000", "0x00000000"},
-		 {"/proc/bcm_cled/led14/config2", "/proc/bcm_cled/led15/config2", "/proc/bcm_cled/led16/config2"},
-		 {"0x00000000", "0x00000000", "0x00000000"},
-		 {"/proc/bcm_cled/led14/config3", "/proc/bcm_cled/led15/config3", "/proc/bcm_cled/led16/config3"},
-		 {"0x00000000", "0x00000000", "0x00000000"}};
+	bcm_cled_rgb_led_s led1 = {
+#ifdef RTAX82_XD6
+		{"/proc/bcm_cled/led7/config0", "/proc/bcm_cled/led8/config0", "/proc/bcm_cled/led9/config0"},
+#else
+		{"/proc/bcm_cled/led14/config0", "/proc/bcm_cled/led15/config0", "/proc/bcm_cled/led16/config0"},
+#endif
+		{"0x00000000", "0x00000000", "0x00000000"},
+#ifdef RTAX82_XD6
+		{"/proc/bcm_cled/led7/config1", "/proc/bcm_cled/led8/config1", "/proc/bcm_cled/led9/config1"},
+#else
+		{"/proc/bcm_cled/led14/config1", "/proc/bcm_cled/led15/config1", "/proc/bcm_cled/led16/config1"},
+#endif
+		{"0x00000000", "0x00000000", "0x00000000"},
+#ifdef RTAX82_XD6
+		{"/proc/bcm_cled/led7/config2", "/proc/bcm_cled/led8/config2", "/proc/bcm_cled/led9/config2"},
+#else
+		{"/proc/bcm_cled/led14/config2", "/proc/bcm_cled/led15/config2", "/proc/bcm_cled/led16/config2"},
+#endif
+		{"0x00000000", "0x00000000", "0x00000000"},
+#ifdef RTAX82_XD6
+		{"/proc/bcm_cled/led7/config3", "/proc/bcm_cled/led8/config3", "/proc/bcm_cled/led9/config3"},
+#else
+		{"/proc/bcm_cled/led14/config3", "/proc/bcm_cled/led15/config3", "/proc/bcm_cled/led16/config3"},
+#endif
+		{"0x00000000", "0x00000000", "0x00000000"}
+	};
 
 	read_cled_value(&led1);
 
@@ -211,10 +228,14 @@ int _bcm_cled_ctrl(int rgb, int cled_mode)
 int bcm_cled_ctrl(int rgb, int cled_mode)
 {
 	int state_changed = 0;
-#if defined(RTAX95Q) || defined(RTAX56_XD4)
+#if defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX82_XD6)
 	state_changed = _bcm_cled_ctrl(rgb, cled_mode);
 	if(state_changed == 1){
+#ifdef RTAX82_XD6
+		f_write_string("/proc/bcm_cled/activate", "0x00000380", 0, 0);
+#else
 		f_write_string("/proc/bcm_cled/activate", "0x0001C000", 0, 0);
+#endif
 	}
 #endif
 	return state_changed;
@@ -258,7 +279,7 @@ uint32_t get_gpio(uint32_t gpio)
 #endif
 }
 
-#if defined(RTCONFIG_HND_ROUTER_AX_6710) || defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U)
+#if defined(RTCONFIG_HND_ROUTER_AX_6710) || defined(RTAX58U) || defined(TUFAX3000) || defined(RTAX82U) || defined(RTAX82_XD6)
 uint32_t get_gpio2(uint32_t gpio)
 {
 	int board_fp = open("/dev/brcmboard", O_RDWR);
@@ -482,7 +503,7 @@ int phy_ioctl(int fd, int write, int phy, int reg, uint32_t *value)
 	struct ifreq ifr;
 	int ret, vecarg[2];
 
-#if defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55)
+#if defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55) || defined(RTAX1800)
 	return 1;
 #endif
 	memset(&ifr, 0, sizeof(ifr));
@@ -506,7 +527,7 @@ static inline int ethswctl_init(struct ifreq *p_ifr)
 {
     int skfd;
 
-#if defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55)
+#if defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55) || defined(RTAX1800)
 	return 1;
 #endif
     /* Open a basic socket */
@@ -1216,7 +1237,7 @@ uint32_t hnd_get_phy_status(int port)
 {
 	char ifname[16], tmp[100], buf[32];
 
-#ifdef RTAX55
+#if defined(RTAX55) || defined(RTAX1800)
 	int fd;
 	phyState pS;
 
@@ -1287,7 +1308,7 @@ uint32_t hnd_get_phy_speed(int port)
 {
 	char ifname[16], tmp[100], buf[32];
 
-#ifdef RTAX55
+#if defined(RTAX55) || defined(RTAX1800)
 	int fd;
 	phyState pS;
 
@@ -1481,7 +1502,7 @@ uint32_t set_phy_ctrl(uint32_t portmask, int ctrl)
 	int fd, i, model;
 	uint32_t value;
 
-#if defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55)
+#if defined(RTAX95Q) || defined(RTAX56_XD4) || defined(RTAX55) || defined(RTAX1800)
 	return 1;
 #endif
 	model = get_switch();
@@ -1990,6 +2011,11 @@ int get_bonding_port_status(int port)
 	int ports[lan_ports+1];
 	/* 4 3 2 1 0	W0 L1 L2 L3 L4 */
 	ports[0]=4; ports[1]=3; ports[2]=2; ports[3]=1; ports[4]=0;
+#elif defined(RTAX82_XD6)
+        int lan_ports=3;
+        int ports[lan_ports+1];
+        /* 4 2 1 0    W0 L1 L2 L3 */
+        ports[0]=4; ports[1]=2; ports[2]=1; ports[3]=0;
 #elif defined(RTAX56U)
 	int lan_ports=4;
 	int ports[lan_ports+1];

@@ -187,6 +187,10 @@ else
 	cp -f webs_scripts/nozip_webs_upgrade.sh $(INSTALLDIR)/usr/sbin/webs_upgrade.sh
 endif
 
+ifeq ($(RTCONFIG_URLFW),y)
+	cp -f webs_scripts/urlfw_webs_upgrade.sh $(INSTALLDIR)/usr/sbin/webs_upgrade.sh
+endif
+
 ifeq ($(RTAC68A),y)
 	cp -f webs_scripts/force_webs_update.sh $(INSTALLDIR)/usr/sbin/webs_update.sh
 endif
@@ -265,6 +269,12 @@ ifeq ($(BUILD_NAME), RT-AC68U)
 	cp -rf dlna/icon_lrg.rp-ac1900.jpg $(INSTALLDIR)/rom/dlna/icon_alt2_lrg.jpg
 	cp -rf dlna/icon_lrg.rp-ac1900.png $(INSTALLDIR)/rom/dlna/icon_alt2_lrg.png
 endif
+ifeq ($(BUILD_NAME), RT-AX82U)
+	install -m 0755 dlna/icon_sm.rt-ax82u_gd.jpg $(INSTALLDIR)/rom/dlna/icon_gd_sm.jpg
+	install -m 0755 dlna/icon_sm.rt-ax82u_gd.png $(INSTALLDIR)/rom/dlna/icon_gd_sm.png
+	install -m 0755 dlna/icon_lrg.rt-ax82u_gd.jpg $(INSTALLDIR)/rom/dlna/icon_gd_lrg.jpg
+	install -m 0755 dlna/icon_lrg.rt-ax82u_gd.png $(INSTALLDIR)/rom/dlna/icon_gd_lrg.png
+endif
 ifeq ($(and $(LJPG),$(SJPG),$(LPNG),$(SPNG)),)
 	$(warning Add media server icon for $(BUILD_NAME) !!!!!!!!!!!!)
 else
@@ -278,7 +288,9 @@ ifeq ($(RTCONFIG_GETREALIP),y)
 	install -m 0755 apps_scripts/getrealip.sh $(INSTALLDIR)/usr/sbin/getrealip.sh
 endif
 
+ifneq ($(RTCONFIG_INADYN),y)
 	install -m 0755 webs_scripts/GoogleDNS_Update.sh $(INSTALLDIR)/usr/sbin
+endif
 
 ifeq ($(RTCONFIG_HND_ROUTER_AX),y)
 	install -m 0755 apps_scripts/runin/$(BUILD_NAME)/stress_pkteng.sh $(INSTALLDIR)/usr/sbin

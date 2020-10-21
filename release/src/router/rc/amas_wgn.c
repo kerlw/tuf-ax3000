@@ -42,6 +42,7 @@
 #include <wlif_utils.h>
 #include <rtstate.h>
 #include <stdlib.h>
+#include <linux/sockios.h>
 #include "amas_wgn_shared.h"
 
 #define DBG_ODS(...) (_dprintf("%s(LINE:%d):%s\n", __FILE__, __LINE__, __VA_ARGS__));
@@ -157,6 +158,23 @@ int iface_is_up(
 	return ((ifr.ifr_flags & IFF_UP) == IFF_UP) ? 1 : 0;
 }
 
+int find_lan_ifnames_by_ifname(
+    char *ifname)
+{
+    int ret = 0;    
+    char word[64];
+    char *next = NULL;
+                    
+    if (!ifname)
+        return 0;
+
+    foreach(word, nvram_safe_get("lan_ifnames"), next)
+        if ((ret = !strncmp(word, ifname, strlen(ifname))))
+            break;
+    
+    return ret;
+}
+
 int find_br0_ifnames_by_ifname(
 	char *ifname)
 {
@@ -220,6 +238,51 @@ int iface_get_mac(
 	if (ret == 1) memcpy((unsigned char *)&ret_mac[0], (unsigned char *)&ifr.ifr_hwaddr.sa_data[0], 6);
 	close(sock);
 	return ret;
+}
+
+// ioctl for bridge
+enum { ARG_ADDBR = 0, ARG_DELBR, ARG_ADDIF, ARG_DELIF};
+int ioctl_bridge(
+    int action, 
+    char *br, 
+    char *brif)
+{
+    int ret = -1;
+    int fd = 0;
+    unsigned request;
+    struct ifreq ifr;
+
+    if (br == NULL) {
+        _dprintf("[%s:%s] Unknow lan_ifname, can't add interface to bridge.\n", __FILE__, __FUNCTION__);
+        return -1;
+    }    
+
+    memset(&ifr, 0x00, sizeof(struct ifreq));
+    strlcpy(ifr.ifr_name, br, IFNAMSIZ);
+    ifr.ifr_ifindex = if_nametoindex(brif);
+             
+    if (!ifr.ifr_ifindex) {
+        _dprintf("Can't get index for %s\n", brif);
+        return -1;
+    }
+
+    if (action == ARG_ADDIF)
+        request = SIOCBRADDIF;
+    else if (action == ARG_DELIF)
+        request = SIOCBRDELIF;
+    else {
+        _dprintf("Only support addif/delif from bridge interface.\n");
+        return -1;
+    }
+
+    if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        return -1;
+
+    if ((ret = ioctl(fd, request, &ifr)) < 0)
+        return errno;
+
+    close(fd);
+    return 0;    
 }
 
 struct brif_rule_t 
@@ -1403,14 +1466,14 @@ void wgn_hotplug_net(
 		memset(vid, 0, sizeof(vid));
 		snprintf(vid, sizeof(vid)-1, "%d", p_vlan_rule->vid);
 
-#if defined(HND_ROUTER)
+#if defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
 		memset(vif0, 0, sizeof(vif0));
 		snprintf(vif0, sizeof(vif0)-1, "%s.0", interface);
-#endif	/* HND_ROUTER */		
+#endif	/* HND_ROUTER && !defined(RTCONFIG_HND_ROUTER_AX_675X) */		
 
 		if (action == 1)	// add
 		{
-#if defined(HND_ROUTER)
+#if defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
 			//if (find_br0_ifnames_by_ifname(interface)) exec_cmd("brctl", "delif", "br0", interface);	
 			exec_cmd("brctl", "delif", "br0", interface);		
 			// vlanctl --mcast --if-create-name eth6 eth6.0 --if eth6 --set-if-mode-rg;
@@ -1438,7 +1501,7 @@ void wgn_hotplug_net(
 			exec_cmd("brctl", "addif", "br0", vif0);
 			//if (find_br0_ifnames_by_ifname(interface)) exec_cmd("brctl", "addif", "br0", interface);
 			exec_cmd("brctl", "addif", brif_list[i].br_name, vif);
-#else	/* HND_ROUTER */
+#else	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */
 			exec_cmd("vconfig", "set_name_type", "DEV_PLUS_VID_NO_PAD");
 			// vconfig add interface vid
 			exec_cmd("vconfig", "add", interface, vid);
@@ -1447,16 +1510,16 @@ void wgn_hotplug_net(
 			// brctl addif brX vifname
 			exec_cmd("brctl", "addif", brif_list[i].br_name, vif);
 			exec_cmd("vconfig", "set_name_type", "VLAN_PLUS_VID_NO_PAD");			
-#endif	/* HND_ROUTER */
+#endif	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */
 		}
 		else	// del
 		{
-#if defined(HND_ROUTER)
+#if defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
 			exec_cmd("vlanctl", "--if-delete", vif);
 			exec_cmd("vlanctl", "--if-delete", vif0);
-#else	/* HND_ROUTER */
+#else	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */
 			exec_cmd("vconfig", "rem", vif);
-#endif	/* HND_ROUTER */			
+#endif	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */			
 		}
 	}
 
@@ -1587,7 +1650,7 @@ char *get_eth_bh_ifnames(
 #else	/* HND_ROUTER */
 
 	if (buffer_size > 4)
-		ptr += snprintf(ptr, end-ptr, "%s ", "eth0");
+		ptr += snprintf(ptr, end-ptr, "%s ", WAN_IF_ETH);
 
 #endif	/* HND_ROUTER */
 
@@ -1624,25 +1687,25 @@ void destory_vlan(
 		memset(s, 0, sizeof(s));
 		snprintf(s, sizeof(s), "wgn_br%d_wl_ifnames", i);
 		foreach(word, nvram_safe_get(s), next)
-#if defined(HND_ROUTER)
+#if defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
 			exec_cmd("vlanctl", "--if-delete", word);
-#else	/* HND_ROUTER */		
+#else	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */		
 			exec_cmd("vconfig", "rem", word);
-#endif	/* HND_ROUTER */			
+#endif	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */			
 		nvram_unset(s);
 
 		memset(s, 0, sizeof(s));
 		snprintf(s, sizeof(s), "wgn_br%d_sta_ifnames", i);
 		foreach(word, nvram_safe_get(s), next)
-#if defined(HND_ROUTER)
+#if defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)           
 			exec_cmd("vlanctl", "--if-delete", word);
-#else	/* HND_ROUTER */		
+#else	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)  */		
 			exec_cmd("vconfig", "rem", word);
-#endif	/* HND_ROUTER */			
+#endif	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)  */			
 		nvram_unset(s);
 	}
 
-#if defined(HND_ROUTER)
+#if defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
 	memset(wl_bh_ifnames, 0, sizeof(wl_bh_ifnames));
 	if ((bh_ifnames = get_wl_bh_ifnames(wl_bh_ifnames, sizeof(wl_bh_ifnames))))
 	{
@@ -1664,7 +1727,7 @@ void destory_vlan(
 			exec_cmd("vlanctl", "--if-delete", vif0);
 		}
 	}
-#endif	/* HND_ROUTER */		
+#endif	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */		
 	return;
 }
 
@@ -1684,6 +1747,7 @@ char *create_vlan(
 	char word[64];
 	char *next = NULL;
 	size_t size = 0;
+    int ret = -1;
 
 #if defined(HND_ROUTER)	
 	char vif0[64];
@@ -1721,7 +1785,7 @@ char *create_vlan(
 	memset(vid, 0, sizeof(vid));
 	snprintf(vid, sizeof(vid)-1, "%d", vlan_id);
 
-#if defined(HND_ROUTER)
+#if defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X)
 	if (type != 0)	// wl & sta
 	{
 		foreach (word, bh_ifnames, next)
@@ -1785,15 +1849,17 @@ char *create_vlan(
 			memset(vif, 0, sizeof(vif));
 			snprintf(vif, sizeof(vif)-1, "%s.%s", word, vid);
 			// if (find_br0_ifnames_by_ifname(word)) exec_cmd("brctl", "delif", "br0", word);
-			exec_cmd("brctl", "delif", "br0", word);
-			exec_cmd("vconfig", "add", word, vid);
+			//exec_cmd("brctl", "delif", "br0", word);
+			ret = ioctl_bridge(ARG_DELIF, "br0", word);
+            exec_cmd("vconfig", "add", word, vid);
 			// if (find_br0_ifnames_by_ifname(word)) exec_cmd("brctl", "addif", "br0", word);
-			exec_cmd("brctl", "addif", "br0", word);
-			ifconfig(vif, IFUP | IFF_ALLMULTI | IFF_MULTICAST, NULL, NULL);
+			//if (find_lan_ifnames_by_ifname(word)) exec_cmd("brctl", "addif", "br0", word);
+			if (ret == 0) ioctl_bridge(ARG_ADDIF, "br0", word);
+            ifconfig(vif, IFUP | IFF_ALLMULTI | IFF_MULTICAST, NULL, NULL);
 		}
 		exec_cmd("vconfig", "set_name_type", "VLAN_PLUS_VID_NO_PAD");	
 	}
-#else	/* HND_ROUTER */
+#else	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */
 
 	foreach (word, bh_ifnames, next)
 	{
@@ -1807,18 +1873,20 @@ char *create_vlan(
 
 	exec_cmd("vconfig", "set_name_type", "DEV_PLUS_VID_NO_PAD");
 	foreach (word, bh_ifnames, next)
-	{
+	{      
 		memset(vif, 0, sizeof(vif));
 		snprintf(vif, sizeof(vif)-1, "%s.%s", word, vid);
 		// if (find_br0_ifnames_by_ifname(word)) exec_cmd("brctl", "delif", "br0", word);
-		exec_cmd("brctl", "delif", "br0", word);
-		exec_cmd("vconfig", "add", word, vid);
+		//exec_cmd("brctl", "delif", "br0", word);
+		ret = ioctl_bridge(ARG_DELIF, "br0", word);
+        exec_cmd("vconfig", "add", word, vid);
 		// if (find_br0_ifnames_by_ifname(word)) exec_cmd("brctl", "addif", "br0", word);
-		exec_cmd("brctl", "addif", "br0", word);
-		ifconfig(vif, IFUP | IFF_ALLMULTI | IFF_MULTICAST, NULL, NULL);
+		//if (find_lan_ifnames_by_ifname(word)) exec_cmd("brctl", "addif", "br0", word);
+	    if (ret == 0) ioctl_bridge(ARG_ADDIF, "br0", word);
+        ifconfig(vif, IFUP | IFF_ALLMULTI | IFF_MULTICAST, NULL, NULL);
 	}
 	exec_cmd("vconfig", "set_name_type", "VLAN_PLUS_VID_NO_PAD");
-#endif	/* HND_ROUTER */
+#endif	/* defined(HND_ROUTER) && !defined(RTCONFIG_HND_ROUTER_AX_675X) */
 
 	if (strlen(ret_ifnames) > 0)
 		ret_ifnames[strlen(ret_ifnames)-1] = '\0';

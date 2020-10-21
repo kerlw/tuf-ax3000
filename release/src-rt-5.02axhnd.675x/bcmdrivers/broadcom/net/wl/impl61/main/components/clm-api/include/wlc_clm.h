@@ -12,8 +12,14 @@
 #ifndef _WLC_CLM_H_
 #define _WLC_CLM_H_
 
+#ifdef _MSC_VER
+	#pragma warning(push, 3)
+#endif /* _MSC_VER */
 #include <bcmwifi_rates.h>
 #include <bcmwifi_channels.h>
+#ifdef _MSC_VER
+	#pragma warning(pop)
+#endif /* _MSC_VER */
 
 #ifdef __cplusplus
 extern "C" {
@@ -130,9 +136,6 @@ typedef enum clm_flags {
 	/** Region has per-antenna power targets */
 	CLM_FLAG_PER_ANTENNA	= 0x00000010,
 
-	/** Region is default for its CC */
-	CLM_FLAG_DEFAULT_FOR_CC	= 0x00000020,
-
 	/** Region is EDCRS-EU-compliant */
 	CLM_FLAG_EDCRS_EU	= 0x00000040,
 
@@ -148,10 +151,17 @@ typedef enum clm_flags {
 	/** Region is compliant with 2018 RED (Radio Equipment Directive), that
 	 * limits frame burst duration and maybe something else
 	 */
-	CLM_FLAG_RED_EU	= 0x00000800,
+	CLM_FLAG_RED_EU		= 0x00000800,
 
 	/** HE limits present */
-	CLM_FLAG_HE = 0x00001000,
+	CLM_FLAG_HE		= 0x00001000,
+
+	/** Disable Dynamic SAR Averaging. Dynamic SAR Averaging allows SAR to
+	 * be above threshold sometimes, if in average it is below threshold -
+	 * this is default behavior. Dthis flag disables it, thus forcing SAR
+	 * to always be below the threshold
+	 */
+	CLM_FLAG_DDSA		= 0x00002000,
 
 
 	/* DEBUGGING FLAGS (ALLOCATED AS TOP BITS) */
@@ -651,7 +661,8 @@ clm_channels_params_init(clm_channels_params_t *params);
 
 /** Retrieves information about certain channels with valid power limits for
  * locales of some region
- * \param[in] locales Country (region) locales' information
+ * \param[in] locales Country (region) locales' information. NULL means that
+ * all channels from all countries should be retrieved
  * \param[in] band Band of channels being requested
  * \param[in] params Other parameters of channels being requested
  * \param[out] channels Country's (region's) channels that match given criteria

@@ -19,6 +19,10 @@
 <script>
 function initial(){
 	show_menu();
+	if(!bwdpi_webFilter_support){
+		document.getElementById('Link_to_ParentalCtrl').href = 'ParentalControl.asp';
+	}
+
 	if(adBlock_support)
 		document.getElementById("adBlock_field").style.display = "";
 	if(keyGuard_support){

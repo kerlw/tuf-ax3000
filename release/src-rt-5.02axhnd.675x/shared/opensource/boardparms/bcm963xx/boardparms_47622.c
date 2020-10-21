@@ -884,7 +884,7 @@ static bp_elem_t g_rtax55[] = {
     {bp_ulPortMap,               .u.ul = 0x3},
     {bp_ulPhyId0,                .u.ul = (BCM947622_PHY_BASE + 0x00) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
     {bp_ulPhyId1,                .u.ul = RGMII_DIRECT_3P3V},
-    {bp_ulPortFlags,             .u.ul = PORT_FLAG_TX_INTERNAL_DELAY |  PORT_FLAG_RX_INTERNAL_DELAY},
+    {bp_ulPortFlags,             .u.ul = PORT_FLAG_TX_INTERNAL_DELAY/* |  PORT_FLAG_RX_INTERNAL_DELAY*/},
 
     /* reset-gpio for RTL8367S */
     {bp_usGpioInitState,         .u.us = BP_GPIO_10_AH},

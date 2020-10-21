@@ -163,7 +163,18 @@ extern int wl_endian_probe(char *name);
  * @param      val             val or val pointer for int routines
  * @return     success == 0, failure != 0
  */
+
 extern int wl_heiovar_setint(char *ifname, char *iovar, char *subcmd, int val);
+/*
+ * Set msched/umsched related commands
+ * @param      ifname          interface name
+ * @param      iovar           variable name
+ * @param      subcmd          msched/umsched subcommand
+ * @param      val             val or val pointer for int routines
+ * @return     success == 0, failure != 0
+ */
+extern int wl_msched_iovar_setint(char *ifname, char *iovar, char *subcmd, int val);
+
 #endif
 
 /*

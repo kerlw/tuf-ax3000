@@ -198,7 +198,7 @@ function register_event(){
 
 function initial(){
 	show_menu();
-	if(based_modelid == "GT-AC5300" || based_modelid == "GT-AC9600" || based_modelid == "RT-AC1200" || based_modelid == "RT-AC1200GU"){
+	if(hnd_support || based_modelid == "RT-AC1200" || based_modelid == "RT-AC1200_V2" || based_modelid == "RT-AC1200GU" || based_modelid == "RT-N19"){
 		$("#nat_desc").hide();
 	}
 
@@ -210,6 +210,11 @@ function initial(){
 		document.getElementById('PC_enable').innerHTML = "<#ParentalCtrl_Enable_TS#>";
 		document.getElementById('switch_menu').style.display = "";
 	}
+
+	if(!bwdpi_webFilter_support){
+		$('#switch_menu').hide();
+	}
+
 	document.getElementById('disable_NAT').href = "Advanced_SwitchCtrl_Content.asp?af=ctf_disable_force";	//this id is include in string : #ParentalCtrl_disable_NAT#
 
 	show_footer();

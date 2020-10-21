@@ -1069,7 +1069,6 @@ function manualSetup(){
   	<p class="formfonttitle_nwm" style="float:left;"><#APSurvey_action_search_again_hint2#></p>
 		<br />
   	<input type="button" class="button_gen" onclick="gotoSiteSurvey();" value="<#QIS_rescan#>" style="float:right;">
-	<div style="margin-top:5px;" class="line_horizontal"></div>
   </td>
 </tr>
 

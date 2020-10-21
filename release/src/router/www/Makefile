@@ -423,6 +423,7 @@ ifneq ($(RTCONFIG_PARENTALCTRL),y)
 endif
 	rm -rf $(INSTALLDIR)/www/getTraffic.asp
 	rm -rf $(INSTALLDIR)/www/getWebHistory.asp
+	rm -rf $(INSTALLDIR)/www/getDBList.asp
 	rm -rf $(INSTALLDIR)/www/getAppTraffic.asp
 	rm -rf $(INSTALLDIR)/www/getWanTraffic.asp
 	rm -rf $(INSTALLDIR)/www/getAiProtectionEvent.asp
@@ -473,7 +474,7 @@ ifneq ($(RTCONFIG_SNMPD), y)
 	rm -rf $(INSTALLDIR)/www/Advanced_SNMP_Content.asp
 endif
 
-ifneq ($(BUILD_NAME),$(filter $(BUILD_NAME), RT-AC3200 RT-AC5300 GT-AC5300 GT-AC9600 RT-AC86U AC2900 RT-AC88U RT-AX88U RT-AC3100 GT-AX11000 RT-AX92U RT-AX95Q RT-AX56_XD4 RT-AX58U TUF-AX3000 RT-AX82U RT-AX56U RT-AX86U RT-AX5700 RT-AX68U))
+ifneq ($(BUILD_NAME),$(filter $(BUILD_NAME), RT-AC3200 RT-AC5300 GT-AC5300 GT-AC9600 RT-AC86U AC2900 RT-AC88U RT-AX88U RT-AC3100 GT-AX11000 RT-AX92U RT-AX95Q RT-AX56_XD4 RT-AX58U TUF-AX3000 RT-AX82U RT-AX56U RT-AX86U RT-AX5700 RT-AX68U RT-AX55))
 	rm -rf $(INSTALLDIR)/www/Advanced_Smart_Connect.asp
 	rm -rf $(INSTALLDIR)/www/images/New_ui/smart_connect.png
 	rm -rf $(INSTALLDIR)/www/images/New_ui/smart_connect_concept.gif
@@ -564,6 +565,12 @@ endif
 ifneq ($(RTCONFIG_WTF_REDEEM)$(RTCONFIG_WTFAST), y)
 	rm -rf $(INSTALLDIR)/www/images/New_ui/GameBoost_AiProtection.png
 	rm -rf $(INSTALLDIR)/www/images/New_ui/GameBoost_QoS.png
+endif
+
+ifneq ($(RTCONFIG_TCPLUGIN), y)
+	rm -rf $(INSTALLDIR)/www/images/tencent
+	rm -f $(INSTALLDIR)/www/GameBoost_Tencent.asp
+	rm -f $(INSTALLDIR)/www/game_accelerator_tencent.html
 endif
 
 ifneq ($(RTCONFIG_IPSEC), y)
@@ -751,14 +758,37 @@ ifneq ($(RTCONFIG_UUPLUGIN), y)
 	rm -rf $(INSTALLDIR)/www/images/New_ui/icon_UU.png
 endif
 
-ifneq ($(RTCONFIG_ROG_UI),y)
-	rm -rf $(INSTALLDIR)/www/fonts
+ifneq ($(RTCONFIG_ROG_UI),y)   
+	rm -rf $(INSTALLDIR)/www/fonts/ROG_Fonts-Regular.otf
+	rm -rf $(INSTALLDIR)/www/fonts/ROG_Fonts-Regular.woff
+	rm -rf $(INSTALLDIR)/www/fonts/xolonium.regular.otf
+	rm -rf $(INSTALLDIR)/www/fonts/xolonium.regular.woff
 	rm -rf $(INSTALLDIR)/www/images/triLvGameAcceleration
 	rm -rf $(INSTALLDIR)/www/css/triLvGameAcceleration.css	
 	rm -rf $(INSTALLDIR)/www/ajax_wanlink.asp
 	rm -rf $(INSTALLDIR)/www/GearAccelerator.asp
 endif
-ifeq ($(MERLINR_NAME),$(filter $(MERLINR_NAME), SBRAC1900P SBRAC3200P R7900P R8000P K3C K3 RAX20))
-	$(TOP)/softcenter/dict.sh $(BUILD_NAME) $(MERLINR_NAME) $(INSTALLDIR)/www
+
+ifneq ($(BUILD_NAME),$(filter $(BUILD_NAME), GT-AC2900 GT-AC5300 GT-AX11000 GT-AXE11000 GT-AXY16000 RT-AX82U))
+	rm -rf $(INSTALLDIR)/www/fonts
+endif
+
+ifneq ($(BUILD_NAME),$(filter $(BUILD_NAME), RT-AX82U))
+	rm -rf $(INSTALLDIR)/www/light_effect
+	rm -rf $(INSTALLDIR)/www/images/New_ui/light_effect
+endif
+
+ifneq ($(BUILD_NAME),$(filter $(BUILD_NAME), RT-AX82U RT-AX86U))
+	rm -rf $(INSTALLDIR)/www/css/gundam.css
+endif
+
+ifeq ($(RTCONFIG_ROG_UI),y)
+	cp -rf $(INSTALLDIR)/www/css/ROG/* $(INSTALLDIR)/www/css/
+	rm -rf $(INSTALLDIR)/www/css/ROG
+endif
+
+ifeq ($(BUILD_NAME),$(filter $(BUILD_NAME), TUF-AX3000))
+	cp -rf $(INSTALLDIR)/www/css/TUF/* $(INSTALLDIR)/www/css/
+	rm -rf $(INSTALLDIR)/www/css/TUF
 endif
 

@@ -1512,7 +1512,7 @@ static int bcm63xx_xtmrt_rx_thread(void *arg)
           * re-enable interrupts (bcmxapi_clear_xtmrxint) and go to top of
           * loop to wait for more work.
           */
-         pGi->rx_work_avail = 0;
+         clear_bit(0, &pGi->rx_work_avail);
          bcmxapi_clear_xtmrxint(mask);
       }
    }
