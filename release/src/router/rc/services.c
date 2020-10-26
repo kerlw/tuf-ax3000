@@ -12299,11 +12299,11 @@ check_ddr_done:
 	}
 #endif
 #ifdef RTCONFIG_UUPLUGIN
-//	else if (strcmp(script, "uuacc") == 0)
-//	{
-//		if(action & RC_SERVICE_STOP) stop_uu();
-//		if(action & RC_SERVICE_START) start_uu();
-//	}
+	else if (strcmp(script, "uuacc") == 0)
+	{
+		if(action & RC_SERVICE_STOP) stop_uu();
+		if(action & RC_SERVICE_START) start_uu();
+	}
 #endif
 #if defined(RTCONFIG_USB) && defined(RTCONFIG_USB_PRINTER)
 	else if (strcmp(script, "lpd") == 0)

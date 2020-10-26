@@ -418,7 +418,7 @@ function applyRule(){
 
 		showLoading();
 
-		var action_script_tmp = "restart_time;restart_upnp;restart_leds;";
+		var action_script_tmp = "restart_time;restart_upnp;restart_leds;restart_uuacc;";
 
 		if(hdspindown_support)
 			action_script_tmp += "restart_usb_idle;";
