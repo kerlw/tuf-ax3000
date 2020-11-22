@@ -26884,6 +26884,7 @@ struct AiMesh_whitelist AiMesh_whitelists[] = {
 	{"message.htm", NULL},
 	{"error_page.htm", NULL},
 	{"Main_Login.asp", NULL},
+	{"Tools_Sysinfo.asp", NULL},
 	{ NULL, NULL }
 };
 #endif
